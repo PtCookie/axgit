@@ -1,0 +1,35 @@
+# https://lefthook.dev/configuration/
+
+pre-commit:
+  parallel: true
+  commands:
+    rust-fmt:
+      glob: "api/**/*.rs"
+      root: "api/"
+      run: cargo fmt -- --check
+    eslint:
+      glob: "web/**/*.{js,cjs,mjs,ts,tsx,astro}"
+      root: "web/"
+      run: pnpm exec eslint --fix {staged_files}
+      stage_fixed: true
+    prettier:
+      glob: "web/**/*.{js,ts,tsx,astro,css,json}"
+      root: "web/"
+      run: pnpm exec prettier --write {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    rust-clippy:
+      glob: "api/**/*.rs"
+      root: "api/"
+      run: cargo clippy --all-targets -- -D warnings
+    rust-test:
+      glob: "api/**/*.rs"
+      root: "api/"
+      run: cargo test
+    vitest:
+      glob: "web/**/*"
+      root: "web/"
+      run: pnpm test -- --run
