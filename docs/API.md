@@ -22,6 +22,7 @@ web ↔ api 간 유일한 계약 문서. 엔드포인트를 추가/변경하는 
 | 404  | `path_not_found`    | tree/blob 경로 없음 |
 | 400  | `invalid_param`     | 파라미터 형식 오류 |
 | 403  | `read_only`         | receive-pack 등 쓰기 시도 |
+| 501  | `not_implemented`   | 아직 구현되지 않은 엔드포인트 (스케폴딩 기간 한정, v1 완성 시 제거) |
 
 ### 캐싱 헤더
 
@@ -55,6 +56,7 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 
 - `section`/`owner`/`description`: repo config `[axgit]` 우선, 없으면 `[cgit]` 섹션.
 - `last_modified`: agefile(`info/web/last-modified`), 없으면 HEAD authordate.
+- `default_branch`/`last_modified`: 빈 저장소(커밋 없음, agefile 없음)에서는 `null`.
 
 ### `GET /api/v1/repos/{repo}`
 
