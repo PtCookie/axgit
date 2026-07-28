@@ -14,6 +14,10 @@ Cgit을 대체하는 웹 프론트엔드입니다. 모노레포로 두 컴포넌
 **배포는 단일 컨테이너**: 멀티스테이지 Dockerfile에서 web 빌드 → api 빌드 → 런타임 이미지 하나.
 기존 git-compose 스택의 `git-web` 서비스를 이 이미지로 교체하며, nginx/fcgiwrap/CGI는 사용하지 않는다.
 
+**세션 간 이어가기**: 지금까지 어떤 작업을 완료했고 다음에 무엇을 구현할지는 `docs/ROADMAP.md`가
+단일 출처다. 새 세션을 시작하거나 "다음에 뭘 하면 되지?"류 질문을 받으면 이 파일부터 읽을 것.
+작업을 완료하면 같은 커밋에서 "완료됨" 절을 갱신하고 "다음 구현" 절을 다음 대상으로 교체한다.
+
 ## 핵심 제약 (Invariants)
 
 - **웹은 철저히 읽기 전용.** 쓰기(push, 저장소 생성)는 git-server 컨테이너의 SSH로만 이루어진다.
@@ -56,7 +60,8 @@ docker build --tag axgit:latest .
 
 ## Architecture
 
-상세 설계는 `docs/ARCHITECTURE.md`, API 계약은 `docs/API.md`, 결정 이력은 `docs/DECISIONS.md` 참고.
+상세 설계는 `docs/ARCHITECTURE.md`, API 계약은 `docs/API.md`, 결정 이력은 `docs/DECISIONS.md`,
+구현 순서/진행 상황은 `docs/ROADMAP.md` 참고.
 **API를 변경할 때는 반드시 `docs/API.md`를 같은 커밋에서 갱신할 것** — 이 문서가 web/api 간 유일한 계약이다.
 
 ### 백엔드 요점
@@ -111,7 +116,7 @@ axgit/
       pages/          # Astro 라우트
       components/     # React islands, ui/ (shadcn)
       lib/api/        # fetch 클라이언트 + 타입
-  docs/               # ARCHITECTURE.md, API.md, DECISIONS.md
+  docs/               # ARCHITECTURE.md, API.md, DECISIONS.md, ROADMAP.md
   lefthook.yml
   Dockerfile          # web build → api build → runtime (단일 이미지)
 ```
