@@ -49,19 +49,8 @@ fn setup_fixtures() -> TempDir {
     root
 }
 
-async fn get_json(router: Router, uri: &str) -> (StatusCode, Value) {
-    let response = router
-        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json = serde_json::from_slice(&bytes).expect("response body is not JSON");
-    (status, json)
-}
-
 async fn list_repos(root: &Path) -> Value {
-    let (status, json) = get_json(router_for(root), "/api/v1/repos").await;
+    let (status, json) = common::get_json(router_for(root), "/api/v1/repos").await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
     json
 }
@@ -154,7 +143,8 @@ async fn list_repos_returns_null_fields_for_empty_repo() {
 async fn unimplemented_endpoint_returns_501() {
     let root = setup_fixtures();
 
-    let (status, json) = get_json(router_for(root.path()), "/api/v1/repos/alpha/refs").await;
+    let (status, json) =
+        common::get_json(router_for(root.path()), "/api/v1/repos/alpha/commits").await;
 
     assert_eq!(
         (status, json["error"]["code"].as_str()),
@@ -192,7 +182,7 @@ async fn receive_pack_returns_403_read_only() {
 async fn info_refs_with_receive_pack_service_returns_403() {
     let root = setup_fixtures();
 
-    let (status, json) = get_json(
+    let (status, json) = common::get_json(
         router_for(root.path()),
         "/alpha.git/info/refs?service=git-receive-pack",
     )

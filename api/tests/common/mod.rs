@@ -1,7 +1,17 @@
 //! git CLI based fixture helpers (docs/ARCHITECTURE.md test strategy).
 
+// Shared across test binaries; not every binary uses every helper.
+#![allow(dead_code)]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use axum::Router;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use http_body_util::BodyExt;
+use serde_json::Value;
+use tower::ServiceExt;
 
 /// Fixed date (RFC 3339) so commit-derived fields are deterministic.
 pub const FIXED_DATE: &str = "2026-07-01T12:00:00+09:00";
@@ -73,6 +83,33 @@ pub fn add_commit(bare: &Path, file: &str, content: &str, message: &str) {
         work_path,
         &["push", "--quiet", bare.to_str().unwrap(), "main:main"],
     );
+}
+
+/// Creates branch `{name}` pointing at `main` in the bare repository.
+pub fn add_branch(bare: &Path, name: &str) {
+    git(bare, &["branch", name, "main"]);
+}
+
+/// Creates lightweight tag `{name}` on `main` in the bare repository.
+pub fn add_lightweight_tag(bare: &Path, name: &str) {
+    git(bare, &["tag", name, "main"]);
+}
+
+/// Creates annotated tag `{name}` on `main` in the bare repository.
+pub fn add_annotated_tag(bare: &Path, name: &str, message: &str) {
+    git(bare, &["tag", "-a", "-m", message, name, "main"]);
+}
+
+/// Sends `GET {uri}` to the router and returns status + parsed JSON body.
+pub async fn get_json(router: Router, uri: &str) -> (StatusCode, Value) {
+    let response = router
+        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json = serde_json::from_slice(&bytes).expect("response body is not JSON");
+    (status, json)
 }
 
 /// Writes the cgit agefile (`info/web/last-modified`).

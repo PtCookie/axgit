@@ -73,12 +73,16 @@ fn agefile_mtime(path: &std::path::Path) -> Option<Zoned> {
 
 fn head_authordate(repo: &Repository) -> Option<Zoned> {
     let commit = repo.head().ok()?.peel_to_commit().ok()?;
-    let when = commit.author().when();
+    git_time_to_zoned(commit.author().when())
+}
+
+/// Converts a git2 timestamp to `Zoned`, preserving the recorded UTC offset.
+pub(crate) fn git_time_to_zoned(when: git2::Time) -> Option<Zoned> {
     let ts = Timestamp::from_second(when.seconds()).ok()?;
     let offset = Offset::from_seconds(when.offset_minutes() * 60).ok()?;
     Some(ts.to_zoned(TimeZone::fixed(offset)))
 }
 
-fn format_rfc3339(zoned: &Zoned) -> String {
+pub(crate) fn format_rfc3339(zoned: &Zoned) -> String {
     zoned.strftime(RFC3339_OUT).to_string()
 }

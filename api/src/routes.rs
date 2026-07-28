@@ -13,8 +13,8 @@ use crate::state::AppState;
 pub fn build_router(state: AppState) -> Router {
     let api = Router::new()
         .route("/repos", get(repos::list_repos))
-        .route("/repos/{repo}", get(handlers::not_implemented))
-        .route("/repos/{repo}/refs", get(handlers::not_implemented))
+        .route("/repos/{repo}", get(repos::get_repo))
+        .route("/repos/{repo}/refs", get(repos::get_refs))
         .route("/repos/{repo}/commits", get(handlers::not_implemented))
         .route(
             "/repos/{repo}/commits/{sha}",

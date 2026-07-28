@@ -62,6 +62,27 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 
 저장소 요약. cgit summary에 해당. 목록 항목 필드 + `head` sha, 브랜치/태그 개수, clone URL.
 
+```json
+{
+  "name": "git-compose",
+  "section": "infra",
+  "owner": "PtCookie",
+  "description": "Compose project of Git server",
+  "default_branch": "main",
+  "last_modified": "2026-07-24T13:06:00+09:00",
+  "head": "<sha>",
+  "branch_count": 2,
+  "tag_count": 1,
+  "clone_url": "https://git.example.com/git-compose.git"
+}
+```
+
+- `name`~`last_modified`: 목록 항목과 동일한 규칙.
+- `head`: HEAD 커밋 sha. 빈 저장소(unborn HEAD)는 `null` (404가 아니라 200으로 응답,
+  이때 `default_branch`/`last_modified`도 `null`, 카운트는 0).
+- `clone_url`: `{clone_url_base}/{repo}.git`. `--clone-url-base`(`AXGIT_CLONE_URL_BASE`)가
+  설정되지 않았으면 `null`.
+
 ### `GET /api/v1/repos/{repo}/refs`
 
 ```json
@@ -70,6 +91,12 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
   "tags": [{ "name": "v1.0.0", "target": "<sha>", "annotation": "...", "tagged_at": "..." }]
 }
 ```
+
+- `branches`/`tags` 모두 이름 오름차순. 빈 저장소는 둘 다 `[]`.
+- `branches[].target`: 브랜치 tip 커밋 sha. `committed_at`: tip 커밋 authordate (RFC 3339).
+- `tags[].target`: **peel된 커밋 sha** (annotated 태그도 태그 오브젝트가 아닌 대상 커밋).
+- `tags[].annotation`: 태그 메시지 첫 줄. `tagged_at`: tagger 시각.
+  **경량(lightweight) 태그는 둘 다 `null`.**
 
 ### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=`
 
