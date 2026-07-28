@@ -44,6 +44,9 @@ cargo test --manifest-path api/Cargo.toml
 cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path api/Cargo.toml
 
+# fixture 저장소 생성 (bare repo 4종, 고정 날짜로 재현 가능)
+./scripts/make-fixtures.sh
+
 # 로컬 통합 실행 (api가 web/dist를 서빙)
 cargo run --manifest-path api/Cargo.toml -- --repo-root ./fixtures/repos --static-dir ./web/dist
 
@@ -59,6 +62,9 @@ docker build --tag axgit:latest .
 ### 백엔드 요점
 
 - git2의 `Repository`는 `Sync`가 아니므로 **요청마다 open**한다 (open 비용은 낮음). 전역 캐시에 Repository를 넣지 말 것.
+- `Repository::config()`에서 문자열 값을 읽으려면 먼저 `.snapshot()`을 떠야 한다 (live config는 값 조회가 제한적).
+- `api/`는 `lib.rs` + thin `main.rs` 구조: 통합 테스트(`api/tests/`)가 `build_router`를 직접 import해
+  `tower::ServiceExt::oneshot`으로 포트 바인딩 없이 라우터를 테스트한다.
 - 무거운 연산은 git 바이너리 exec로 처리한다: 아카이브는 `git archive`,
   Smart HTTP는 `git http-backend`(CGI 방식 spawn) 또는 `git upload-pack --stateless-rpc`.
   libgit2로 전부 구현하려 하지 말 것 (Gitea도 같은 하이브리드 패턴).
@@ -82,7 +88,9 @@ docker build --tag axgit:latest .
   에러는 `thiserror`(라이브러리 코드) + `anyhow`(bin 진입부).
 - **TypeScript**: strict 모드. API 응답 타입은 `web/src/lib/api/types.ts`에 수동 정의하고
   `docs/API.md`와 동기화한다 (코드 생성 도입 전까지).
-- **테스트**: api는 tempdir에 git CLI로 fixture repo를 만들어 통합 테스트 (`api/tests/`),
+- **테스트**: api는 tempdir에 git CLI로 fixture repo를 만들어 통합 테스트 (`api/tests/`).
+  git CLI 호출은 `GIT_CONFIG_GLOBAL=/dev/null` `GIT_CONFIG_SYSTEM=/dev/null`로 호스트 설정을 차단하고
+  `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`를 고정해 결정적으로 만든다.
   web은 vitest + Testing Library. 커밋 전 훅은 lefthook이 담당 (`lefthook.yml`).
 - 사용자와의 대화는 한국어, 코드/커밋/문서 식별자는 영어.
 
