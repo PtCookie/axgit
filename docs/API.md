@@ -208,22 +208,70 @@ unified diff를 구조화한 JSON (파일 → hunk → line). 파일 레벨 필�
 
 ### `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
 
-디렉토리 목록. `entries[]`: `name`, `type`(`blob`|`tree`|`commit`(submodule)|`symlink`), `mode`, `size`(blob만).
+디렉토리 목록. `{ref}`는 `/`를 포함할 수 있으므로(브랜치/태그명) 경로와의 경계는
+**refs 최장 매칭**으로 해석한다: 선행 세그먼트 열이 기존 브랜치/태그명과 일치하는 가장 긴
+prefix가 ref (git ref 규칙상 `a`와 `a/b`는 공존 불가 → 유일), 일치가 없으면 첫 세그먼트를
+ref(커밋 sha 등)로 간주한다. blob/raw도 동일 규칙. `{path...}` 생략 시 루트 tree.
+
+```json
+{
+  "sha": "<resolved full sha>",
+  "path": "src",
+  "entries": [
+    { "name": "lib", "type": "tree", "mode": "040000", "size": null },
+    { "name": "main.rs", "type": "blob", "mode": "100644", "size": 13 }
+  ]
+}
+```
+
+- `type`: `tree` | `blob` | `symlink`(mode 120000) | `commit`(submodule gitlink).
+- `mode`: 6자리 8진수 문자열. `size`: blob만, 그 외 `null`.
+- 정렬: tree 우선, 이후 이름 오름차순.
+- 경로가 없거나 디렉토리가 아니면 `404 path_not_found`.
+  path의 `.`/`..`/빈 세그먼트는 `400 invalid_param`.
+- 요청의 `{ref}`가 해석된 full sha와 문자열 일치하면 immutable Cache-Control
+  (캐싱 헤더 절 참고 — blob/raw/readme도 동일).
 
 ### `GET /api/v1/repos/{repo}/blob/{ref}/{path...}`
 
-파일 메타 + 내용. 텍스트는 `content`(utf-8), 바이너리는 `binary: true`에 내용 생략(raw로 유도).
-`size`, `too_large`(상한 초과 시 내용 생략) 포함.
+파일 메타 + 내용.
+
+```json
+{
+  "sha": "<resolved full sha>",
+  "path": "README.md",
+  "mode": "100644",
+  "size": 16,
+  "binary": false,
+  "too_large": false,
+  "content": "# Axgit\n"
+}
+```
+
+- `content`: UTF-8 텍스트. 바이너리(libgit2 NUL 휴리스틱 또는 비UTF-8)는
+  `binary: true` + `content: null` (raw로 유도).
+- **1 MiB 초과는 `too_large: true` + `content: null`** (`size`는 항상 전체 값).
+- symlink는 mode `120000`에 `content` = 링크 대상 경로.
+- 경로가 없거나 파일이 아니면(디렉토리·submodule) `404 path_not_found`.
 
 ### `GET /api/v1/repos/{repo}/raw/{ref}/{path...}`
 
-파일 원문을 감지한 MIME 타입으로 스트리밍. cgit plain view에 해당.
+파일 원문 스트리밍. cgit plain view에 해당. 크기 상한 없음.
+
+- `Content-Type`: 확장자 기반 감지(mime_guess). 미감지 시 텍스트는
+  `text/plain; charset=utf-8`, 바이너리는 `application/octet-stream`.
+- 저장소 내용은 비신뢰 입력이므로 항상 `X-Content-Type-Options: nosniff`를 부착한다.
 
 ### `GET /api/v1/repos/{repo}/readme?ref=`
 
-README 탐색(`README.md` → `README.rst` → `README.txt` → `README` 순) 후
-`{ "path": "...", "format": "markdown|rst|plain", "content": "..." }`.
+README 탐색 후 `{ "path": "...", "format": "markdown|rst|plain", "content": "..." }`.
 렌더링(HTML 변환)은 프론트엔드 책임. `markdown`만 렌더링하고 `rst`/`plain`은 평문 표시한다 (DECISIONS.md #11).
+
+- 루트 tree에서 `README.md` → `README.rst` → `README.txt` → `README` 순,
+  **대소문자 무시** 매칭. symlink·바이너리·1 MiB 초과 후보는 건너뛴다.
+- `path`는 tree상의 실제 파일명(대소문자 유지). 못 찾으면 `404 path_not_found`.
+- `ref` 생략 시 HEAD. 빈 저장소(unborn HEAD)·해석 실패는 `404 ref_not_found`.
+- `content`에는 blob의 1 MiB 상한이 동일하게 적용된다.
 
 ### `GET /api/v1/repos/{repo}/blame/{ref}/{path...}`
 

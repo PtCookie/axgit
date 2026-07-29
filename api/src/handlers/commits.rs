@@ -4,10 +4,10 @@ use std::path::PathBuf;
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::http::header;
-use axum::response::{IntoResponse, Response};
-use serde::{Deserialize, Serialize};
+use axum::response::Response;
+use serde::Deserialize;
 
+use super::sha_addressed_json;
 use crate::error::ApiError;
 use crate::repo::commits::CommitsPage;
 use crate::repo::{commits, diff, open, resolve};
@@ -85,21 +85,6 @@ pub async fn list_commits(
     .await
     .map_err(|err| ApiError::Internal(err.into()))??;
     Ok(Json(page))
-}
-
-/// `Cache-Control` for responses addressed by a full commit sha (docs/API.md).
-const IMMUTABLE_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
-
-/// Wraps `body` as JSON, marked immutable only when the request addressed the
-/// commit by its full sha — `{sha}` also resolves branches, tags, and
-/// abbreviated shas, and those responses are not immutable.
-fn sha_addressed_json<T: Serialize>(immutable: bool, body: T) -> Response {
-    let json = Json(body);
-    if immutable {
-        ([(header::CACHE_CONTROL, IMMUTABLE_CACHE_CONTROL)], json).into_response()
-    } else {
-        json.into_response()
-    }
 }
 
 /// `GET /api/v1/repos/{repo}/commits/{sha}`

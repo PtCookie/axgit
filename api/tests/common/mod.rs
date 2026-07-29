@@ -178,6 +178,19 @@ pub async fn get_json_with_headers(router: Router, uri: &str) -> (StatusCode, He
     (status, headers, json)
 }
 
+/// Sends `GET {uri}` and returns status + headers + raw body bytes
+/// (for non-JSON responses like the raw endpoint).
+pub async fn get_bytes_with_headers(router: Router, uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
+    let response = router
+        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, headers, bytes.to_vec())
+}
+
 /// Writes the cgit agefile (`info/web/last-modified`).
 pub fn write_agefile(repo_dir: &Path, content: &str) {
     let dir = repo_dir.join("info/web");

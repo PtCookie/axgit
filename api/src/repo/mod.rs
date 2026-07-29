@@ -1,10 +1,13 @@
+pub mod blob;
 pub mod commits;
 pub mod diff;
 pub mod meta;
 pub mod open;
+pub mod readme;
 pub mod refs;
 pub mod resolve;
 pub mod scan;
+pub mod tree;
 
 use serde::Serialize;
 

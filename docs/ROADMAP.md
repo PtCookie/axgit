@@ -37,25 +37,36 @@
   - 테스트 헬퍼 `tests/common::commit_all`(다중 파일/삭제/rename/바이너리 커밋 구성),
     `get_json_with_headers` 신설.
 
-## 다음 구현: tree/blob/raw + README
+- `GET /api/v1/repos/{repo}/tree|blob|raw/{ref}/{path...}`, `GET /.../readme?ref=` —
+  파일 브라우징 (`repo/tree.rs`, `blob.rs`, `readme.rs`, `handlers/files.rs`). 확정된 설계:
+  - **`{ref}/{path...}` 분리는 refs 최장 매칭** (`repo/resolve.rs::resolve_ref_path`):
+    브랜치/태그명과 일치하는 최장 선행 세그먼트 열이 ref (git ref 규칙상 유일), 없으면
+    첫 세그먼트를 ref(sha)로 fallback. path의 `.`/`..`/빈 세그먼트는 400.
+  - blob 바이너리 판정은 `Blob::is_binary()` + 비UTF-8도 바이너리 취급. **content 상한
+    1 MiB** (`repo/blob.rs::BLOB_CONTENT_LIMIT`, readme에도 적용). raw는 상한 없음,
+    MIME은 mime_guess 확장자 기반 + 내용 fallback, `nosniff` 부착.
+  - readme는 대소문자 무시 우선순위 탐색, symlink·바이너리·초과 후보는 skip, 없으면 404.
+  - `sha_addressed_json`은 `handlers/mod.rs`로 이동해 공유 (commits와 files 공용).
+    tree entry size는 `odb().read_header()` (내용 로드 없음).
+
+## 다음 구현: archive + Atom feed
 
 ### Context
 
-DECISIONS.md #9 순서(… → log → commit 상세 → **tree** → …)의 다음 단계.
-범위: `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`, `/blob/...`, `/raw/...`, `/readme?ref=`
-(`docs/API.md` 참고).
+DECISIONS.md #9 순서의 다음 단계 (blame은 마지막 고정).
+범위: `GET /api/v1/repos/{repo}/archive/{ref}.{format}` (`tar.gz`|`zip`),
+`GET /api/v1/repos/{repo}/feed.atom` (`docs/API.md` 참고).
 
 ### 착수 시 검토할 것 (전 세션에서 확정하지 않음 — 착수 시점에 설계할 것)
 
-- 스케폴딩에서 유예한 `{ref}/{path...}` 라우팅 모호성(브랜치명의 `/`)을 여기서 실제로 풀어야
-  함 (`api/src/routes.rs`의 wildcard 라우트 주석 참고). refs 목록과 대조해 최장 매칭하는 방식 검토.
-- ref 해석은 `repo/resolve.rs::resolve_commit`, 경로 없음은 `ApiError::PathNotFound` (첫 사용처).
-- blob의 바이너리 판정/`too_large` 상한 수치, raw의 MIME 감지 방식.
-- sha로 주소된 tree/blob 응답의 immutable 헤더는 commit 상세의 `sha_addressed_json` 패턴 재사용.
+- archive는 **`git archive` exec** (CLAUDE.md 하이브리드 방침). spawn/스트리밍 방식과
+  `{ref}.{format}` 파싱 (`.tar.gz`의 이중 확장자), `Content-Disposition` 파일명 규칙.
+- ref 해석 검증 후 exec에 full sha만 넘겨 인젝션 여지 차단 검토.
+- Atom feed는 기본 브랜치 최근 커밋 (`repo/commits.rs::log` 재사용 가능), XML 생성 방식
+  (수동 문자열 vs crate) 결정.
 
 ## 이후 항목 (DECISIONS.md #9 순서, 착수 전 재검토 필요)
 - blame (v1 포함, 구현 순서는 마지막 — API.md 명시).
-- archive(`git archive` exec), Atom feed.
 - Smart HTTP upload-pack (`api/src/smart_http.rs`에 설계 요약만 있음, 현재 501/403 stub만 존재).
 - 이 시점부터 moka 기반 (repo, endpoint, params) 응답 캐시 도입 검토
   (`api/src/cache.rs` 상단 주석 및 `docs/ARCHITECTURE.md#caching` 참고).

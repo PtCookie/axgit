@@ -7,7 +7,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::error::ApiError;
-use crate::handlers::{self, commits, repos};
+use crate::handlers::{self, commits, files, repos};
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
@@ -21,12 +21,13 @@ pub fn build_router(state: AppState) -> Router {
             "/repos/{repo}/commits/{sha}/diff",
             get(commits::get_commit_diff),
         )
-        // ref/path boundary inside the wildcard is resolved by the handler
-        // (branch names may contain `/`), so a single catch-all per view.
-        .route("/repos/{repo}/tree/{*rest}", get(handlers::not_implemented))
-        .route("/repos/{repo}/blob/{*rest}", get(handlers::not_implemented))
-        .route("/repos/{repo}/raw/{*rest}", get(handlers::not_implemented))
-        .route("/repos/{repo}/readme", get(handlers::not_implemented))
+        // ref/path boundary inside the wildcard is resolved per request by
+        // longest-ref matching (branch names may contain `/`), so a single
+        // catch-all per view — see `repo::resolve::resolve_ref_path`.
+        .route("/repos/{repo}/tree/{*rest}", get(files::get_tree))
+        .route("/repos/{repo}/blob/{*rest}", get(files::get_blob))
+        .route("/repos/{repo}/raw/{*rest}", get(files::get_raw))
+        .route("/repos/{repo}/readme", get(files::get_readme))
         .route(
             "/repos/{repo}/blame/{*rest}",
             get(handlers::not_implemented),
