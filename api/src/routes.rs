@@ -15,7 +15,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/repos", get(repos::list_repos))
         .route("/repos/{repo}", get(repos::get_repo))
         .route("/repos/{repo}/refs", get(repos::get_refs))
-        .route("/repos/{repo}/commits", get(handlers::not_implemented))
+        .route("/repos/{repo}/commits", get(repos::list_commits))
         .route(
             "/repos/{repo}/commits/{sha}",
             get(handlers::not_implemented),

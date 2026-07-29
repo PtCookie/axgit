@@ -144,7 +144,7 @@ async fn unimplemented_endpoint_returns_501() {
     let root = setup_fixtures();
 
     let (status, json) =
-        common::get_json(router_for(root.path()), "/api/v1/repos/alpha/commits").await;
+        common::get_json(router_for(root.path()), "/api/v1/repos/alpha/tree/main").await;
 
     assert_eq!(
         (status, json["error"]["code"].as_str()),

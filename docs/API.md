@@ -115,6 +115,20 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 ```
 
 이메일 원문은 노출하지 않고 해시만 제공한다. 프론트엔드가 이 해시를 seed로 로컬 생성 아바타(DiceBear)를 렌더링한다.
+`email_hash`는 trim + lowercase 정규화 후 sha256 (gravatar 방식).
+
+- `ref`: 브랜치/태그/sha, 생략 시 HEAD. 해석 실패 시 `404 ref_not_found`.
+- `limit`: 기본 50, 허용 범위 1–100. **0, 100 초과, 정수가 아닌 값은 `400 invalid_param`** (clamp하지 않음).
+- `cursor`: 이전 응답의 `next_cursor` 값을 그대로 전달. cursor가 주어지면 `ref`는 무시되고
+  해당 커밋부터(**포함**) 걷는다. 형식이 잘못되었거나 존재하지 않는 커밋이면 `400 invalid_param`
+  (opaque 토큰이므로 404가 아님).
+- `next_cursor`: 다음 페이지 첫 커밋의 sha (`path` 필터 적용 후 기준). 더 없으면 `null`.
+- `path`: 파일 또는 디렉터리 경로. 존재하지 않는 경로는 404가 아니라 빈 목록.
+  merge 커밋은 해당 경로가 **모든** 부모와 다를 때만 포함 (`git log -- <path>` 기본
+  simplification의 근사 — side branch의 커밋이 일부 더 보일 수 있음).
+- 빈 저장소(unborn HEAD): `ref` 생략 시 `200` + `{"commits": [], "next_cursor": null}`.
+  명시적 `ref`는 `404 ref_not_found`.
+- `summary`: 커밋 메시지 첫 줄. `summary`/`authored_at`은 non-utf8 메시지·손상된 타임스탬프일 때 `null`.
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}`
 

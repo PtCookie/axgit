@@ -18,7 +18,14 @@ pub const FIXED_DATE: &str = "2026-07-01T12:00:00+09:00";
 
 /// Runs git isolated from host configuration, with fixed author/dates.
 pub fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
+    git_output(dir, args, &[]);
+}
+
+/// Like [`git`], but returns trimmed stdout and lets callers override the
+/// fixed environment (e.g. per-commit `GIT_AUTHOR_DATE`).
+pub fn git_output(dir: &Path, args: &[&str], extra_env: &[(&str, &str)]) -> String {
+    let mut command = Command::new("git");
+    command
         .current_dir(dir)
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null")
@@ -27,15 +34,17 @@ pub fn git(dir: &Path, args: &[&str]) {
         .env("GIT_COMMITTER_NAME", "Test Committer")
         .env("GIT_COMMITTER_EMAIL", "committer@example.com")
         .env("GIT_AUTHOR_DATE", FIXED_DATE)
-        .env("GIT_COMMITTER_DATE", FIXED_DATE)
-        .args(args)
-        .output()
-        .expect("failed to spawn git");
+        .env("GIT_COMMITTER_DATE", FIXED_DATE);
+    for (key, value) in extra_env {
+        command.env(key, value);
+    }
+    let output = command.args(args).output().expect("failed to spawn git");
     assert!(
         output.status.success(),
         "git {args:?} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
 /// Creates `{root}/{name}` as a bare repository with `main` as initial branch.
@@ -83,6 +92,47 @@ pub fn add_commit(bare: &Path, file: &str, content: &str, message: &str) {
         work_path,
         &["push", "--quiet", bare.to_str().unwrap(), "main:main"],
     );
+}
+
+/// One commit of [`commit_history`].
+pub struct CommitSpec {
+    pub file: &'static str,
+    pub content: &'static str,
+    pub message: &'static str,
+    /// RFC 3339, used for both author and committer date.
+    pub date: &'static str,
+}
+
+/// Builds a linear history on the bare repository's `main` from one work repo
+/// (unlike [`add_commit`], which force-pushes a single fresh commit).
+/// Returns commit shas oldest → newest.
+pub fn commit_history(bare: &Path, commits: &[CommitSpec]) -> Vec<String> {
+    let work = tempfile::tempdir().expect("failed to create work dir");
+    let work_path = work.path();
+    git(
+        work_path,
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+    let mut shas = Vec::new();
+    for spec in commits {
+        let file = work_path.join(spec.file);
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent).expect("failed to create parent dirs");
+        }
+        std::fs::write(&file, spec.content).expect("failed to write file");
+        git(work_path, &["add", "."]);
+        git_output(
+            work_path,
+            &["commit", "--quiet", "-m", spec.message],
+            &[
+                ("GIT_AUTHOR_DATE", spec.date),
+                ("GIT_COMMITTER_DATE", spec.date),
+            ],
+        );
+        shas.push(git_output(work_path, &["rev-parse", "HEAD"], &[]));
+    }
+    git(work_path, &["push", "--quiet", "origin", "HEAD:main"]);
+    shas
 }
 
 /// Creates branch `{name}` pointing at `main` in the bare repository.

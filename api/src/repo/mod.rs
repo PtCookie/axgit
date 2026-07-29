@@ -1,6 +1,8 @@
+pub mod commits;
 pub mod meta;
 pub mod open;
 pub mod refs;
+pub mod resolve;
 pub mod scan;
 
 use serde::Serialize;

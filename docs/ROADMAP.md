@@ -12,28 +12,34 @@
   per-repo 엔드포인트가 사용할 것), `repo/refs.rs::list_refs`, `meta.rs`의
   `git_time_to_zoned`/`format_rfc3339` 공유. 핸들러의 git2 작업은 `spawn_blocking`으로 감싼다
   (이후 엔드포인트도 동일하게). ETag/Cache-Control은 유예(아래 캐시 항목 참고).
+- `GET /api/v1/repos/{repo}/commits` — 커밋 로그 (`repo/commits.rs::log`). 확정된 설계:
+  - **ref 해석 공통 헬퍼 `repo/resolve.rs::resolve_commit`** (브랜치/태그/sha → Commit,
+    실패는 전부 `RefNotFound`). 이후 tree/blob/raw가 재사용할 것.
+    git2 에러를 bare `?`로 올리면 500이 되므로 사용자 입력 유래 호출은 반드시 `map_err`.
+  - cursor는 inclusive이며 `ref`를 무시. 잘못된 cursor는 400 (opaque 토큰). `limit` 초과는
+    400 (clamp 안 함, API.md 명시).
+  - `path` 필터는 git2 tree entry-id 비교 (`git log` exec 아님). merge는 모든 부모와 다를 때만
+    포함 — git log simplification의 근사. 긴 히스토리에서 드물게 변경되는 경로는 walk가 길어질
+    수 있음: 성능 문제가 생기면 `git log` exec fallback으로 전환 검토.
+  - `email_hash` = sha256(trim + lowercase). 테스트 헬퍼 `tests/common::commit_history`
+    (다중 커밋 히스토리, 커밋별 고정 날짜) 신설.
 
-## 다음 구현: 커밋 로그
+## 다음 구현: 커밋 상세 + diff
 
 ### Context
 
-DECISIONS.md #9 순서(index → summary → refs → **log** → tree → …)의 다음 단계.
-범위: `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=` (`docs/API.md` 참고).
-커밋 상세(`/commits/{sha}`)와 diff는 범위가 크므로 별도 단계로 나눈다.
+DECISIONS.md #9 순서(index → summary → refs → log → **commit 상세** → tree → …)의 다음 단계.
+범위: `GET /api/v1/repos/{repo}/commits/{sha}`, `GET /.../commits/{sha}/diff?path=` (`docs/API.md` 참고).
 
 ### 착수 시 검토할 것 (전 세션에서 확정하지 않음 — 착수 시점에 설계할 것)
 
-- `ref` 파라미터 해석(브랜치/태그/sha → commit)을 공통 헬퍼로: 이후 tree/blob/raw가 재사용.
-  실패 시 `ApiError::RefNotFound`.
-- cursor 페이지네이션: cursor = 커밋 sha, `revwalk`를 cursor부터 시작해 `limit + 1`개 걷고
-  마지막을 `next_cursor`로. `limit` 기본 50, 최대 100 (초과 시 400 또는 clamp — API.md에 명시).
-- `path` 필터: libgit2 revwalk에는 pathspec 필터가 없어 diff 검사로 직접 구현하거나
-  `git log` exec로 처리. 성능 특성을 보고 결정 (Gitea식 하이브리드 허용).
-- `author.email_hash`(sha256) — 이메일 원문 비노출 (API.md).
+- `{sha}` 해석은 `repo/resolve.rs::resolve_commit` 재사용 (완성된 커밋 로그 단계에서 신설됨).
+- diffstat/diff 생성: git2 `diff_tree_to_tree` vs `git diff-tree` exec — 대형 diff의
+  메모리/시간 특성을 보고 결정. 바이너리/대용량 파일 처리 방침 포함.
+- 커밋 sha가 URL에 있으므로 immutable 캐시 헤더 대상 (API.md 캐싱 규약) — 단, ETag 일괄 도입
+  시점에 맞출지 여기서 먼저 넣을지 판단.
 
 ## 이후 항목 (DECISIONS.md #9 순서, 착수 전 재검토 필요)
-
-- 커밋 상세 + diff (`GET /commits/{sha}`, `/commits/{sha}/diff`).
 - tree/blob/raw + README — 스케폴딩에서 유예한 `{ref}/{path...}` 라우팅 모호성(브랜치명의 `/`)을
   여기서 실제로 풀어야 함 (`api/src/routes.rs`의 wildcard 라우트 주석 참고).
 - blame (v1 포함, 구현 순서는 마지막 — API.md 명시).
