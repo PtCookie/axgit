@@ -4,7 +4,7 @@ use git2::{Commit, Oid, Repository};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use super::meta;
+use super::{diff, meta};
 use crate::error::ApiError;
 
 /// Commit author of `GET /api/v1/repos/{repo}/commits` (docs/API.md).
@@ -33,6 +33,38 @@ pub struct CommitsPage {
     pub commits: Vec<CommitInfo>,
     /// Sha of the first commit of the next page; `null` on the last page.
     pub next_cursor: Option<String>,
+}
+
+/// Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).
+/// Superset of [`CommitInfo`] so the frontend can extend the log entry type.
+#[derive(Debug, Serialize)]
+pub struct CommitDetail {
+    pub sha: String,
+    pub summary: Option<String>,
+    /// Full commit message. `None` for non-utf8 messages.
+    pub message: Option<String>,
+    pub author: CommitAuthor,
+    pub committer: CommitAuthor,
+    pub authored_at: Option<String>,
+    pub committed_at: Option<String>,
+    pub parents: Vec<String>,
+    /// First-parent diffstat (docs/API.md).
+    pub diffstat: diff::DiffStat,
+}
+
+/// Builds the commit detail response, including the first-parent diffstat.
+pub fn detail(repo: &Repository, commit: &Commit) -> Result<CommitDetail, ApiError> {
+    Ok(CommitDetail {
+        sha: commit.id().to_string(),
+        summary: commit.summary().map(str::to_owned),
+        message: commit.message().map(str::to_owned),
+        author: signature_info(&commit.author()),
+        committer: signature_info(&commit.committer()),
+        authored_at: time_rfc3339(commit.author().when()),
+        committed_at: time_rfc3339(commit.committer().when()),
+        parents: commit.parent_ids().map(|id| id.to_string()).collect(),
+        diffstat: diff::diffstat(repo, commit)?,
+    })
 }
 
 /// Walks history from `start` (inclusive) and returns up to `limit` commits,
@@ -69,19 +101,24 @@ pub fn log(
 }
 
 fn commit_info(commit: &Commit) -> CommitInfo {
-    let author = commit.author();
-    let authored_at =
-        meta::git_time_to_zoned(author.when()).map(|zoned| meta::format_rfc3339(&zoned));
     CommitInfo {
         sha: commit.id().to_string(),
         summary: commit.summary().map(str::to_owned),
-        author: CommitAuthor {
-            name: String::from_utf8_lossy(author.name_bytes()).into_owned(),
-            email_hash: email_hash(author.email_bytes()),
-        },
-        authored_at,
+        author: signature_info(&commit.author()),
+        authored_at: time_rfc3339(commit.author().when()),
         parents: commit.parent_ids().map(|id| id.to_string()).collect(),
     }
+}
+
+fn signature_info(signature: &git2::Signature) -> CommitAuthor {
+    CommitAuthor {
+        name: String::from_utf8_lossy(signature.name_bytes()).into_owned(),
+        email_hash: email_hash(signature.email_bytes()),
+    }
+}
+
+fn time_rfc3339(time: git2::Time) -> Option<String> {
+    meta::git_time_to_zoned(time).map(|zoned| meta::format_rfc3339(&zoned))
 }
 
 /// Whether the commit changed `path` relative to its parents. Approximates

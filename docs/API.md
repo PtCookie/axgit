@@ -26,8 +26,11 @@ web ↔ api 간 유일한 계약 문서. 엔드포인트를 추가/변경하는 
 
 ### 캐싱 헤더
 
-- 커밋 sha가 URL에 포함된 응답(불변): `Cache-Control: public, max-age=31536000, immutable`
+- 커밋 sha가 URL에 포함된 응답(불변): `Cache-Control: public, max-age=31536000, immutable`.
+  `{sha}` 자리에는 브랜치/태그/축약 sha도 올 수 있으므로, **요청 경로의 값이 해석된 커밋의
+  full sha와 정확히 일치할 때만** 이 헤더가 붙는다 (commit 상세/diff에 구현됨).
 - 그 외: `ETag`(해당 repo HEAD sha 기반) + `Cache-Control: no-cache`, 조건부 요청 시 304
+  — **미구현**, 응답 캐시 도입 시점에 일괄 구현 예정 (ROADMAP 참고).
 
 ### 페이지네이션 (commit log)
 
@@ -132,12 +135,76 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}`
 
-커밋 상세: 전체 메시지, 부모, diffstat(파일별 additions/deletions/status).
+커밋 상세: 전체 메시지, author/committer, 부모, diffstat. 로그 항목의 상위집합
+(`sha`/`summary`/`author`/`authored_at`/`parents`는 동일 규약).
+
+```json
+{
+  "sha": "<full sha>",
+  "summary": "fix: update a",
+  "message": "fix: update a\n\nfull body\n",
+  "author": { "name": "...", "email_hash": "<sha256>" },
+  "committer": { "name": "...", "email_hash": "<sha256>" },
+  "authored_at": "2026-07-01T14:00:00+09:00",
+  "committed_at": "2026-07-01T14:00:00+09:00",
+  "parents": ["<sha>"],
+  "diffstat": {
+    "files": [
+      { "path": "a.txt", "old_path": null, "status": "modified",
+        "additions": 3, "deletions": 1, "binary": false }
+    ],
+    "files_changed": 1, "total_additions": 3, "total_deletions": 1
+  }
+}
+```
+
+- `{sha}`: 브랜치/태그/sha (ref 파라미터와 동일 규약). 해석 실패 시 `404 ref_not_found`.
+- diff 기준은 **첫 부모**: merge 커밋도 첫 부모와의 diff만 보여준다. root 커밋은 empty tree와
+  비교하므로 전 파일 `added`.
+- `status`: `added` | `deleted` | `modified` | `renamed` | `copied` | `typechange`.
+  rename 감지는 libgit2 기본값(유사도 50%). `old_path`는 `renamed`/`copied`일 때만 non-null.
+- 바이너리 파일은 `binary: true`에 `additions`/`deletions`는 0.
+- `message`/`summary`는 non-utf8 메시지일 때 `null`. diffstat에는 파일 수 상한이 없다.
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}/diff?path=`
 
-unified diff를 구조화한 JSON (파일 → hunk → line 배열, line별 origin `+`/`-`/` `).
-`path`로 단일 파일 diff 제한 가능. 대형 diff는 파일당 라인 수 상한 후 `truncated: true`.
+unified diff를 구조화한 JSON (파일 → hunk → line). 파일 레벨 필드는 diffstat 항목과 동일 규약.
+
+```json
+{
+  "sha": "<full sha>",
+  "parent": "<첫 부모 sha | null(root 커밋)>",
+  "truncated": false,
+  "files": [
+    {
+      "path": "a.txt", "old_path": null, "status": "modified",
+      "additions": 1, "deletions": 1, "binary": false, "truncated": false,
+      "hunks": [
+        {
+          "header": "@@ -1,2 +1,2 @@",
+          "old_start": 1, "old_lines": 2, "new_start": 1, "new_lines": 2,
+          "lines": [
+            { "origin": " ", "content": "one",   "old_lineno": 1, "new_lineno": 1 },
+            { "origin": "-", "content": "two",   "old_lineno": 2, "new_lineno": null },
+            { "origin": "+", "content": "three", "old_lineno": null, "new_lineno": 2 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+- diff 기준(첫 부모, root는 empty tree), `status`/rename/`old_path` 규약은 커밋 상세와 동일.
+- `origin`: `"+"` | `"-"` | `" "`만. libgit2의 기타 origin(EOF 개행 마커 등)은 제외된다.
+  `content`는 후행 개행 제거, `old_lineno`/`new_lineno`는 해당 없는 쪽이 `null`.
+- **대형 diff 상한**: 파일당 렌더 라인 1000줄 — 초과 시 hunk 단위로 잘라내고 파일의
+  `truncated: true` (hunk를 중간에서 자르지 않으므로, 단일 hunk가 1000줄을 넘으면 `hunks`가
+  빌 수 있다). 파일 수는 300개 — 초과분은 생략하고 최상위 `truncated: true` (전체 파일 목록은
+  커밋 상세의 diffstat 참조). `additions`/`deletions`는 truncation과 무관하게 전체 값.
+- 바이너리 파일은 `binary: true` + `hunks: []`.
+- `path`: 단일 파일 경로로 diff 제한 (리터럴 매칭, glob 미지원). 존재하지 않거나 이 커밋에서
+  변경되지 않은 경로는 404가 아니라 `files: []`.
 
 ### `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
 

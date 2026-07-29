@@ -1,4 +1,5 @@
 pub mod commits;
+pub mod diff;
 pub mod meta;
 pub mod open;
 pub mod refs;

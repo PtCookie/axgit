@@ -1,3 +1,4 @@
+pub mod commits;
 pub mod repos;
 
 use axum::http::StatusCode;

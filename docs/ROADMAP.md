@@ -23,25 +23,37 @@
     수 있음: 성능 문제가 생기면 `git log` exec fallback으로 전환 검토.
   - `email_hash` = sha256(trim + lowercase). 테스트 헬퍼 `tests/common::commit_history`
     (다중 커밋 히스토리, 커밋별 고정 날짜) 신설.
+- `GET /api/v1/repos/{repo}/commits/{sha}`, `GET /.../commits/{sha}/diff?path=` — 커밋 상세 +
+  구조화 diff (`repo/diff.rs`, `handlers/commits.rs` 신설 — commits 관련 핸들러는 `list_commits`
+  포함 이쪽으로 이동, 이후 엔드포인트도 리소스별 핸들러 파일로 분할). 확정된 설계:
+  - diff는 git2 `diff_tree_to_tree` + **첫 부모 기준** (merge 포함, root는 empty tree).
+    rename 감지는 `find_similar` libgit2 기본값. exec fallback은 병목 확인 시로 유예.
+  - 상한: 파일당 렌더 1000줄(hunk 단위 절단), diff 응답 파일 300개. 초과 시 `truncated: true`,
+    `additions`/`deletions`는 항상 전체 값. 바이너리는 `binary: true` + `hunks: []`.
+  - `?path=`는 리터럴 pathspec, 미존재/미변경 경로는 `files: []` (log의 빈 결과 선례 유지;
+    `PathNotFound`는 tree/blob용으로 남김).
+  - **immutable Cache-Control 선반영**: 요청의 `{sha}`가 해석된 full sha와 문자열 일치할 때만
+    부착 (`handlers/commits.rs::sha_addressed_json`). ETag/응답 캐시 일괄 도입은 여전히 유예.
+  - 테스트 헬퍼 `tests/common::commit_all`(다중 파일/삭제/rename/바이너리 커밋 구성),
+    `get_json_with_headers` 신설.
 
-## 다음 구현: 커밋 상세 + diff
+## 다음 구현: tree/blob/raw + README
 
 ### Context
 
-DECISIONS.md #9 순서(index → summary → refs → log → **commit 상세** → tree → …)의 다음 단계.
-범위: `GET /api/v1/repos/{repo}/commits/{sha}`, `GET /.../commits/{sha}/diff?path=` (`docs/API.md` 참고).
+DECISIONS.md #9 순서(… → log → commit 상세 → **tree** → …)의 다음 단계.
+범위: `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`, `/blob/...`, `/raw/...`, `/readme?ref=`
+(`docs/API.md` 참고).
 
 ### 착수 시 검토할 것 (전 세션에서 확정하지 않음 — 착수 시점에 설계할 것)
 
-- `{sha}` 해석은 `repo/resolve.rs::resolve_commit` 재사용 (완성된 커밋 로그 단계에서 신설됨).
-- diffstat/diff 생성: git2 `diff_tree_to_tree` vs `git diff-tree` exec — 대형 diff의
-  메모리/시간 특성을 보고 결정. 바이너리/대용량 파일 처리 방침 포함.
-- 커밋 sha가 URL에 있으므로 immutable 캐시 헤더 대상 (API.md 캐싱 규약) — 단, ETag 일괄 도입
-  시점에 맞출지 여기서 먼저 넣을지 판단.
+- 스케폴딩에서 유예한 `{ref}/{path...}` 라우팅 모호성(브랜치명의 `/`)을 여기서 실제로 풀어야
+  함 (`api/src/routes.rs`의 wildcard 라우트 주석 참고). refs 목록과 대조해 최장 매칭하는 방식 검토.
+- ref 해석은 `repo/resolve.rs::resolve_commit`, 경로 없음은 `ApiError::PathNotFound` (첫 사용처).
+- blob의 바이너리 판정/`too_large` 상한 수치, raw의 MIME 감지 방식.
+- sha로 주소된 tree/blob 응답의 immutable 헤더는 commit 상세의 `sha_addressed_json` 패턴 재사용.
 
 ## 이후 항목 (DECISIONS.md #9 순서, 착수 전 재검토 필요)
-- tree/blob/raw + README — 스케폴딩에서 유예한 `{ref}/{path...}` 라우팅 모호성(브랜치명의 `/`)을
-  여기서 실제로 풀어야 함 (`api/src/routes.rs`의 wildcard 라우트 주석 참고).
 - blame (v1 포함, 구현 순서는 마지막 — API.md 명시).
 - archive(`git archive` exec), Atom feed.
 - Smart HTTP upload-pack (`api/src/smart_http.rs`에 설계 요약만 있음, 현재 501/403 stub만 존재).

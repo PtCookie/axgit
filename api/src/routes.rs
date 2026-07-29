@@ -7,7 +7,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::error::ApiError;
-use crate::handlers::{self, repos};
+use crate::handlers::{self, commits, repos};
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
@@ -15,14 +15,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/repos", get(repos::list_repos))
         .route("/repos/{repo}", get(repos::get_repo))
         .route("/repos/{repo}/refs", get(repos::get_refs))
-        .route("/repos/{repo}/commits", get(repos::list_commits))
-        .route(
-            "/repos/{repo}/commits/{sha}",
-            get(handlers::not_implemented),
-        )
+        .route("/repos/{repo}/commits", get(commits::list_commits))
+        .route("/repos/{repo}/commits/{sha}", get(commits::get_commit))
         .route(
             "/repos/{repo}/commits/{sha}/diff",
-            get(handlers::not_implemented),
+            get(commits::get_commit_diff),
         )
         // ref/path boundary inside the wildcard is resolved by the handler
         // (branch names may contain `/`), so a single catch-all per view.

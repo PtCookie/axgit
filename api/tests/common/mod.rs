@@ -8,7 +8,7 @@ use std::process::Command;
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{HeaderMap, Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
@@ -135,6 +135,15 @@ pub fn commit_history(bare: &Path, commits: &[CommitSpec]) -> Vec<String> {
     shas
 }
 
+/// Stages everything in the work repo and commits it; returns the new sha.
+/// For histories the [`CommitSpec`] helpers cannot express (multi-file,
+/// deletions, renames, binaries) — pair with a `git clone` of the bare repo.
+pub fn commit_all(work_path: &Path, message: &str) -> String {
+    git(work_path, &["add", "-A"]);
+    git(work_path, &["commit", "--quiet", "-m", message]);
+    git_output(work_path, &["rev-parse", "HEAD"], &[])
+}
+
 /// Creates branch `{name}` pointing at `main` in the bare repository.
 pub fn add_branch(bare: &Path, name: &str) {
     git(bare, &["branch", name, "main"]);
@@ -152,14 +161,21 @@ pub fn add_annotated_tag(bare: &Path, name: &str, message: &str) {
 
 /// Sends `GET {uri}` to the router and returns status + parsed JSON body.
 pub async fn get_json(router: Router, uri: &str) -> (StatusCode, Value) {
+    let (status, _, json) = get_json_with_headers(router, uri).await;
+    (status, json)
+}
+
+/// Like [`get_json`], but also returns response headers (e.g. `Cache-Control`).
+pub async fn get_json_with_headers(router: Router, uri: &str) -> (StatusCode, HeaderMap, Value) {
     let response = router
         .oneshot(Request::get(uri).body(Body::empty()).unwrap())
         .await
         .unwrap();
     let status = response.status();
+    let headers = response.headers().clone();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let json = serde_json::from_slice(&bytes).expect("response body is not JSON");
-    (status, json)
+    (status, headers, json)
 }
 
 /// Writes the cgit agefile (`info/web/last-modified`).
