@@ -110,3 +110,20 @@ Astro 내장 Shiki/markdown은 빌드 타임 전용이므로 런타임 데이터
 - stdin 쓰기는 별도 task로 분리해 write/read 데드락 가능성을 차단, stdout은 스트리밍.
 - moka 응답 캐시 + ETag 일괄 도입은 이 작업에 묶지 않고 다음 작업으로 분리했다
   (Smart HTTP 응답은 no-cache라 캐시와 직교).
+
+## #14 blame: git2 `blame_file` (exec 아님)
+
+- ROADMAP에 "vs `git blame` exec 중 벤치 후 결정"으로 유예했던 항목을 **git2 `blame_file`**로
+  확정. 근거: (1) ARCHITECTURE.md가 이미 blame을 git2 담당 목록에 명시, (2) exec 방식과 달리
+  경로가 커맨드라인 인자로 전혀 노출되지 않는다(archive/Smart HTTP는 인젝션 차단을 위해
+  "exec에는 해석된 sha만" 원칙을 지키는데, blame은 애초에 exec가 아니므로 그 제약 자체가
+  불필요), (3) `git blame --line-porcelain` 출력 파서를 새로 작성하는 비용 대비 git2 API가
+  hunk 단위 구조체를 직접 제공. 별도 벤치마크는 하지 않았다 — 대형 히스토리에서 libgit2가
+  느리다고 확인되면 (log의 path 필터와 동일한 우려) exec fallback을 그때 재검토한다.
+- 바이너리/1 MiB 초과 판정은 blob 엔드포인트와 동일 상한을 재사용 (`blob::BLOB_CONTENT_LIMIT`,
+  `classify` 헬퍼로 공유) — 사용자 입장에서 "이 파일은 볼 수 없다"는 판단 기준이 blob/blame
+  간에 갈릴 이유가 없다.
+- range마다 커밋 `summary`를 포함시킨다 (커밋을 이미 조회하므로 추가 비용이 거의 없고,
+  blame 거터를 그리는 프론트가 커밋 상세 API를 range 개수만큼 부르는 걸 막는다).
+- rename 추적(`git blame --follow` 상당)은 도입하지 않는다 — libgit2 기본 옵션 그대로
+  파일 내 이동만 반영. 커밋 상세/diff의 rename 감지(#8 이전부터의 기존 방침)와는 별개 결정.

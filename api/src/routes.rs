@@ -5,7 +5,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::error::ApiError;
-use crate::handlers::{self, archive, commits, feed, files, repos};
+use crate::handlers::{archive, commits, feed, files, repos};
 use crate::smart_http;
 use crate::state::AppState;
 
@@ -27,10 +27,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/repos/{repo}/blob/{*rest}", get(files::get_blob))
         .route("/repos/{repo}/raw/{*rest}", get(files::get_raw))
         .route("/repos/{repo}/readme", get(files::get_readme))
-        .route(
-            "/repos/{repo}/blame/{*rest}",
-            get(handlers::not_implemented),
-        )
+        .route("/repos/{repo}/blame/{*rest}", get(files::get_blame))
         .route("/repos/{repo}/archive/{*rest}", get(archive::get_archive))
         .route("/repos/{repo}/feed.atom", get(feed::get_feed));
 

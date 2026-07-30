@@ -282,7 +282,38 @@ README 탐색 후 `{ "path": "...", "format": "markdown|rst|plain", "content": "
 
 ### `GET /api/v1/repos/{repo}/blame/{ref}/{path...}`
 
-라인 범위별 `{ start_line, line_count, sha, author, authored_at }` 배열. v1 범위에 포함하되 구현 순서는 마지막.
+라인 범위별 attribution. `{ref}/{path...}` 분리, 404/400 규약은 tree/blob/raw와 동일
+(refs 최장 매칭, `.`/`..`/빈 세그먼트는 400, 경로 없음/디렉토리는 404).
+
+```json
+{
+  "sha": "<resolved full sha>",
+  "path": "src/main.rs",
+  "binary": false,
+  "too_large": false,
+  "lines": 12,
+  "ranges": [
+    {
+      "start_line": 1, "line_count": 3, "sha": "<commit sha>",
+      "summary": "feat: initial", "author": { "name": "...", "email_hash": "<sha256>" },
+      "authored_at": "2026-07-01T12:00:00+09:00"
+    }
+  ]
+}
+```
+
+- `ranges`는 `start_line` 오름차순(1-based)이며 파일 전체를 빈틈없이 덮는다. `lines`는 그 총합.
+- 바이너리(libgit2 NUL 휴리스틱 또는 비UTF-8)는 `binary: true`, **1 MiB 초과는 `too_large: true`**
+  (blob의 `BLOB_CONTENT_LIMIT`과 동일 상한) — 두 경우 모두 `ranges: []` + `lines: 0`.
+  빈 파일도 `ranges: []` + `lines: 0`.
+- `summary`는 non-utf8 커밋 메시지일 때, `authored_at`은 표현 불가 시각일 때 `null`
+  (커밋 로그와 동일 규약). `author.email_hash`도 커밋 로그와 동일 규칙(sha256 of trimmed+lowercased email).
+- rename/copy 추적은 하지 않는다 — 파일 내에서 옮겨진 줄만 libgit2 기본값대로 원 커밋에 귀속.
+- 구현은 **git2 `Repository::blame_file`** (exec 아님) — 경로가 커맨드라인에 닿지 않고
+  ARCHITECTURE.md가 이미 blame을 git2 담당으로 명시. 대형 히스토리에서 느릴 경우
+  `git blame --line-porcelain` exec fallback은 후속 검토 대상 (도입 안 됨).
+- 캐싱은 tree/blob과 동일: `{ref}`가 해석된 full sha와 문자열 일치하면 immutable
+  Cache-Control, 그 외는 ETag(검증자 기반) + `no-cache` + 304.
 
 ### `GET /api/v1/repos/{repo}/archive/{ref}.{format}`
 

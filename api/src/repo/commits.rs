@@ -9,7 +9,7 @@ use crate::error::ApiError;
 
 /// Commit author of `GET /api/v1/repos/{repo}/commits` (docs/API.md).
 /// The raw email is never exposed; `email_hash` seeds locally generated avatars.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CommitAuthor {
     pub name: String,
     /// sha256 hex of the trimmed, lowercased author email.
@@ -110,14 +110,14 @@ fn commit_info(commit: &Commit) -> CommitInfo {
     }
 }
 
-fn signature_info(signature: &git2::Signature) -> CommitAuthor {
+pub(crate) fn signature_info(signature: &git2::Signature) -> CommitAuthor {
     CommitAuthor {
         name: String::from_utf8_lossy(signature.name_bytes()).into_owned(),
         email_hash: email_hash(signature.email_bytes()),
     }
 }
 
-fn time_rfc3339(time: git2::Time) -> Option<String> {
+pub(crate) fn time_rfc3339(time: git2::Time) -> Option<String> {
     meta::git_time_to_zoned(time).map(|zoned| meta::format_rfc3339(&zoned))
 }
 

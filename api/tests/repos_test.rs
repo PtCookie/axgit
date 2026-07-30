@@ -125,20 +125,6 @@ async fn list_repos_returns_null_fields_for_empty_repo() {
 }
 
 #[tokio::test]
-async fn unimplemented_endpoint_returns_501() {
-    let root = setup_fixtures();
-
-    let (status, json) =
-        common::get_json(router_for(root.path()), "/api/v1/repos/alpha/blame/main/a").await;
-
-    assert_eq!(
-        (status, json["error"]["code"].as_str()),
-        (StatusCode::NOT_IMPLEMENTED, Some("not_implemented")),
-        "unexpected response: {json}"
-    );
-}
-
-#[tokio::test]
 async fn receive_pack_returns_403_read_only() {
     let root = setup_fixtures();
 

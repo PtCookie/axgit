@@ -10,7 +10,7 @@ use super::{
     not_modified, validator_etag,
 };
 use crate::error::ApiError;
-use crate::repo::{blob, meta, open, readme, resolve, tree};
+use crate::repo::{blame, blob, meta, open, readme, resolve, tree};
 use crate::state::AppState;
 
 /// `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
@@ -125,6 +125,29 @@ pub async fn get_raw(
         }
     }
     Ok(response)
+}
+
+/// `GET /api/v1/repos/{repo}/blame/{ref}/{path...}`
+pub async fn get_blame(
+    State(state): State<AppState>,
+    Path((name, rest)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let params = format!("rest={rest}");
+    cached_response(
+        &state,
+        &name,
+        "blame",
+        params,
+        JSON_CONTENT_TYPE,
+        &headers,
+        move |repo| {
+            let split = resolve::resolve_ref_path(repo, &rest)?;
+            let info = blame::blame_file(repo, &split.commit, &split.path)?;
+            Ok((split.refname == info.sha, serde_json::to_vec(&info)?))
+        },
+    )
+    .await
 }
 
 #[derive(Deserialize)]

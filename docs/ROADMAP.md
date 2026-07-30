@@ -97,17 +97,37 @@
   - 후속 검토: cursor·full-sha `ref`로 조회한 commits 페이지도 사실상 불변이므로 immutable
     승격 여지가 있으나, "sha가 URL 경로에 포함"이라는 API.md 계약을 바꾸게 되어 보류.
 
-## 다음 구현: blame
+- `GET /api/v1/repos/{repo}/blame/{ref}/{path...}` — 라인 범위별 attribution
+  (`repo/blame.rs`, `handlers/files.rs::get_blame`). v1 범위의 마지막 엔드포인트
+  (DECISIONS #9, #14). 확정된 설계:
+  - **git2 `Repository::blame_file`** 채택 (exec 아님) — 경로가 커맨드라인에 닿지 않고,
+    ARCHITECTURE.md가 이미 blame을 git2 담당으로 명시. 벤치 없이 채택; 대형 히스토리에서
+    병목이 확인되면 `git blame --line-porcelain` exec fallback을 후속 검토.
+  - `{ref}/{path...}` 분리는 기존 `repo/resolve.rs::resolve_ref_path` 재사용.
+  - 바이너리/1 MiB 초과는 `blob::classify`(blob 판정 로직을 `blob_at`/`classify`로 추출해 공유)로
+    걸러 `ranges: []` + `lines: 0`. 빈 파일도 동일 — libgit2가 반환하는 0-line 훙크를 걸러낸다.
+  - hunk마다 `final_commit_id()`로 커밋을 1회만 조회해 `summary`/`author`/`authored_at` 캐시
+    (`HashMap<Oid, _>`) — 같은 커밋이 여러 range에 등장해도 재조회하지 않는다. `CommitAuthor`에
+    `Clone` 추가, `commits.rs::signature_info`/`time_rfc3339` 공개해 재사용.
+  - 캐싱은 tree/blob과 동일하게 `cached_response`로 (sha-addressed면 immutable).
+  - 후속 검토: `git blame --follow`(rename 추적)는 도입하지 않음 — 필요해지면 exec fallback과
+    함께 재검토.
+
+## 다음 구현: web 스캐폴딩
 
 ### Context
 
-v1 범위의 마지막 엔드포인트 (DECISIONS #9, API.md에 구현 순서 마지막으로 명시).
+api의 v1 엔드포인트 표면이 완성되었다 (DECISIONS #9 전체 완료). `web/` 디렉토리가 아직
+없으므로 프론트엔드를 처음부터 세운다.
 
 ### 착수 시 검토할 것
 
-- `GET /api/v1/repos/{repo}/blame/{ref}/{path...}` — 라인 범위별
-  `{ start_line, line_count, sha, author, authored_at }` 배열 (API.md).
-- `{ref}/{path...}` 분리는 기존 `repo/resolve.rs::resolve_ref_path` 재사용.
-- git2 `Repository::blame_file` vs `git blame` exec 중 선택 (커밋 log의 path 필터처럼
-  libgit2가 느릴 수 있음 — 벤치 후 결정). 대용량 파일 상한 정책도 함께 정할 것.
-- 응답은 `handlers/mod.rs::cached_response`로 캐시 (sha-addressed면 immutable).
+- ARCHITECTURE.md의 프론트엔드 절 그대로: Astro **static** 모드 + React islands + shadcn/ui
+  + Tailwind. SSR adapter 추가 금지 (배포 형태 변경, 별도 논의 필요).
+- 라우트: `/`(저장소 목록), `/{repo}/`(summary), `/{repo}/log`, `/{repo}/tree/[...path]`,
+  `/{repo}/blob/[...path]`, `/{repo}/commit/{sha}`, `/{repo}/refs`, `/{repo}/blame/[...path]`.
+  ref 선택은 URL 쿼리 `?ref=`로 통일.
+- API 응답 타입은 `web/src/lib/api/types.ts`에 수동 정의, `docs/API.md`와 동기화 (코드 생성
+  도입 전까지). 첫 커밋에서 fetch 클라이언트 + 저장소 목록 페이지 정도의 최소 뼈대로 시작 검토.
+- shadcn/ui 컴포넌트는 `web/src/components/ui/`에 생성(vendored, 수정 가능).
+- vitest + Testing Library, fetch mocking / fixture JSON으로 테스트.

@@ -33,7 +33,7 @@ pub struct RawBlob {
 
 /// Looks up `path` as a blob (regular file or symlink). Missing paths, trees,
 /// and submodules are all `PathNotFound`.
-fn blob_at<'r>(
+pub(crate) fn blob_at<'r>(
     repo: &'r Repository,
     commit: &Commit,
     path: &str,
@@ -55,21 +55,23 @@ fn blob_at<'r>(
     Ok((blob, mode))
 }
 
+/// Binary/too-large classification shared by the blob, raw, and blame reads.
+/// `too_large` short-circuits the utf8 check (large content is never
+/// inlined, so its text-ness does not matter).
+pub(crate) fn classify(blob: &Blob) -> (bool, bool) {
+    let too_large = blob.content().len() > BLOB_CONTENT_LIMIT;
+    let binary = blob.is_binary() || (!too_large && std::str::from_utf8(blob.content()).is_err());
+    (binary, too_large)
+}
+
 pub fn read_blob(repo: &Repository, commit: &Commit, path: &str) -> Result<BlobInfo, ApiError> {
     let (blob, mode) = blob_at(repo, commit, path)?;
     let bytes = blob.content();
-    let too_large = bytes.len() > BLOB_CONTENT_LIMIT;
-    let (binary, content) = if blob.is_binary() {
-        (true, None)
-    } else if too_large {
-        (false, None)
-    } else {
-        match std::str::from_utf8(bytes) {
-            Ok(text) => (false, Some(text.to_owned())),
-            // Not representable as a JSON string; treat like binary content.
-            Err(_) => (true, None),
-        }
-    };
+    let (binary, too_large) = classify(&blob);
+    let content = (!binary && !too_large).then(|| {
+        // Safe: `classify` already confirmed this is valid utf8 when not binary/too_large.
+        String::from_utf8_lossy(bytes).into_owned()
+    });
     Ok(BlobInfo {
         sha: commit.id().to_string(),
         path: path.to_owned(),

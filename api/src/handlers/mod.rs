@@ -9,7 +9,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
 use crate::cache::{CachedResponse, MAX_CACHEABLE_BODY, ResponseKey};
-use crate::error::{ApiError, error_json};
+use crate::error::ApiError;
 use crate::repo::meta::Validator;
 use crate::repo::{meta, open};
 use crate::state::AppState;
@@ -249,15 +249,6 @@ pub(crate) fn etag_response(
 
 fn header_value(value: &str) -> HeaderValue {
     HeaderValue::from_str(value).expect("generated header values are ASCII")
-}
-
-/// Placeholder for endpoints defined in docs/API.md but not implemented yet.
-pub async fn not_implemented() -> Response {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        error_json("not_implemented", "endpoint not implemented yet"),
-    )
-        .into_response()
 }
 
 #[cfg(test)]
