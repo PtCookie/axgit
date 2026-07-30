@@ -96,6 +96,8 @@ immutable 여부가 ref 해석 후에야 결정되고, params 정규화와 conte
 
 - 멀티스테이지 Dockerfile: ① node:alpine에서 `pnpm --filter web build` → ② rust:alpine에서
   `cargo build --release` → ③ alpine 런타임: git 바이너리 + api 바이너리 + web/dist.
+  ①에서는 루트 `package.json`/`pnpm-workspace.yaml`/`pnpm-lock.yaml` + `web/package.json`을 먼저
+  COPY해 `pnpm install --frozen-lockfile`을 레이어 캐시에 태운 뒤 나머지 소스를 COPY한다.
 - 런타임 이미지에 필요한 패키지: `git`(exec용), `ca-certificates`. Python/pygments/groff 등 cgit 필터 의존성은 전부 불필요.
 - 설정은 환경변수: `AXGIT_REPO_ROOT`, `AXGIT_STATIC_DIR`, `AXGIT_LISTEN`(기본 `0.0.0.0:8080`),
   `AXGIT_CLONE_URL_BASE`(clone URL 표시용), `AXGIT_CACHE_SCAN_TTL`(저장소 스캔 TTL, 기본 60s),

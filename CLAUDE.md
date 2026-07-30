@@ -32,15 +32,15 @@ Cgit을 대체하는 웹 프론트엔드입니다. 모노레포로 두 컴포넌
 ## Commands
 
 ```sh
-# 최초 설정
-pnpm install                # web 의존성 (workspace root에서)
+# 최초 설정 (workspace root에서)
+pnpm install                # 전체 JS 의존성 (루트 pnpm-workspace.yaml이 web을 패키지로 묶는다)
 lefthook install            # git hooks 등록
 
-# Frontend (web/)
+# Frontend (web/) — 루트에서 --filter web으로 실행
 pnpm --filter web dev       # Astro dev 서버 (API는 AXGIT_API_URL proxy)
 pnpm --filter web build     # 정적 빌드 → web/dist/
 pnpm --filter web test      # vitest
-pnpm --filter web lint      # eslint + prettier check
+pnpm --filter web check     # eslint + prettier check (개별 실행은 lint / format)
 
 # Backend (api/)
 cargo build --manifest-path api/Cargo.toml
@@ -50,7 +50,7 @@ cargo fmt --manifest-path api/Cargo.toml
 
 # OpenAPI 스펙 재생성 (docs/openapi.json) — API를 바꾼 커밋에서 반드시 실행
 AXGIT_UPDATE_OPENAPI=1 cargo test --manifest-path api/Cargo.toml --test openapi_test
-cd web && pnpm gen:types    # 이어서 web 타입 재생성 (openapi-typescript)
+pnpm --filter web gen:types # 이어서 web 타입 재생성 (openapi-typescript)
 
 # fixture 저장소 생성 (bare repo 4종, 고정 날짜로 재현 가능)
 ./scripts/make-fixtures.sh
@@ -124,7 +124,7 @@ axgit/
       cache.rs        # 응답 캐시
       smart_http.rs   # git-upload-pack 프록시
     tests/            # fixture repo 기반 통합 테스트 (+ openapi_test.rs 스냅샷)
-  web/                # Astro + React + shadcn/ui (자체 pnpm workspace)
+  web/                # Astro + React + shadcn/ui (pnpm workspace 패키지, name: web)
     src/
       pages/          # Astro 라우트
       components/     # React islands, ui/ (shadcn)

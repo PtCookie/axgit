@@ -6,7 +6,9 @@ settings:
 
 importers:
 
-  .:
+  .: {}
+
+  web:
     dependencies:
       '@astrojs/react':
         specifier: ^6.0.2

@@ -53,7 +53,8 @@ sha 고정 응답은 불변 취급. 클라이언트는 ETag/immutable. (ARCHITEC
 
 ## #7 도구 체인
 
-- 패키지 매니저: **pnpm** (workspace).
+- 패키지 매니저: **pnpm** (workspace). 루트 `pnpm-workspace.yaml`이 `web`을 패키지로 묶고,
+  JS 명령은 루트에서 `pnpm --filter web <script>`로 실행한다. api는 Rust이므로 workspace 밖.
 - git hooks: **lefthook** — 단일 바이너리로 Rust/JS 훅을 한 설정에서 관리 (husky+lint-staged 대체).
 - 테스트: web은 **vitest**, api는 cargo test + fixture repo 통합 테스트.
 - 커밋: Conventional Commits (영어).
