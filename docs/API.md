@@ -309,10 +309,36 @@ ref 해석 후 **exec에는 full sha만 전달**한다 (사용자 입력이 커�
 
 ## Smart HTTP (clone/fetch 전용)
 
-API prefix 밖, 저장소 경로 직접 매핑:
+API prefix 밖, 저장소 경로 직접 매핑. `git upload-pack --stateless-rpc` spawn으로 처리한다
+(advertise 시 `--advertise-refs`, DECISIONS.md #13). smart 프로토콜 전용 — dumb 프로토콜
+(`service` 파라미터 없는 info/refs)은 지원하지 않는다.
 
-- `GET /{repo}.git/info/refs?service=git-upload-pack`
-- `POST /{repo}.git/git-upload-pack`
+### `GET /{repo}.git/info/refs?service=git-upload-pack`
 
-`git upload-pack --stateless-rpc` spawn으로 처리 (advertise 시 `--advertise-refs`).
-`git-receive-pack` 관련 요청은 일괄 403 `read_only`.
+- `200` 응답: `Content-Type: application/x-git-upload-pack-advertisement`,
+  `Cache-Control: no-cache`. body는 pkt-line 서비스 헤더
+  `001e# service=git-upload-pack\n0000` 뒤에 upload-pack의 ref advertisement.
+- 클라이언트의 `Git-Protocol` 요청 헤더(`version=2` 등)는 `GIT_PROTOCOL` env로 upload-pack에
+  전달된다 — protocol v2 협상 지원. v2에서도 서비스 헤더 pkt-line은 동일하게 붙는다.
+
+### `POST /{repo}.git/git-upload-pack`
+
+- 요청 body는 upload-pack negotiation 데이터 (`application/x-git-upload-pack-request` —
+  Content-Type은 검증하지 않음). `Content-Encoding: gzip`이면 서버가 해제한다.
+  body 상한: 압축 상태 8 MiB (`413`), 해제 후 64 MiB (`400`).
+- `200` 응답: `Content-Type: application/x-git-upload-pack-result`,
+  `Cache-Control: no-cache`, pack 데이터 chunked 스트리밍. 스트리밍 시작 후 upload-pack이
+  비정상 종료하면 상태코드 변경 없이 스트림이 짧게 끊긴다 (클라이언트는 early EOF).
+
+### 상태코드
+
+| 상황 | 상태 | code |
+| --- | --- | --- |
+| 정상 | `200` | — |
+| `service` 누락/미지원, gzip 해제 실패, 해제 후 상한 초과 | `400` | `invalid_param` |
+| `git-receive-pack` 관련 요청 일체 (info/refs의 service 포함) | `403` | `read_only` |
+| 저장소 없음, `.git` 접미사 없는 경로 | `404` | `repo_not_found` |
+| 압축 body 상한 초과 | `413` | — (axum 기본 응답) |
+| upload-pack spawn/advertise 실패 | `500` | `internal` |
+
+에러 body는 다른 엔드포인트와 같은 JSON 형식이다 (git 클라이언트는 무시하고 상태코드만 표시).

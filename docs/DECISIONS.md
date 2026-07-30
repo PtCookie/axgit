@@ -79,3 +79,19 @@ Astro 내장 Shiki/markdown은 빌드 타임 전용이므로 런타임 데이터
 - base URL 설정을 추가하지 않는다. feed의 절대 URL은 `X-Forwarded-Proto`/`X-Forwarded-Host`/`Host`
   헤더에서 재구성한다 (#10 reverse proxy 방침의 귀결). entry `<id>`는 host와 무관하게 영구
   안정적이어야 피드 리더가 중복 표시하지 않으므로 `urn:sha1:{sha}` 형식을 쓴다.
+
+## #13 Smart HTTP: `git upload-pack --stateless-rpc` 직접 spawn
+
+- `git http-backend`(CGI) 대신 **upload-pack 직접 spawn** (#2 하이브리드 방침, archive의
+  tokio::process + `ReaderStream` + reaper 패턴 재사용). CGI env 조립이 필요 없고, 프로세스
+  자체가 upload-pack으로 고정되어 receive-pack이 **구조적으로** 도달 불가하다 (읽기 전용
+  invariant를 코드 리뷰가 아니라 구조가 보장).
+- 커맨드라인에는 `open_named`가 검증·해석한 git dir 경로만 전달한다 (사용자 입력이 exec
+  인자에 닿지 않음 — #12와 동일 원칙). protocol v2는 `Git-Protocol` 요청 헤더를 위생 검사 후
+  `GIT_PROTOCOL` env로 전달해 지원.
+- gzip 요청 body는 **전체 버퍼링 + flate2 동기 해제** (spawn_blocking 안). negotiation
+  데이터는 거대 repo에서도 수 MB 수준이라 스트리밍 gunzip(async-compression)의 복잡도가
+  불필요하다. 상한: 압축 8 MiB (DefaultBodyLimit), 해제 후 64 MiB (압축 폭탄 방어).
+- stdin 쓰기는 별도 task로 분리해 write/read 데드락 가능성을 차단, stdout은 스트리밍.
+- moka 응답 캐시 + ETag 일괄 도입은 이 작업에 묶지 않고 다음 작업으로 분리했다
+  (Smart HTTP 응답은 no-cache라 캐시와 직교).

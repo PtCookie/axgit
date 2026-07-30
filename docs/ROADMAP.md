@@ -62,24 +62,34 @@
   - 테스트 헬퍼 `tests/common::get_bytes_with_request_headers` (요청 헤더 주입) 신설.
     tar.gz는 실제 `tar -xzf`로 풀어 검증, zip은 `git archive` 직접 실행 출력과 바이트 비교.
 
-## 다음 구현: Smart HTTP upload-pack
+- `GET /{repo}.git/info/refs?service=git-upload-pack`, `POST /{repo}.git/git-upload-pack` —
+  Smart HTTP upload-pack (`api/src/smart_http.rs`, DECISIONS #13). 확정된 설계:
+  - `git upload-pack --stateless-rpc` 직접 spawn (advertise 시 `--advertise-refs`,
+    http-backend CGI 아님) — archive의 exec/ReaderStream/reaper 패턴 재사용. exec에는
+    `open_named`가 해석한 git dir만 전달. receive-pack 403 배선은 기존 그대로.
+  - protocol v2는 `Git-Protocol` 헤더를 위생 검사 후 `GIT_PROTOCOL` env로 전달.
+    v2에서도 advertisement의 pkt-line 서비스 헤더는 동일하게 prepend.
+  - gzip 요청 body는 flate2 전체 버퍼링 해제 (압축 8 MiB / 해제 후 64 MiB 상한).
+    stdin 쓰기는 별도 task (데드락 방어). service 누락/미지원은 400 (dumb 미지원).
+  - 테스트: oneshot 프로토콜 검증 + 실제 리스너(`tests/common::serve`)로
+    `git clone`/`--depth 1`/`fetch`/push 거부 round-trip (multi_thread flavor 필수 —
+    git CLI가 테스트 스레드를 블로킹).
+
+## 다음 구현: moka 응답 캐시 + ETag/Cache-Control 일괄 도입
 
 ### Context
 
-DECISIONS.md #9 순서의 다음 단계 (blame은 마지막 고정).
-범위: `GET /{repo}.git/info/refs?service=git-upload-pack`, `POST /{repo}.git/git-upload-pack`
-(`api/src/smart_http.rs`에 설계 요약만 있음, 현재 501/403 stub. `docs/API.md` Smart HTTP 절 참고).
+summary/refs 구현 시점부터 의도적으로 유예해 온 부채 (`api/src/cache.rs` 상단 주석,
+`docs/ARCHITECTURE.md#caching`, API.md 캐싱 헤더 절 참고). Smart HTTP 작업에서 묶지 않기로
+결정 (Smart HTTP 응답은 no-cache라 직교 — DECISIONS #13).
 
-### 착수 시 검토할 것 (전 세션에서 확정하지 않음 — 착수 시점에 설계할 것)
+### 착수 시 검토할 것
 
-- `git upload-pack --stateless-rpc` spawn (advertise 시 `--advertise-refs`) vs
-  `git http-backend` CGI 방식 — archive에서 확립한 tokio::process + ReaderStream 패턴 재사용.
-- 요청 body의 gzip 해제 (`Content-Encoding: gzip`), pkt-line 서비스 헤더, no-cache 헤더 규약.
-- 통합 테스트는 실제 `git clone http://…` round-trip (docs/ARCHITECTURE.md 테스트 전략).
-- 이 시점부터 moka 기반 (repo, endpoint, params) 응답 캐시 도입 검토
-  (`api/src/cache.rs` 상단 주석 및 `docs/ARCHITECTURE.md#caching` 참고).
-  **API.md의 ETag/Cache-Control 규약도 아직 미구현** — 검증자(HEAD sha)를 쓰는
-  응답 캐시와 함께 이 시점에 일괄 구현한다 (summary/refs 구현 시 의도적으로 유예).
+- moka 기반 (repo, endpoint, params) 키 응답 캐시. 단순 TTL이 아니라 repo의 HEAD/agefile
+  mtime을 검증자로 사용해 push 후 즉시 무효화 (`docs/ARCHITECTURE.md#caching`).
+- 클라이언트 캐시는 ETag(커밋 sha 기반) + 304. 기존 `sha_addressed_json`의 immutable
+  Cache-Control 선례와 정합성 유지.
+- 적용 대상 엔드포인트 선정 (repos 목록/summary/refs/commits 등 — sha-addressed가 아닌 것들).
 
 ## 이후 항목 (DECISIONS.md #9 순서, 착수 전 재검토 필요)
 - blame (v1 포함, 구현 순서는 마지막 — API.md 명시).

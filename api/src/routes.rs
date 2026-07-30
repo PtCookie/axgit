@@ -1,13 +1,12 @@
 use axum::Router;
-use axum::extract::Query;
-use axum::response::{IntoResponse, Response};
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{any, get, post};
-use serde::Deserialize;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::error::ApiError;
 use crate::handlers::{self, archive, commits, feed, files, repos};
+use crate::smart_http;
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
@@ -38,10 +37,11 @@ pub fn build_router(state: AppState) -> Router {
     // Smart HTTP lives outside /api/v1; `{repo_git}` is the directory name
     // including `.git` (axum cannot capture partial segments).
     let smart_http = Router::new()
-        .route("/{repo_git}/info/refs", get(info_refs))
+        .route("/{repo_git}/info/refs", get(smart_http::info_refs))
         .route(
             "/{repo_git}/git-upload-pack",
-            post(handlers::not_implemented),
+            post(smart_http::upload_pack)
+                .route_layer(DefaultBodyLimit::max(smart_http::MAX_REQUEST_BODY)),
         )
         .route("/{repo_git}/git-receive-pack", any(receive_pack));
 
@@ -52,20 +52,6 @@ pub fn build_router(state: AppState) -> Router {
     }
 
     router.layer(TraceLayer::new_for_http()).with_state(state)
-}
-
-#[derive(Deserialize)]
-struct InfoRefsQuery {
-    service: Option<String>,
-}
-
-/// Smart HTTP advertise stub. Push is SSH-only, so receive-pack is rejected
-/// here and now even though upload-pack is not implemented yet.
-async fn info_refs(Query(query): Query<InfoRefsQuery>) -> Response {
-    if query.service.as_deref() == Some("git-receive-pack") {
-        return ApiError::ReadOnly.into_response();
-    }
-    handlers::not_implemented().await
 }
 
 async fn receive_pack() -> ApiError {
