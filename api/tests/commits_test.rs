@@ -2,33 +2,17 @@
 
 mod common;
 
-use std::net::SocketAddr;
 use std::path::Path;
 
-use axum::Router;
 use axum::http::StatusCode;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use axgit::config::Config;
-use axgit::routes::build_router;
-use axgit::state::AppState;
-
 use common::CommitSpec;
+use common::router_for;
 
 /// sha256 of `author@example.com` (the fixed fixture author email).
 const AUTHOR_EMAIL_HASH: &str = "b0eda69977c26118feff17875d53376006568bcbcde5ca0c916d01f05c281436";
-
-fn router_for(repo_root: &Path) -> Router {
-    let config = Config {
-        repo_root: repo_root.to_owned(),
-        static_dir: None,
-        listen: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-        clone_url_base: None,
-        cache_scan_ttl_secs: 60,
-    };
-    build_router(AppState::new(config))
-}
 
 /// `alpha.git` with a 5-commit linear history on `main` (shas oldest → newest):
 /// a.txt, docs/guide.md, a.txt, b.txt, a.txt — distinct dates for ordering.

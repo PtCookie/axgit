@@ -2,34 +2,17 @@
 
 mod common;
 
-use std::net::SocketAddr;
 use std::path::Path;
 
-use axum::Router;
 use axum::http::StatusCode;
 use serde_json::Value;
 use tempfile::TempDir;
-
-use axgit::config::Config;
-use axgit::routes::build_router;
-use axgit::state::AppState;
 
 /// sha256 of `author@example.com` (the fixed fixture author email).
 const AUTHOR_EMAIL_HASH: &str = "b0eda69977c26118feff17875d53376006568bcbcde5ca0c916d01f05c281436";
 /// sha256 of `committer@example.com`.
 const COMMITTER_EMAIL_HASH: &str =
     "f395b38df60e606322b6576159c903509f1a217b386580d8150965d33d8ef30f";
-
-fn router_for(repo_root: &Path) -> Router {
-    let config = Config {
-        repo_root: repo_root.to_owned(),
-        static_dir: None,
-        listen: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-        clone_url_base: None,
-        cache_scan_ttl_secs: 60,
-    };
-    build_router(AppState::new(config))
-}
 
 /// `alpha.git` covering the diffstat cases; shas oldest → newest:
 /// 0. root: `a.txt` (2 lines) + `sub/nested.txt`
@@ -71,6 +54,7 @@ fn setup() -> (TempDir, Vec<String>) {
 }
 
 use common::commit_all;
+use common::router_for;
 
 async fn get_ok(repo_root: &Path, uri: &str) -> Value {
     let (status, json) = common::get_json(router_for(repo_root), uri).await;

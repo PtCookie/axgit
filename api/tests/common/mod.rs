@@ -13,8 +13,29 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 
+use axgit::config::Config;
+use axgit::routes::build_router;
+use axgit::state::AppState;
+
 /// Fixed date (RFC 3339) so commit-derived fields are deterministic.
 pub const FIXED_DATE: &str = "2026-07-01T12:00:00+09:00";
+
+/// Test `Config` with every non-path field at its default; tests that need a
+/// specific setting (e.g. `clone_url_base`) override the field afterwards.
+pub fn test_config(repo_root: &Path) -> Config {
+    Config {
+        repo_root: repo_root.to_owned(),
+        static_dir: None,
+        listen: "127.0.0.1:0".parse().unwrap(),
+        clone_url_base: None,
+        cache_scan_ttl_secs: 60,
+    }
+}
+
+/// Router over `repo_root` with the default test configuration.
+pub fn router_for(repo_root: &Path) -> Router {
+    build_router(AppState::new(test_config(repo_root)))
+}
 
 /// Runs git isolated from host configuration, with fixed author/dates.
 pub fn git(dir: &Path, args: &[&str]) {

@@ -2,7 +2,6 @@
 
 mod common;
 
-use std::net::SocketAddr;
 use std::path::Path;
 
 use axum::Router;
@@ -10,18 +9,12 @@ use axum::http::StatusCode;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use axgit::config::Config;
 use axgit::routes::build_router;
 use axgit::state::AppState;
 
 fn router_for(repo_root: &Path, clone_url_base: Option<&str>) -> Router {
-    let config = Config {
-        repo_root: repo_root.to_owned(),
-        static_dir: None,
-        listen: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-        clone_url_base: clone_url_base.map(str::to_owned),
-        cache_scan_ttl_secs: 60,
-    };
+    let mut config = common::test_config(repo_root);
+    config.clone_url_base = clone_url_base.map(str::to_owned);
     build_router(AppState::new(config))
 }
 

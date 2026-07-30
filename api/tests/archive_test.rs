@@ -2,29 +2,14 @@
 
 mod common;
 
-use std::net::SocketAddr;
+use common::router_for;
+
 use std::path::Path;
 use std::process::Command;
 
-use axum::Router;
 use axum::http::{StatusCode, header};
 
-use axgit::config::Config;
-use axgit::routes::build_router;
-use axgit::state::AppState;
-
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
-
-fn router_for(repo_root: &Path) -> Router {
-    let config = Config {
-        repo_root: repo_root.to_owned(),
-        static_dir: None,
-        listen: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-        clone_url_base: None,
-        cache_scan_ttl_secs: 60,
-    };
-    build_router(AppState::new(config))
-}
 
 /// `archive.git` with README.md and src/main.rs on `main` plus branch
 /// `feature/x`; returns (bare path, head sha).
