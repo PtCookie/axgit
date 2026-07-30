@@ -279,7 +279,18 @@ README 탐색 후 `{ "path": "...", "format": "markdown|rst|plain", "content": "
 
 ### `GET /api/v1/repos/{repo}/archive/{ref}.{format}`
 
-`format`: `tar.gz` | `zip`. `git archive` exec로 생성해 스트리밍. `Content-Disposition` 파일명은 `{repo}-{ref}.{format}`.
+`format`: `tar.gz` | `zip`. `git archive` exec로 생성해 chunked 스트리밍 (Content-Length 없음).
+ref 해석 후 **exec에는 full sha만 전달**한다 (사용자 입력이 커맨드라인에 닿지 않음).
+
+- `Content-Type`: `application/gzip` | `application/zip`. 항상 `X-Content-Type-Options: nosniff`.
+- `Content-Disposition: attachment; filename="{repo}-{safe_ref}.{format}"`.
+  아카이브 내부 루트 디렉토리(`--prefix`)도 동일하게 `{repo}-{safe_ref}/`.
+  `safe_ref`는 ref의 `[A-Za-z0-9._-]` 외 문자를 전부 `-`로 치환한 값 (예: `feature/x` → `feature-x`).
+- `{ref}.{format}` 파싱은 접미사 매칭: `.tar.gz` 우선, 다음 `.zip` (ref 자체의 `.`/`/`와 충돌 없음.
+  `.zip`으로 끝나는 브랜치명은 zip 요청으로 해석된다). 그 외 접미사는 `400 invalid_param`.
+- 요청의 `{ref}`가 해석된 full sha와 문자열 일치하면 immutable Cache-Control (캐싱 헤더 절).
+- 스트리밍 개시 후 git 프로세스가 실패하면 상태코드를 바꿀 수 없으므로 응답이 중간에서
+  끊긴다 (클라이언트는 다운로드 실패로 인지, 서버는 stderr를 로그에 남김).
 
 ### `GET /api/v1/repos/{repo}/feed.atom`
 
