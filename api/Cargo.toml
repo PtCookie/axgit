@@ -22,6 +22,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [dev-dependencies]
+# Building gzip-compressed Smart HTTP request bodies in tests.
+flate2 = "1"
 http-body-util = "0.1"
 # Atom feed well-formedness checks in tests only — production XML is built by hand.
 quick-xml = "0.37"

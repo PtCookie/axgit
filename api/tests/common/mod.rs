@@ -24,6 +24,27 @@ pub fn git(dir: &Path, args: &[&str]) {
 /// Like [`git`], but returns trimmed stdout and lets callers override the
 /// fixed environment (e.g. per-commit `GIT_AUTHOR_DATE`).
 pub fn git_output(dir: &Path, args: &[&str], extra_env: &[(&str, &str)]) -> String {
+    let output = git_raw(dir, args, extra_env);
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+/// Runs git expecting failure and returns its stderr (e.g. a rejected push).
+pub fn git_expect_failure(dir: &Path, args: &[&str]) -> String {
+    let output = git_raw(dir, args, &[]);
+    assert!(
+        !output.status.success(),
+        "git {args:?} unexpectedly succeeded: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn git_raw(dir: &Path, args: &[&str], extra_env: &[(&str, &str)]) -> std::process::Output {
     let mut command = Command::new("git");
     command
         .current_dir(dir)
@@ -38,13 +59,7 @@ pub fn git_output(dir: &Path, args: &[&str], extra_env: &[(&str, &str)]) -> Stri
     for (key, value) in extra_env {
         command.env(key, value);
     }
-    let output = command.args(args).output().expect("failed to spawn git");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    command.args(args).output().expect("failed to spawn git")
 }
 
 /// Creates `{root}/{name}` as a bare repository with `main` as initial branch.
@@ -210,6 +225,44 @@ pub async fn get_bytes_with_request_headers(
     let headers = response.headers().clone();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     (status, headers, bytes.to_vec())
+}
+
+/// Sends `POST {uri}` with the given request headers and raw body
+/// (for Smart HTTP pkt-line payloads).
+pub async fn post_bytes_with_headers(
+    router: Router,
+    uri: &str,
+    request_headers: &[(&str, &str)],
+    body: Vec<u8>,
+) -> (StatusCode, HeaderMap, Vec<u8>) {
+    let mut request = Request::post(uri);
+    for (name, value) in request_headers {
+        request = request.header(*name, *value);
+    }
+    let response = router
+        .oneshot(request.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, headers, bytes.to_vec())
+}
+
+/// Serves the router on an ephemeral local port for tests that need a real
+/// listener (`git clone http://…` round-trips). The server task is aborted
+/// when the runtime shuts down at the end of the test.
+pub async fn serve(router: Router) -> std::net::SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("failed to bind test listener");
+    let addr = listener.local_addr().expect("listener has no local addr");
+    tokio::spawn(async move {
+        axum::serve(listener, router)
+            .await
+            .expect("test server failed");
+    });
+    addr
 }
 
 /// Writes the cgit agefile (`info/web/last-modified`).
