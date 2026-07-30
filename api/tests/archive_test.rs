@@ -71,8 +71,10 @@ async fn archive_tar_gz_should_stream_extractable_archive() {
         "attachment; filename=\"archive-main.tar.gz\""
     );
     assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
-    // Branch-addressed: mutable, so no immutable Cache-Control.
-    assert!(!headers.contains_key(header::CACHE_CONTROL));
+    // Branch-addressed: mutable, so a weak ETag + no-cache instead of immutable.
+    assert_eq!(headers[header::CACHE_CONTROL], "no-cache");
+    let etag = headers[header::ETAG].to_str().unwrap();
+    assert!(etag.starts_with("W/\""), "expected weak etag, got {etag}");
 
     let extracted = extract_tar_gz(&body);
     let prefix = extracted.path().join("archive-main");

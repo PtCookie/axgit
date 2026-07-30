@@ -45,12 +45,23 @@ git push ──→ SSH 2222 → git-server 컨테이너 (기존 유지, 변경 �
 
 cgit의 디스크 TTL 캐시를 개선한 2계층:
 
-1. **서버 응답 캐시** — in-memory LRU (`moka` 권장). 키: `(repo, endpoint, 정규화된 params)`.
-   - 검증자: 해당 repo의 **HEAD sha + agefile mtime**. 캐시 히트 시 검증자가 다르면 폐기 →
-     cgit의 순수 TTL과 달리 push 직후 즉시 반영되고, 조용한 repo는 무기한 재사용 가능.
-   - 검증자 조회 자체(HEAD 읽기)는 저렴하므로 매 요청 수행.
-   - 커밋 sha가 키에 포함된 응답(commit 상세, diff, sha 기준 tree/blob)은 불변이므로 검증 없이 LRU만.
-2. **클라이언트 캐시** — sha 포함 URL은 `immutable`, 그 외 `ETag`(HEAD sha 기반) + 304.
+1. **서버 응답 캐시** — in-memory LRU (`moka`, `cache.rs`). 키: `(repo, endpoint, 정규화된 params)`.
+   - 검증자: 해당 repo의 **HEAD sha + agefile mtime** (`repo/meta.rs::Validator`).
+     캐시 히트 시 검증자가 다르면 폐기 → cgit의 순수 TTL과 달리 push 직후 즉시 반영되고,
+     조용한 repo는 TTL까지 재사용 가능.
+   - 검증자 조회 자체(HEAD 읽기 + agefile stat)는 저렴하므로 매 요청 수행.
+   - 커밋 sha가 키에 포함된 응답(commit 상세, diff, sha 기준 tree/blob)은 불변이므로 검증 없이 LRU만
+     — 이 경로만 캐시 히트 시 저장소를 아예 열지 않는다.
+   - 용량은 본문 바이트 기준(`AXGIT_CACHE_RESPONSE_MAX_BYTES`), 엔트리당 본문 1 MiB 상한
+     (거대 diff 하나가 캐시를 밀어내지 않도록). TTL(`AXGIT_CACHE_RESPONSE_TTL`)은 검증자가
+     못 보는 변경(config 수동 편집 등)의 staleness 상한 역할.
+   - 제외 대상: repos 목록은 스캔 스냅샷이라 `ScanCache`(단일 값 TTL)를 그대로 쓰고,
+     raw는 대용량 바이너리, archive는 스트리밍이라 캐시하지 않는다.
+2. **클라이언트 캐시** — sha 포함 URL은 `immutable`, 그 외 `ETag`(검증자 기반) + `no-cache` + 304.
+
+캐시 계층은 tower 미들웨어가 아니라 핸들러 공통 헬퍼(`handlers/mod.rs::cached_response`)로 둔다:
+immutable 여부가 ref 해석 후에야 결정되고, params 정규화와 content-type이 엔드포인트마다 다르며,
+에러 응답은 캐시하면 안 되기 때문.
 
 주의: git2 `Repository`는 `Sync`가 아니다. 캐시에는 직렬화된 응답만 저장하고, Repository는 요청 스코프에서 open한다.
 
@@ -87,5 +98,7 @@ cgit의 디스크 TTL 캐시를 개선한 2계층:
   `cargo build --release` → ③ alpine 런타임: git 바이너리 + api 바이너리 + web/dist.
 - 런타임 이미지에 필요한 패키지: `git`(exec용), `ca-certificates`. Python/pygments/groff 등 cgit 필터 의존성은 전부 불필요.
 - 설정은 환경변수: `AXGIT_REPO_ROOT`, `AXGIT_STATIC_DIR`, `AXGIT_LISTEN`(기본 `0.0.0.0:8080`),
-  `AXGIT_CLONE_URL_BASE`(clone URL 표시용), `AXGIT_CACHE_*`(TTL/용량).
+  `AXGIT_CLONE_URL_BASE`(clone URL 표시용), `AXGIT_CACHE_SCAN_TTL`(저장소 스캔 TTL, 기본 60s),
+  `AXGIT_CACHE_RESPONSE_TTL`(응답 캐시 TTL, 기본 300s),
+  `AXGIT_CACHE_RESPONSE_MAX_BYTES`(응답 캐시 용량, 기본 32 MiB).
 - 로그는 stdout/stderr JSON(`tracing` + `tracing-subscriber`) — 스택의 fluentd logging driver가 수집.

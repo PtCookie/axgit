@@ -13,6 +13,8 @@ flate2 = "1"
 git2 = { version = "0.20", default-features = false }
 jiff = "0.2"
 mime_guess = "2"
+# Response cache keyed by (repo, endpoint, params) — docs/ARCHITECTURE.md#caching.
+moka = { version = "0.12", features = ["future"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

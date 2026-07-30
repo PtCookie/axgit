@@ -6,12 +6,13 @@
 //! stable no matter which host or proxy served the request.
 
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, header};
-use axum::response::{IntoResponse, Response};
+use axum::http::HeaderMap;
+use axum::response::Response;
 
+use super::{ATOM_CONTENT_TYPE, cached_response};
 use crate::error::ApiError;
 use crate::repo::commits::{self, CommitInfo, CommitsPage};
-use crate::repo::{RepoInfo, meta, open};
+use crate::repo::{RepoInfo, meta};
 use crate::state::AppState;
 
 const FEED_ENTRY_LIMIT: usize = 20;
@@ -26,31 +27,33 @@ pub async fn get_feed(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let root = state.config.repo_root.clone();
-    let block_name = name.clone();
-    let (info, page) = tokio::task::spawn_blocking(move || {
-        let repo = open::open_named(&root, &block_name)?;
-        let info = meta::read_repo_info(&repo, &block_name);
-        // Unborn HEAD (empty repository) serves an entry-less feed, not 404 —
-        // the repo exists and feed readers keep polling it.
-        let page = match repo.head().ok().and_then(|head| head.target()) {
-            Some(oid) => commits::log(&repo, oid, None, FEED_ENTRY_LIMIT)?,
-            None => CommitsPage {
-                commits: Vec::new(),
-                next_cursor: None,
-            },
-        };
-        Ok::<_, ApiError>((info, page))
-    })
-    .await
-    .map_err(|err| ApiError::Internal(err.into()))??;
-
-    let xml = render_feed(&base_url(&headers), &name, &info, &page.commits);
-    Ok((
-        [(header::CONTENT_TYPE, "application/atom+xml; charset=utf-8")],
-        xml,
+    let base = base_url(&headers);
+    // The rendered XML embeds the base URL, so it is part of the cache key.
+    let params = format!("base={base}");
+    let feed_name = name.clone();
+    cached_response(
+        &state,
+        &name,
+        "feed",
+        params,
+        ATOM_CONTENT_TYPE,
+        &headers,
+        move |repo| {
+            let info = meta::read_repo_info(repo, &feed_name);
+            // Unborn HEAD (empty repository) serves an entry-less feed, not 404 —
+            // the repo exists and feed readers keep polling it.
+            let page = match repo.head().ok().and_then(|head| head.target()) {
+                Some(oid) => commits::log(repo, oid, None, FEED_ENTRY_LIMIT)?,
+                None => CommitsPage {
+                    commits: Vec::new(),
+                    next_cursor: None,
+                },
+            };
+            let xml = render_feed(&base, &feed_name, &info, &page.commits);
+            Ok((false, xml.into_bytes()))
+        },
     )
-        .into_response())
+    .await
 }
 
 /// Reconstructs the external base URL from proxy headers. TLS terminates at

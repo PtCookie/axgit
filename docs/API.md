@@ -28,9 +28,16 @@ web ↔ api 간 유일한 계약 문서. 엔드포인트를 추가/변경하는 
 
 - 커밋 sha가 URL에 포함된 응답(불변): `Cache-Control: public, max-age=31536000, immutable`.
   `{sha}` 자리에는 브랜치/태그/축약 sha도 올 수 있으므로, **요청 경로의 값이 해석된 커밋의
-  full sha와 정확히 일치할 때만** 이 헤더가 붙는다 (commit 상세/diff에 구현됨).
-- 그 외: `ETag`(해당 repo HEAD sha 기반) + `Cache-Control: no-cache`, 조건부 요청 시 304
-  — **미구현**, 응답 캐시 도입 시점에 일괄 구현 예정 (ROADMAP 참고).
+  full sha와 정확히 일치할 때만** 이 헤더가 붙는다. 이 응답에는 `ETag`가 없다.
+- 그 외: `ETag` + `Cache-Control: no-cache`. `If-None-Match`가 일치하면 **304**(본문 없음,
+  `ETag`/`Cache-Control` 동반). ETag 값은 **opaque**하며 형식은 계약이 아니다 — 서버는 해당
+  repo의 HEAD sha + agefile mtime에서 생성하므로 push 직후 값이 바뀐다.
+  비교는 RFC 9110의 weak comparison(`W/` 접두 무시).
+- 예외:
+  - `GET /api/v1/repos`(목록)는 특정 repo에 종속되지 않으므로 ETag가 **응답 본문 해시**다.
+  - `raw`는 서버 응답 캐시 대상이 아니지만 비-sha 요청에 ETag가 붙는다 (304로 전송량만 절약).
+  - `archive`는 **weak ETag**(`W/"..."`). 일치하면 `git archive` 실행 없이 304.
+  - Smart HTTP 엔드포인트는 항상 `no-cache`이며 ETag를 쓰지 않는다.
 
 ### 페이지네이션 (commit log)
 
@@ -288,7 +295,8 @@ ref 해석 후 **exec에는 full sha만 전달**한다 (사용자 입력이 커�
   `safe_ref`는 ref의 `[A-Za-z0-9._-]` 외 문자를 전부 `-`로 치환한 값 (예: `feature/x` → `feature-x`).
 - `{ref}.{format}` 파싱은 접미사 매칭: `.tar.gz` 우선, 다음 `.zip` (ref 자체의 `.`/`/`와 충돌 없음.
   `.zip`으로 끝나는 브랜치명은 zip 요청으로 해석된다). 그 외 접미사는 `400 invalid_param`.
-- 요청의 `{ref}`가 해석된 full sha와 문자열 일치하면 immutable Cache-Control (캐싱 헤더 절).
+- 요청의 `{ref}`가 해석된 full sha와 문자열 일치하면 immutable Cache-Control, 그 외에는
+  weak ETag + `no-cache` (캐싱 헤더 절). `If-None-Match` 일치 시 git 프로세스를 띄우지 않고 304.
 - 스트리밍 개시 후 git 프로세스가 실패하면 상태코드를 바꿀 수 없으므로 응답이 중간에서
   끊긴다 (클라이언트는 다운로드 실패로 인지, 서버는 stderr를 로그에 남김).
 
@@ -305,7 +313,8 @@ ref 해석 후 **exec에는 full sha만 전달**한다 (사용자 입력이 커�
 - 절대 URL의 base는 `X-Forwarded-Proto`(기본 `http`) + `X-Forwarded-Host` → `Host`(기본
   `localhost`) 헤더에서 재구성한다 (별도 base URL 설정 없음, DECISIONS.md #12).
 - 빈 저장소(unborn HEAD)는 404가 아니라 entry 없는 피드로 `200`.
-- ETag/Cache-Control 없음 (응답 캐시 도입 시 일괄 — 캐싱 헤더 절 참고).
+- ETag + `Cache-Control: no-cache` (캐싱 헤더 절). 본문에 base URL이 들어가므로 서버 응답
+  캐시 키에도 base URL이 포함된다.
 
 ## Smart HTTP (clone/fetch 전용)
 

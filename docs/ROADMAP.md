@@ -75,21 +75,39 @@
     `git clone`/`--depth 1`/`fetch`/push 거부 round-trip (multi_thread flavor 필수 —
     git CLI가 테스트 스레드를 블로킹).
 
-## 다음 구현: moka 응답 캐시 + ETag/Cache-Control 일괄 도입
+- **moka 응답 캐시 + ETag/Cache-Control 일괄 도입** (`api/src/cache.rs`, `handlers/mod.rs`,
+  DECISIONS #6). summary/refs 시점부터 유예해 온 부채를 해소. 확정된 설계:
+  - 검증자 `repo/meta.rs::Validator` = HEAD sha + agefile **raw `SystemTime`**. git2 open 후
+    `head().target()`으로 읽는다 (HEAD 파일 직접 파싱 아님). 검증자 조회도 spawn_blocking.
+  - **캐시 계층은 핸들러 공통 헬퍼 `handlers/mod.rs::cached_response`** (tower 미들웨어 아님).
+    `compute` 클로저가 `(immutable, 직렬화된 body)`를 반환하고, 미스 경로는 open 1회로
+    검증자와 본문을 같은 스냅샷에서 얻는다. 에러는 캐시하지 않고 기존 엔트리를 폐기.
+    기존 `sha_addressed_json`은 전 핸들러가 이 헬퍼로 옮겨가며 제거.
+  - immutable 엔트리는 `validator: None`으로 저장 → 히트 시 **저장소를 열지 않는다**
+    (유일한 zero-git2 경로). 그 외는 ETag(검증자 기반 strong) + `no-cache` + 304.
+  - 예외: repos 목록은 ScanCache 유지 + 본문 sha256 ETag, raw는 캐시 제외(ETag만),
+    archive는 스트리밍이라 캐시 불가 + weak ETag(일치 시 exec 생략), feed는 base URL을
+    캐시 키에 포함. Smart HTTP는 불변.
+  - moka 설정: 바이트 weigher + `AXGIT_CACHE_RESPONSE_MAX_BYTES`(32 MiB),
+    엔트리당 본문 1 MiB 상한, TTL(`AXGIT_CACHE_RESPONSE_TTL` 300s)은 out-of-band 변경 안전망.
+    `get_with`(요청 병합)는 검증자 흐름과 안 맞아 미사용.
+  - 테스트: `tests/cache_test.rs` 신설 (라우터 clone으로 상태 공유 — 히트/무효화/304/
+    immutable 엔트리 검증). Config 필드 추가 비용은 선행 커밋의
+    `tests/common::test_config`/`router_for` 중앙화로 흡수.
+  - 후속 검토: cursor·full-sha `ref`로 조회한 commits 페이지도 사실상 불변이므로 immutable
+    승격 여지가 있으나, "sha가 URL 경로에 포함"이라는 API.md 계약을 바꾸게 되어 보류.
+
+## 다음 구현: blame
 
 ### Context
 
-summary/refs 구현 시점부터 의도적으로 유예해 온 부채 (`api/src/cache.rs` 상단 주석,
-`docs/ARCHITECTURE.md#caching`, API.md 캐싱 헤더 절 참고). Smart HTTP 작업에서 묶지 않기로
-결정 (Smart HTTP 응답은 no-cache라 직교 — DECISIONS #13).
+v1 범위의 마지막 엔드포인트 (DECISIONS #9, API.md에 구현 순서 마지막으로 명시).
 
 ### 착수 시 검토할 것
 
-- moka 기반 (repo, endpoint, params) 키 응답 캐시. 단순 TTL이 아니라 repo의 HEAD/agefile
-  mtime을 검증자로 사용해 push 후 즉시 무효화 (`docs/ARCHITECTURE.md#caching`).
-- 클라이언트 캐시는 ETag(커밋 sha 기반) + 304. 기존 `sha_addressed_json`의 immutable
-  Cache-Control 선례와 정합성 유지.
-- 적용 대상 엔드포인트 선정 (repos 목록/summary/refs/commits 등 — sha-addressed가 아닌 것들).
-
-## 이후 항목 (DECISIONS.md #9 순서, 착수 전 재검토 필요)
-- blame (v1 포함, 구현 순서는 마지막 — API.md 명시).
+- `GET /api/v1/repos/{repo}/blame/{ref}/{path...}` — 라인 범위별
+  `{ start_line, line_count, sha, author, authored_at }` 배열 (API.md).
+- `{ref}/{path...}` 분리는 기존 `repo/resolve.rs::resolve_ref_path` 재사용.
+- git2 `Repository::blame_file` vs `git blame` exec 중 선택 (커밋 log의 path 필터처럼
+  libgit2가 느릴 수 있음 — 벤치 후 결정). 대용량 파일 상한 정책도 함께 정할 것.
+- 응답은 `handlers/mod.rs::cached_response`로 캐시 (sha-addressed면 immutable).

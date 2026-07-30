@@ -26,4 +26,14 @@ pub struct Config {
     /// Repository scan cache TTL in seconds.
     #[arg(long, env = "AXGIT_CACHE_SCAN_TTL", default_value_t = 60)]
     pub cache_scan_ttl_secs: u64,
+
+    /// Response cache TTL in seconds. The cache is invalidated by HEAD/agefile
+    /// validators; the TTL only bounds staleness for out-of-band changes the
+    /// validators cannot see (e.g. a manual config edit).
+    #[arg(long, env = "AXGIT_CACHE_RESPONSE_TTL", default_value_t = 300)]
+    pub cache_response_ttl_secs: u64,
+
+    /// Response cache capacity in bytes.
+    #[arg(long, env = "AXGIT_CACHE_RESPONSE_MAX_BYTES", default_value_t = 32 * 1024 * 1024)]
+    pub cache_response_max_bytes: u64,
 }

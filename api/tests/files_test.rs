@@ -218,7 +218,7 @@ async fn sha_addressed_responses_should_be_immutable() {
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
     assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), IMMUTABLE);
 
-    // Branch names and abbreviated shas are mutable addresses.
+    // Branch names and abbreviated shas are mutable addresses: ETag + no-cache.
     for uri in [
         "/api/v1/repos/files/tree/main".to_owned(),
         format!("/api/v1/repos/files/blob/{}/README.md", &head[..10]),
@@ -226,7 +226,12 @@ async fn sha_addressed_responses_should_be_immutable() {
         let (status, headers, body) =
             common::get_json_with_headers(router_for(root.path()), &uri).await;
         assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
-        assert!(headers.get(header::CACHE_CONTROL).is_none(), "uri {uri}");
+        assert_eq!(
+            headers.get(header::CACHE_CONTROL).unwrap(),
+            "no-cache",
+            "uri {uri}"
+        );
+        assert!(headers.contains_key(header::ETAG), "uri {uri}");
     }
 }
 
@@ -314,7 +319,9 @@ async fn raw_should_stream_bytes_with_detected_mime() {
             headers.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(),
             "nosniff"
         );
-        assert!(headers.get(header::CACHE_CONTROL).is_none());
+        // Branch-addressed raw is mutable: ETag + no-cache.
+        assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), "no-cache");
+        assert!(headers.contains_key(header::ETAG), "path {path}");
         assert_eq!(body, bytes, "path {path}");
     }
 

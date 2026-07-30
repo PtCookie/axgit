@@ -26,6 +26,12 @@ impl From<git2::Error> for ApiError {
     }
 }
 
+impl From<serde_json::Error> for ApiError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::Internal(err.into())
+    }
+}
+
 impl ApiError {
     fn status_and_code(&self) -> (StatusCode, &'static str) {
         match self {

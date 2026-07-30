@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::SystemTime;
 
 use git2::Repository;
 use jiff::fmt::strtime;
@@ -8,6 +9,29 @@ use jiff::{Timestamp, Zoned};
 use super::RepoInfo;
 
 const RFC3339_OUT: &str = "%Y-%m-%dT%H:%M:%S%:z";
+
+/// Freshness validator for cached responses (docs/ARCHITECTURE.md#caching):
+/// a cache entry is served only while the repository still produces the same
+/// validator, so a push (HEAD move or agefile touch) invalidates immediately.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Validator {
+    /// HEAD commit id. `None` for empty repositories (unborn HEAD).
+    pub head: Option<git2::Oid>,
+    /// Raw mtime of the agefile (`info/web/last-modified`), which the
+    /// post-receive hook touches on every push. `None` when absent.
+    pub agefile_mtime: Option<SystemTime>,
+}
+
+/// Reads the current validator. Cheap (one ref lookup + one stat), so it runs
+/// on every cache hit.
+pub fn validator(repo: &Repository) -> Validator {
+    Validator {
+        head: repo.head().ok().and_then(|head| head.target()),
+        agefile_mtime: fs::metadata(repo.path().join("info/web/last-modified"))
+            .and_then(|metadata| metadata.modified())
+            .ok(),
+    }
+}
 
 /// Reads list metadata for one repository. `name` is the directory name
 /// without the `.git` suffix.

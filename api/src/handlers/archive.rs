@@ -8,15 +8,17 @@ use std::process::Stdio;
 
 use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::header;
+use axum::http::{HeaderMap, header};
 use axum::response::Response;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
 
-use super::IMMUTABLE_CACHE_CONTROL;
+use super::{
+    IMMUTABLE_CACHE_CONTROL, NO_CACHE_CONTROL, if_none_match, not_modified, validator_etag,
+};
 use crate::error::ApiError;
-use crate::repo::{open, resolve};
+use crate::repo::{meta, open, resolve};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,6 +86,7 @@ fn sanitize_component(component: &str) -> String {
 pub async fn get_archive(
     State(state): State<AppState>,
     Path((name, rest)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let (refname, format) = parse_archive_target(&rest)?;
     let refname = refname.to_owned();
@@ -91,15 +94,26 @@ pub async fn get_archive(
     let root = state.config.repo_root.clone();
     let block_name = name.clone();
     let block_refname = refname.clone();
-    let (git_dir, sha, immutable) = tokio::task::spawn_blocking(move || {
+    let (git_dir, sha, immutable, validator) = tokio::task::spawn_blocking(move || {
         let repo = open::open_named(&root, &block_name)?;
+        let validator = meta::validator(&repo);
         let commit = resolve::resolve_commit(&repo, &block_refname)?;
         let sha = commit.id().to_string();
         let immutable = block_refname == sha;
-        Ok::<_, ApiError>((repo.path().to_path_buf(), sha, immutable))
+        Ok::<_, ApiError>((repo.path().to_path_buf(), sha, immutable, validator))
     })
     .await
     .map_err(|err| ApiError::Internal(err.into()))??;
+
+    // Weak ETag: the archive bytes are not guaranteed identical across git
+    // invocations, but the content is equivalent for an unchanged validator.
+    // A match skips spawning `git archive` entirely.
+    let etag = (!immutable).then(|| format!("W/{}", validator_etag(&validator)));
+    if let Some(etag) = &etag
+        && if_none_match(&headers, etag)
+    {
+        return Ok(not_modified(etag));
+    }
 
     let base = format!(
         "{}-{}",
@@ -153,9 +167,12 @@ pub async fn get_archive(
         )
         // Repository contents are untrusted input; never let the browser sniff.
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff");
-    if immutable {
-        response = response.header(header::CACHE_CONTROL, IMMUTABLE_CACHE_CONTROL);
-    }
+    response = match &etag {
+        None => response.header(header::CACHE_CONTROL, IMMUTABLE_CACHE_CONTROL),
+        Some(etag) => response
+            .header(header::ETAG, etag)
+            .header(header::CACHE_CONTROL, NO_CACHE_CONTROL),
+    };
     response
         .body(Body::from_stream(ReaderStream::new(stdout)))
         .map_err(|err| ApiError::Internal(err.into()))

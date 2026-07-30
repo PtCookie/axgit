@@ -2,15 +2,15 @@
 
 use std::path::PathBuf;
 
-use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use serde::Deserialize;
 
-use super::sha_addressed_json;
+use super::{JSON_CONTENT_TYPE, cached_response};
 use crate::error::ApiError;
 use crate::repo::commits::CommitsPage;
-use crate::repo::{commits, diff, open, resolve};
+use crate::repo::{commits, diff, resolve};
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -52,56 +52,75 @@ pub async fn list_commits(
     State(state): State<AppState>,
     Path(name): Path<String>,
     Query(query): Query<CommitsQuery>,
-) -> Result<Json<CommitsPage>, ApiError> {
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
     let limit = parse_limit(query.limit.as_deref())?;
     let path = clean_path(query.path.as_deref());
-    let root = state.config.repo_root.clone();
-    let page = tokio::task::spawn_blocking(move || {
-        let repo = open::open_named(&root, &name)?;
-        let start = if let Some(cursor) = &query.cursor {
-            // The cursor is an opaque token from a previous response, so any
-            // failure is a malformed request (400), not a missing ref (404).
-            git2::Oid::from_str(cursor)
-                .ok()
-                .and_then(|oid| repo.find_commit(oid).ok())
-                .ok_or_else(|| ApiError::InvalidParam(format!("invalid cursor '{cursor}'")))?
-                .id()
-        } else if let Some(refname) = &query.r#ref {
-            resolve::resolve_commit(&repo, refname)?.id()
-        } else {
-            match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
-                Some(commit) => commit.id(),
-                // Empty repository (unborn HEAD): an empty page, not an error.
-                None => {
-                    return Ok(CommitsPage {
-                        commits: Vec::new(),
-                        next_cursor: None,
-                    });
+    // A missing `ref` is not normalized to HEAD: the two take different
+    // unborn-HEAD paths (empty page vs 404), so they stay distinct keys.
+    let params = format!(
+        "ref={:?}&path={:?}&cursor={:?}&limit={limit}",
+        query.r#ref, path, query.cursor
+    );
+    cached_response(
+        &state,
+        &name,
+        "commits",
+        params,
+        JSON_CONTENT_TYPE,
+        &headers,
+        move |repo| {
+            let start = if let Some(cursor) = &query.cursor {
+                // The cursor is an opaque token from a previous response, so any
+                // failure is a malformed request (400), not a missing ref (404).
+                git2::Oid::from_str(cursor)
+                    .ok()
+                    .and_then(|oid| repo.find_commit(oid).ok())
+                    .ok_or_else(|| ApiError::InvalidParam(format!("invalid cursor '{cursor}'")))?
+                    .id()
+            } else if let Some(refname) = &query.r#ref {
+                resolve::resolve_commit(repo, refname)?.id()
+            } else {
+                match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
+                    Some(commit) => commit.id(),
+                    // Empty repository (unborn HEAD): an empty page, not an error.
+                    None => {
+                        let page = CommitsPage {
+                            commits: Vec::new(),
+                            next_cursor: None,
+                        };
+                        return Ok((false, serde_json::to_vec(&page)?));
+                    }
                 }
-            }
-        };
-        commits::log(&repo, start, path.as_deref(), limit)
-    })
+            };
+            let page = commits::log(repo, start, path.as_deref(), limit)?;
+            Ok((false, serde_json::to_vec(&page)?))
+        },
+    )
     .await
-    .map_err(|err| ApiError::Internal(err.into()))??;
-    Ok(Json(page))
 }
 
 /// `GET /api/v1/repos/{repo}/commits/{sha}`
 pub async fn get_commit(
     State(state): State<AppState>,
     Path((name, sha)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let root = state.config.repo_root.clone();
-    let requested = sha.clone();
-    let detail = tokio::task::spawn_blocking(move || {
-        let repo = open::open_named(&root, &name)?;
-        let commit = resolve::resolve_commit(&repo, &sha)?;
-        commits::detail(&repo, &commit)
-    })
+    let params = format!("sha={sha}");
+    cached_response(
+        &state,
+        &name,
+        "commit",
+        params,
+        JSON_CONTENT_TYPE,
+        &headers,
+        move |repo| {
+            let commit = resolve::resolve_commit(repo, &sha)?;
+            let detail = commits::detail(repo, &commit)?;
+            Ok((sha == detail.sha, serde_json::to_vec(&detail)?))
+        },
+    )
     .await
-    .map_err(|err| ApiError::Internal(err.into()))??;
-    Ok(sha_addressed_json(requested == detail.sha, detail))
 }
 
 #[derive(Deserialize)]
@@ -114,19 +133,22 @@ pub async fn get_commit_diff(
     State(state): State<AppState>,
     Path((name, sha)): Path<(String, String)>,
     Query(query): Query<DiffQuery>,
+    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let path = clean_path(query.path.as_deref());
-    let root = state.config.repo_root.clone();
-    let requested = sha.clone();
-    let commit_diff = tokio::task::spawn_blocking(move || {
-        let repo = open::open_named(&root, &name)?;
-        let commit = resolve::resolve_commit(&repo, &sha)?;
-        diff::commit_diff(&repo, &commit, path.as_deref())
-    })
+    let params = format!("sha={sha}&path={path:?}");
+    cached_response(
+        &state,
+        &name,
+        "diff",
+        params,
+        JSON_CONTENT_TYPE,
+        &headers,
+        move |repo| {
+            let commit = resolve::resolve_commit(repo, &sha)?;
+            let commit_diff = diff::commit_diff(repo, &commit, path.as_deref())?;
+            Ok((sha == commit_diff.sha, serde_json::to_vec(&commit_diff)?))
+        },
+    )
     .await
-    .map_err(|err| ApiError::Internal(err.into()))??;
-    Ok(sha_addressed_json(
-        requested == commit_diff.sha,
-        commit_diff,
-    ))
 }

@@ -289,18 +289,23 @@ async fn detail_should_set_immutable_cache_for_full_sha() {
 }
 
 #[tokio::test]
-async fn detail_should_not_cache_branch_addressed_requests() {
+async fn detail_should_use_no_cache_for_branch_addressed_requests() {
     let (root, shas) = setup();
     let (status, headers, json) =
         common::get_json_with_headers(router_for(root.path()), "/api/v1/repos/alpha/commits/main")
             .await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
-    // The branch resolves to the newest commit, but the response is mutable.
+    // The branch resolves to the newest commit, but the response is mutable:
+    // an ETag + no-cache instead of the immutable Cache-Control.
     assert_eq!(
-        (json["sha"].as_str(), headers.get("cache-control")),
-        (Some(shas[4].as_str()), None),
+        (
+            json["sha"].as_str(),
+            headers.get("cache-control").map(|v| v.to_str().unwrap())
+        ),
+        (Some(shas[4].as_str()), Some("no-cache")),
         "unexpected response: {json}"
     );
+    assert!(headers.contains_key("etag"));
 }
 
 #[tokio::test]

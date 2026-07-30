@@ -36,6 +36,21 @@ SSR이 필요해지면 별도 결정으로 뒤집는다 (배포 컨테이너 수
 응답 캐시 키 `(repo, endpoint, params)`, 검증자 `HEAD sha + agefile mtime`.
 sha 고정 응답은 불변 취급. 클라이언트는 ETag/immutable. (ARCHITECTURE.md#caching)
 
+구현 시 확정 (moka 도입):
+
+- 검증자는 git2 open 후 `head().target()` + agefile의 **raw `SystemTime`** 비교
+  (`repo/meta.rs::Validator`). `.git/HEAD`/`packed-refs` 직접 파싱은 symbolic ref 처리 때문에
+  깨지기 쉬워 채택하지 않음 — open 비용은 낮다.
+- 캐시 계층은 tower 미들웨어가 아니라 **핸들러 공통 헬퍼**(`handlers/mod.rs::cached_response`).
+  immutable 여부가 ref 해석 후에야 결정되고, params 정규화/content-type이 엔드포인트마다
+  다르며, 에러 응답은 캐시하면 안 되기 때문.
+- ETag는 검증자에서 생성하는 strong ETag(값 형식은 계약 아님). 요청 병합(`get_with`)은
+  쓰지 않는다 — 검증자 무효화 흐름과 맞지 않고 이 규모에서 중복 계산은 허용 가능.
+- **TTL(기본 300s)은 안전망**: 검증자가 못 보는 out-of-band 변경(config 수동 편집, 훅 없는
+  비-HEAD push)의 staleness 상한. 엔트리당 본문 상한 1 MiB, 전체 용량은 바이트 단위(기본 32 MiB).
+- 예외: repos 목록은 `ScanCache`(TTL) 유지 + 본문 해시 ETag, raw는 캐시 제외(대용량 바이너리),
+  archive는 스트리밍이라 캐시 불가 + weak ETag.
+
 ## #7 도구 체인
 
 - 패키지 매니저: **pnpm** (workspace).

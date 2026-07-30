@@ -352,7 +352,14 @@ async fn diff_should_set_immutable_cache_for_full_sha_only() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
-    assert_eq!(headers.get("cache-control"), None);
+    // Branch-addressed: mutable, so an ETag + no-cache instead.
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("no-cache")
+    );
+    assert!(headers.contains_key("etag"));
 }
 
 #[tokio::test]

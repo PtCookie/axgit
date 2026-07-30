@@ -29,6 +29,8 @@ pub fn test_config(repo_root: &Path) -> Config {
         listen: "127.0.0.1:0".parse().unwrap(),
         clone_url_base: None,
         cache_scan_ttl_secs: 60,
+        cache_response_ttl_secs: 300,
+        cache_response_max_bytes: 32 * 1024 * 1024,
     }
 }
 
@@ -210,6 +212,20 @@ pub async fn get_json_with_headers(router: Router, uri: &str) -> (StatusCode, He
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json = serde_json::from_slice(&bytes).expect("response body is not JSON");
+    (status, headers, json)
+}
+
+/// Like [`get_json_with_headers`], but attaches request headers first
+/// (e.g. `If-None-Match`). Panics on an empty body — use
+/// [`get_bytes_with_request_headers`] for expected 304s.
+pub async fn get_json_with_request_headers(
+    router: Router,
+    uri: &str,
+    request_headers: &[(&str, &str)],
+) -> (StatusCode, HeaderMap, Value) {
+    let (status, headers, bytes) =
+        get_bytes_with_request_headers(router, uri, request_headers).await;
     let json = serde_json::from_slice(&bytes).expect("response body is not JSON");
     (status, headers, json)
 }
