@@ -17,7 +17,7 @@ use tokio_util::io::ReaderStream;
 use super::{
     IMMUTABLE_CACHE_CONTROL, NO_CACHE_CONTROL, if_none_match, not_modified, validator_etag,
 };
-use crate::error::ApiError;
+use crate::error::{ApiError, ErrorResponse};
 use crate::repo::{meta, open, resolve};
 use crate::state::AppState;
 
@@ -82,7 +82,37 @@ fn sanitize_component(component: &str) -> String {
         .collect()
 }
 
-/// `GET /api/v1/repos/{repo}/archive/{ref}.{format}`
+/// Source archive
+///
+/// Streams `git archive` output chunked (no `Content-Length`). The ref is
+/// resolved first and only the **full sha** reaches the command line. The
+/// `{ref}.{format}` split is suffix matching: `.tar.gz` first, then `.zip`.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}/archive/{ref}.{format}",
+    tag = "files",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+        ("ref" = String, Path, description = "Branch, tag, or commit sha", example = "main"),
+        ("format" = String, Path, description = "`tar.gz` or `zip`", example = "tar.gz"),
+    ),
+    responses(
+        (status = 200, description = "Archive stream (`application/gzip` or `application/zip`). If `git archive` fails mid-stream the response is truncated without a status change.",
+            content_type = "application/gzip",
+            body = String,
+            headers(
+                ("Content-Disposition" = String, description = "`attachment; filename=\"{repo}-{safe_ref}.{format}\"`"),
+                ("X-Content-Type-Options" = String, description = "Always `nosniff`"),
+                ("ETag" = String, description = "**Weak** (`W/\"...\"`); absent on full-sha requests"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched — no git process is spawned"),
+        (status = 400, description = "`invalid_param` — suffix is neither `.tar.gz` nor `.zip`", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found`, `ref_not_found`", body = ErrorResponse),
+        (status = 500, description = "`internal` — `git archive` could not be spawned", body = ErrorResponse),
+    ),
+)]
 pub async fn get_archive(
     State(state): State<AppState>,
     Path((name, rest)): Path<(String, String)>,

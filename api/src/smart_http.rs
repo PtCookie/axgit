@@ -28,8 +28,9 @@ use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
+use utoipa::IntoParams;
 
-use crate::error::ApiError;
+use crate::error::{ApiError, ErrorResponse};
 use crate::repo::open;
 use crate::state::AppState;
 
@@ -48,12 +49,41 @@ pub(crate) const MAX_REQUEST_BODY: usize = 8 * 1024 * 1024;
 /// Upper bound for the request body after gzip inflation (zip-bomb defence).
 const MAX_INFLATED_BODY: u64 = 64 * 1024 * 1024;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct InfoRefsQuery {
+    /// Must be `git-upload-pack`. `git-receive-pack` is `403 read_only`;
+    /// anything else (including the dumb protocol's missing value) is
+    /// `400 invalid_param`.
+    #[param(example = "git-upload-pack")]
     service: Option<String>,
 }
 
-/// `GET /{repo}.git/info/refs?service=git-upload-pack`
+/// Ref advertisement (clone/fetch)
+///
+/// Spawns `git upload-pack --stateless-rpc --advertise-refs` and prepends the
+/// pkt-line service header. A `Git-Protocol` request header is sanitized and
+/// forwarded as `GIT_PROTOCOL`, so protocol v2 negotiation works.
+#[utoipa::path(
+    get,
+    path = "/{repo_git}/info/refs",
+    tag = "smart-http",
+    params(
+        ("repo_git" = String, Path, description = "Repository directory name **including** the `.git` suffix", example = "git-compose.git"),
+        InfoRefsQuery,
+    ),
+    responses(
+        (status = 200, description = "pkt-line service header followed by the ref advertisement",
+            content_type = "application/x-git-upload-pack-advertisement",
+            body = String,
+            headers(("Cache-Control" = String, description = "Always `no-cache`; Smart HTTP never uses `ETag`")),
+        ),
+        (status = 400, description = "`invalid_param` — `service` missing or unsupported", body = ErrorResponse),
+        (status = 403, description = "`read_only` — `service=git-receive-pack`", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found` — unknown repository, or a path without the `.git` suffix", body = ErrorResponse),
+        (status = 500, description = "`internal` — upload-pack could not be spawned", body = ErrorResponse),
+    ),
+)]
 pub async fn info_refs(
     State(state): State<AppState>,
     Path(repo_git): Path<String>,
@@ -96,7 +126,35 @@ pub async fn info_refs(
         .map_err(|err| ApiError::Internal(err.into()))
 }
 
-/// `POST /{repo}.git/git-upload-pack`
+/// Upload-pack negotiation (clone/fetch)
+///
+/// Pipes the request body into `git upload-pack --stateless-rpc` and streams
+/// its stdout back chunked. If upload-pack dies mid-stream the status code
+/// cannot change, so the client sees an early EOF.
+#[utoipa::path(
+    post,
+    path = "/{repo_git}/git-upload-pack",
+    tag = "smart-http",
+    params(
+        ("repo_git" = String, Path, description = "Repository directory name **including** the `.git` suffix", example = "git-compose.git"),
+    ),
+    request_body(
+        description = "upload-pack negotiation pkt-lines. `Content-Encoding: gzip` is inflated by the server. Limits: 8 MiB compressed, 64 MiB inflated.",
+        content_type = "application/x-git-upload-pack-request",
+        content = String,
+    ),
+    responses(
+        (status = 200, description = "Packfile stream",
+            content_type = "application/x-git-upload-pack-result",
+            body = String,
+            headers(("Cache-Control" = String, description = "Always `no-cache`; Smart HTTP never uses `ETag`")),
+        ),
+        (status = 400, description = "`invalid_param` — gzip inflation failed or the inflated body exceeded 64 MiB", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found`", body = ErrorResponse),
+        (status = 413, description = "Compressed body over 8 MiB — axum's `DefaultBodyLimit` answers in plain text, not the JSON envelope"),
+        (status = 500, description = "`internal` — upload-pack could not be spawned", body = ErrorResponse),
+    ),
+)]
 pub async fn upload_pack(
     State(state): State<AppState>,
     Path(repo_git): Path<String>,

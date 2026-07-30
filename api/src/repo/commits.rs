@@ -3,49 +3,61 @@ use std::path::Path;
 use git2::{Commit, Oid, Repository};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use utoipa::ToSchema;
 
 use super::{diff, meta};
 use crate::error::ApiError;
 
 /// Commit author of `GET /api/v1/repos/{repo}/commits` (docs/API.md).
 /// The raw email is never exposed; `email_hash` seeds locally generated avatars.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct CommitAuthor {
     pub name: String,
     /// sha256 hex of the trimmed, lowercased author email.
+    #[schema(example = "b642b4217b34b1e8d3bd915fc65c4452")]
     pub email_hash: String,
 }
 
 /// Log entry of `GET /api/v1/repos/{repo}/commits` (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CommitInfo {
+    /// Full commit sha.
     pub sha: String,
-    /// `None` for non-utf8 commit messages.
+    /// First line of the commit message. `None` for non-utf8 commit messages.
+    #[schema(required = true)]
     pub summary: Option<String>,
     pub author: CommitAuthor,
-    /// Authordate (RFC 3339).
+    /// Authordate (RFC 3339). `None` for unrepresentable timestamps.
+    #[schema(required = true, example = "2026-07-01T14:00:00+09:00")]
     pub authored_at: Option<String>,
     pub parents: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CommitsPage {
     pub commits: Vec<CommitInfo>,
     /// Sha of the first commit of the next page; `null` on the last page.
+    /// Pass it back as the `cursor` query parameter.
+    #[schema(required = true)]
     pub next_cursor: Option<String>,
 }
 
 /// Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).
 /// Superset of [`CommitInfo`] so the frontend can extend the log entry type.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CommitDetail {
+    /// Full commit sha, even when the request used a branch, tag or short sha.
     pub sha: String,
+    #[schema(required = true)]
     pub summary: Option<String>,
     /// Full commit message. `None` for non-utf8 messages.
+    #[schema(required = true)]
     pub message: Option<String>,
     pub author: CommitAuthor,
     pub committer: CommitAuthor,
+    #[schema(required = true)]
     pub authored_at: Option<String>,
+    #[schema(required = true)]
     pub committed_at: Option<String>,
     pub parents: Vec<String>,
     /// First-parent diffstat (docs/API.md).

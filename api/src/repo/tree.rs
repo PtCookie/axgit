@@ -4,6 +4,7 @@ use std::path::Path;
 
 use git2::{Commit, Repository};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::error::ApiError;
 
@@ -11,32 +12,48 @@ const MODE_TREE: i32 = 0o040000;
 const MODE_LINK: i32 = 0o120000;
 const MODE_COMMIT: i32 = 0o160000; // gitlink (submodule)
 
+/// What a tree entry points at, derived from its file mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum EntryKind {
+    Tree,
+    Blob,
+    /// Mode `120000`.
+    Symlink,
+    /// Gitlink (submodule), mode `160000`.
+    Commit,
+}
+
 /// Tree entry of the tree endpoint (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TreeEntryInfo {
     pub name: String,
     #[serde(rename = "type")]
-    pub kind: &'static str,
+    pub kind: EntryKind,
     /// Octal file mode, e.g. `"100644"`.
+    #[schema(example = "100644")]
     pub mode: String,
     /// Object size in bytes; blobs only, `None` otherwise.
+    #[schema(required = true)]
     pub size: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TreeListing {
     /// Resolved commit sha the listing was taken from.
     pub sha: String,
+    /// Requested directory path; empty string for the root tree.
     pub path: String,
+    /// Trees first, then by name ascending.
     pub entries: Vec<TreeEntryInfo>,
 }
 
-fn kind_of(mode: i32) -> &'static str {
+fn kind_of(mode: i32) -> EntryKind {
     match mode {
-        MODE_TREE => "tree",
-        MODE_LINK => "symlink",
-        MODE_COMMIT => "commit",
-        _ => "blob",
+        MODE_TREE => EntryKind::Tree,
+        MODE_LINK => EntryKind::Symlink,
+        MODE_COMMIT => EntryKind::Commit,
+        _ => EntryKind::Blob,
     }
 }
 
@@ -63,7 +80,7 @@ pub fn list_tree(repo: &Repository, commit: &Commit, path: &str) -> Result<TreeL
         let mode = entry.filemode();
         let kind = kind_of(mode);
         // read_header stats the object without loading its content.
-        let size = (kind == "blob")
+        let size = (kind == EntryKind::Blob)
             .then(|| odb.read_header(entry.id()).ok())
             .flatten()
             .map(|(size, _)| size as u64);
@@ -75,8 +92,8 @@ pub fn list_tree(repo: &Repository, commit: &Commit, path: &str) -> Result<TreeL
         });
     }
     entries.sort_by(|a, b| {
-        (a.kind != "tree")
-            .cmp(&(b.kind != "tree"))
+        (a.kind != EntryKind::Tree)
+            .cmp(&(b.kind != EntryKind::Tree))
             .then_with(|| a.name.cmp(&b.name))
     });
 

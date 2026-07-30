@@ -1,7 +1,26 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
+use serde::Serialize;
+use utoipa::ToSchema;
+
+/// Error envelope shared by every failing endpoint (docs/API.md).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorResponse {
+    pub error: ErrorBody,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorBody {
+    /// One of `repo_not_found`, `ref_not_found`, `path_not_found`,
+    /// `invalid_param`, `read_only`, `internal`.
+    #[schema(example = "repo_not_found")]
+    pub code: String,
+    /// Human-readable detail. Internal errors report a generic message; the
+    /// cause only goes to the server log.
+    #[schema(example = "repository 'foo' not found")]
+    pub message: String,
+}
 
 /// API error mapped to the JSON error contract in docs/API.md.
 #[derive(Debug, thiserror::Error)]
@@ -60,6 +79,11 @@ impl IntoResponse for ApiError {
 }
 
 /// Builds the `{"error": {"code", "message"}}` body shared by all error responses.
-pub fn error_json(code: &str, message: &str) -> Json<serde_json::Value> {
-    Json(json!({ "error": { "code": code, "message": message } }))
+pub fn error_json(code: &str, message: &str) -> Json<ErrorResponse> {
+    Json(ErrorResponse {
+        error: ErrorBody {
+            code: code.to_owned(),
+            message: message.to_owned(),
+        },
+    })
 }

@@ -3,11 +3,19 @@ use axum::extract::DefaultBodyLimit;
 use axum::routing::{any, get, post};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
-use crate::error::ApiError;
+use crate::error::{ApiError, ErrorResponse};
 use crate::handlers::{archive, commits, feed, files, repos};
+use crate::openapi::ApiDoc;
 use crate::smart_http;
 use crate::state::AppState;
+
+/// Where the generated spec is served, and the file `docs/openapi.json` mirrors.
+pub const OPENAPI_JSON_PATH: &str = "/api/v1/openapi.json";
+/// Where Swagger UI is mounted (assets are vendored into the binary).
+pub const SWAGGER_UI_PATH: &str = "/swagger-ui";
 
 pub fn build_router(state: AppState) -> Router {
     let api = Router::new()
@@ -42,7 +50,12 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/{repo_git}/git-receive-pack", any(receive_pack));
 
-    let mut router = Router::new().nest("/api/v1", api).merge(smart_http);
+    // Swagger UI serves the spec at OPENAPI_JSON_PATH itself, so there is no
+    // separate handler; the static fallback below only sees unmatched paths.
+    let mut router = Router::new()
+        .nest("/api/v1", api)
+        .merge(smart_http)
+        .merge(SwaggerUi::new(SWAGGER_UI_PATH).url(OPENAPI_JSON_PATH, ApiDoc::openapi()));
 
     if let Some(static_dir) = &state.config.static_dir {
         router = router.fallback_service(ServeDir::new(static_dir));
@@ -51,6 +64,18 @@ pub fn build_router(state: AppState) -> Router {
     router.layer(TraceLayer::new_for_http()).with_state(state)
 }
 
-async fn receive_pack() -> ApiError {
+/// Push is SSH-only (CLAUDE.md invariant): every method on this path is 403.
+#[utoipa::path(
+    post,
+    path = "/{repo_git}/git-receive-pack",
+    tag = "smart-http",
+    params(
+        ("repo_git" = String, Path, description = "Repository directory name **including** the `.git` suffix", example = "git-compose.git"),
+    ),
+    responses(
+        (status = 403, description = "`read_only` — always; push via SSH instead. Every HTTP method answers the same way.", body = ErrorResponse),
+    ),
+)]
+pub(crate) async fn receive_pack() -> ApiError {
     ApiError::ReadOnly
 }

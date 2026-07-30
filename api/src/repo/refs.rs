@@ -1,33 +1,41 @@
 use git2::{BranchType, ObjectType, Repository};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::meta;
 
 /// Branch entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BranchRef {
+    #[schema(example = "main")]
     pub name: String,
     /// Commit sha of the branch tip.
     pub target: String,
     /// Authordate (RFC 3339) of the branch tip.
+    #[schema(required = true)]
     pub committed_at: Option<String>,
 }
 
 /// Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TagRef {
+    #[schema(example = "v1.0.0")]
     pub name: String,
     /// Peeled commit sha (not the tag object), so clients can link to the commit.
     pub target: String,
     /// First line of the tag message. `None` for lightweight tags.
+    #[schema(required = true)]
     pub annotation: Option<String>,
     /// Tagger date (RFC 3339). `None` for lightweight tags.
+    #[schema(required = true)]
     pub tagged_at: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct RefsInfo {
+    /// Sorted by name ascending; empty for a repository without commits.
     pub branches: Vec<BranchRef>,
+    /// Sorted by name ascending.
     pub tags: Vec<TagRef>,
 }
 

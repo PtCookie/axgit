@@ -2,22 +2,39 @@ use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::{JSON_CONTENT_TYPE, body_etag, cached_response, etag_response};
-use crate::error::ApiError;
+use crate::error::{ApiError, ErrorResponse};
+use crate::repo::refs::RefsInfo;
 use crate::repo::{RepoInfo, RepoSummary, meta, refs};
 use crate::state::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ReposResponse {
     pub repos: Vec<RepoInfo>,
 }
 
-/// `GET /api/v1/repos`
+/// List repositories
 ///
 /// Served from the scan snapshot ([`crate::cache::ScanCache`]), not the
 /// response cache — the list has no single backing repository, so its `ETag`
 /// is a hash of the serialized body.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos",
+    tag = "repos",
+    responses(
+        (status = 200, description = "Repository list", body = ReposResponse,
+            headers(
+                ("ETag" = String, description = "Hash of the response body; opaque"),
+                ("Cache-Control" = String, description = "`no-cache`"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 500, description = "Repository root could not be scanned", body = ErrorResponse),
+    ),
+)]
 pub async fn list_repos(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -38,7 +55,28 @@ pub async fn list_repos(
     ))
 }
 
-/// `GET /api/v1/repos/{repo}`
+/// Repository summary
+///
+/// An empty repository (unborn HEAD) still answers `200`, with `head`,
+/// `default_branch` and `last_modified` `null` and both counts 0.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}",
+    tag = "repos",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+    ),
+    responses(
+        (status = 200, description = "Repository summary", body = RepoSummary,
+            headers(
+                ("ETag" = String, description = "Validator-derived; opaque"),
+                ("Cache-Control" = String, description = "`no-cache`"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 404, description = "`repo_not_found`", body = ErrorResponse),
+    ),
+)]
 pub async fn get_repo(
     State(state): State<AppState>,
     Path(name): Path<String>,
@@ -81,7 +119,28 @@ pub async fn get_repo(
     .await
 }
 
-/// `GET /api/v1/repos/{repo}/refs`
+/// Branches and tags
+///
+/// Tag targets are peeled to the commit, so an annotated tag reports the
+/// commit sha rather than the tag object.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}/refs",
+    tag = "repos",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+    ),
+    responses(
+        (status = 200, description = "Branches and tags, each sorted by name", body = RefsInfo,
+            headers(
+                ("ETag" = String, description = "Validator-derived; opaque"),
+                ("Cache-Control" = String, description = "`no-cache`"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 404, description = "`repo_not_found`", body = ErrorResponse),
+    ),
+)]
 pub async fn get_refs(
     State(state): State<AppState>,
     Path(name): Path<String>,

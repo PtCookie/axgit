@@ -9,6 +9,7 @@ use std::path::Path;
 
 use git2::{Commit, Delta, Diff, DiffDelta, DiffOptions, Patch, Repository};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::error::ApiError;
 
@@ -19,8 +20,21 @@ pub const MAX_FILE_DIFF_LINES: usize = 1000;
 /// full file list stays available on the commit detail response.
 pub const MAX_DIFF_FILES: usize = 300;
 
+/// How a file changed between the two trees. Rename detection runs with
+/// libgit2 defaults (renames only, 50% similarity).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DiffStatus {
+    Added,
+    Deleted,
+    Modified,
+    Renamed,
+    Copied,
+    Typechange,
+}
+
 /// Diffstat of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct DiffStat {
     pub files: Vec<DiffStatFile>,
     pub files_changed: usize,
@@ -29,41 +43,50 @@ pub struct DiffStat {
 }
 
 /// Per-file entry shared by the diffstat and the diff (`#[serde(flatten)]`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct DiffStatFile {
+    #[schema(example = "src/main.rs")]
     pub path: String,
     /// Previous path; only set for `renamed`/`copied`.
+    #[schema(required = true)]
     pub old_path: Option<String>,
-    pub status: &'static str,
+    pub status: DiffStatus,
+    /// Always the full count, even when the file's hunks were truncated.
+    /// Binary files report 0.
     pub additions: usize,
+    /// Always the full count, even when the file's hunks were truncated.
+    /// Binary files report 0.
     pub deletions: usize,
     pub binary: bool,
 }
 
 /// Structured diff of `GET /api/v1/repos/{repo}/commits/{sha}/diff` (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CommitDiff {
     pub sha: String,
     /// First parent the diff was computed against; `null` for a root commit.
+    #[schema(required = true)]
     pub parent: Option<String>,
     /// `true` when files beyond [`MAX_DIFF_FILES`] were omitted.
     pub truncated: bool,
     pub files: Vec<FileDiff>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct FileDiff {
     #[serde(flatten)]
     pub stat: DiffStatFile,
     /// `true` when hunks were dropped past [`MAX_FILE_DIFF_LINES`].
     /// `additions`/`deletions` still count the full change.
     pub truncated: bool,
+    /// Empty for binary files.
     pub hunks: Vec<Hunk>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct Hunk {
     /// `@@ -a,b +c,d @@ <context>` line without the trailing newline.
+    #[schema(example = "@@ -1,2 +1,2 @@")]
     pub header: String,
     pub old_start: u32,
     pub old_lines: u32,
@@ -72,13 +95,28 @@ pub struct Hunk {
     pub lines: Vec<Line>,
 }
 
-#[derive(Debug, Serialize)]
+/// Which side of the diff a line belongs to. Other libgit2 origins (EOF
+/// newline markers and the like) are dropped rather than reported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+pub enum LineOrigin {
+    #[serde(rename = " ")]
+    Context,
+    #[serde(rename = "+")]
+    Addition,
+    #[serde(rename = "-")]
+    Deletion,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct Line {
-    /// `"+"`, `"-"`, or `" "`; other libgit2 origins (EOF markers) are dropped.
-    pub origin: char,
+    pub origin: LineOrigin,
     /// Line content without the trailing newline (lossy utf-8).
     pub content: String,
+    /// `null` on added lines.
+    #[schema(required = true)]
     pub old_lineno: Option<u32>,
+    /// `null` on deleted lines.
+    #[schema(required = true)]
     pub new_lineno: Option<u32>,
 }
 
@@ -178,7 +216,7 @@ fn load_file<'d>(
                 DiffStatFile {
                     path,
                     old_path,
-                    status: status_str(delta.status()),
+                    status: diff_status(delta.status()),
                     additions,
                     deletions,
                     binary,
@@ -196,7 +234,7 @@ fn load_file<'d>(
                 DiffStatFile {
                     path,
                     old_path,
-                    status: status_str(delta.status()),
+                    status: diff_status(delta.status()),
                     additions: 0,
                     deletions: 0,
                     binary: true,
@@ -229,10 +267,9 @@ fn collect_hunks(patch: &mut Patch) -> Result<(Vec<Hunk>, bool), ApiError> {
         let mut lines = Vec::with_capacity(line_count);
         for line_idx in 0..line_count {
             let line = patch.line_in_hunk(hunk_idx, line_idx)?;
-            let origin = line.origin();
-            if !matches!(origin, '+' | '-' | ' ') {
+            let Some(origin) = line_origin(line.origin()) else {
                 continue;
-            }
+            };
             lines.push(Line {
                 origin,
                 content: trim_newline(&String::from_utf8_lossy(line.content())).to_owned(),
@@ -266,20 +303,31 @@ fn delta_paths(delta: &DiffDelta) -> (String, Option<String>) {
     (path, old_path)
 }
 
-fn status_str(status: Delta) -> &'static str {
+fn diff_status(status: Delta) -> DiffStatus {
     match status {
-        Delta::Added => "added",
-        Delta::Deleted => "deleted",
-        Delta::Modified => "modified",
-        Delta::Renamed => "renamed",
-        Delta::Copied => "copied",
-        Delta::Typechange => "typechange",
+        Delta::Added => DiffStatus::Added,
+        Delta::Deleted => DiffStatus::Deleted,
+        Delta::Modified => DiffStatus::Modified,
+        Delta::Renamed => DiffStatus::Renamed,
+        Delta::Copied => DiffStatus::Copied,
+        Delta::Typechange => DiffStatus::Typechange,
         // Worktree/index-only states cannot appear in a tree-to-tree diff.
         Delta::Unmodified
         | Delta::Ignored
         | Delta::Untracked
         | Delta::Unreadable
-        | Delta::Conflicted => "modified",
+        | Delta::Conflicted => DiffStatus::Modified,
+    }
+}
+
+/// Maps a libgit2 line origin onto the three the API contract exposes; other
+/// origins (EOF newline markers, file headers) yield `None` and are dropped.
+fn line_origin(origin: char) -> Option<LineOrigin> {
+    match origin {
+        ' ' => Some(LineOrigin::Context),
+        '+' => Some(LineOrigin::Addition),
+        '-' => Some(LineOrigin::Deletion),
+        _ => None,
     }
 }
 
@@ -340,7 +388,7 @@ mod tests {
                 file.additions,
                 file.deletions
             ),
-            (1, "a.txt", "added", 1, 0)
+            (1, "a.txt", DiffStatus::Added, 1, 0)
         );
     }
 
@@ -355,7 +403,7 @@ mod tests {
         let file = &stat.files[0];
         assert_eq!(
             (file.status, file.additions, file.deletions, file.binary),
-            ("modified", 2, 1, false)
+            (DiffStatus::Modified, 2, 1, false)
         );
     }
 
@@ -428,9 +476,9 @@ mod tests {
         assert_eq!(
             shape,
             vec![
-                (' ', "one", Some(1), Some(1)),
-                ('-', "two", Some(2), None),
-                ('+', "three", None, Some(2)),
+                (LineOrigin::Context, "one", Some(1), Some(1)),
+                (LineOrigin::Deletion, "two", Some(2), None),
+                (LineOrigin::Addition, "three", None, Some(2)),
             ]
         );
     }

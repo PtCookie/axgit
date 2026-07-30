@@ -10,6 +10,8 @@ import pluginVitest from "@vitest/eslint-plugin";
 
 export default defineConfig([
   includeIgnoreFile(resolve(import.meta.dirname, ".gitignore")),
+  // Generated from docs/openapi.json by `pnpm gen:types`; never edited by hand.
+  { ignores: ["src/lib/api/types.ts"] },
   {
     files: ["**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"],
     plugins: { js },

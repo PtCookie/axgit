@@ -48,6 +48,10 @@ cargo test --manifest-path api/Cargo.toml
 cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path api/Cargo.toml
 
+# OpenAPI 스펙 재생성 (docs/openapi.json) — API를 바꾼 커밋에서 반드시 실행
+AXGIT_UPDATE_OPENAPI=1 cargo test --manifest-path api/Cargo.toml --test openapi_test
+cd web && pnpm gen:types    # 이어서 web 타입 재생성 (openapi-typescript)
+
 # fixture 저장소 생성 (bare repo 4종, 고정 날짜로 재현 가능)
 ./scripts/make-fixtures.sh
 
@@ -62,7 +66,14 @@ docker build --tag axgit:latest .
 
 상세 설계는 `docs/ARCHITECTURE.md`, API 계약은 `docs/API.md`, 결정 이력은 `docs/DECISIONS.md`,
 구현 순서/진행 상황은 `docs/ROADMAP.md` 참고.
-**API를 변경할 때는 반드시 `docs/API.md`를 같은 커밋에서 갱신할 것** — 이 문서가 web/api 간 유일한 계약이다.
+
+**API를 변경할 때는 같은 커밋에서 셋을 모두 갱신할 것**:
+
+1. `docs/API.md` — 계약의 **규범 문서**. 스펙이 표현할 수 없는 의미 규칙(상한, ref 매칭, `null` 조건)이 여기 있다.
+2. `docs/openapi.json` — utoipa 어노테이션에서 **생성**되는 스펙 (직접 편집 금지, 위 재생성 명령 사용).
+   엔드포인트를 추가하면 `#[utoipa::path]`와 `api/src/openapi.rs`의 `paths(...)`,
+   `tests/openapi_test.rs`의 `EXPECTED_OPERATIONS`까지 함께 손봐야 테스트가 통과한다.
+3. `web/src/lib/api/types.ts` — openapi.json에서 **생성**되는 TS 타입 (직접 편집 금지).
 
 ### 백엔드 요점
 
@@ -91,8 +102,8 @@ docker build --tag axgit:latest .
   scope는 필요 시 `feat(api):`, `fix(web):` 형태.
 - **Rust**: edition 2024, `cargo fmt` 기본 설정, clippy 경고 0 유지 (`-D warnings`).
   에러는 `thiserror`(라이브러리 코드) + `anyhow`(bin 진입부).
-- **TypeScript**: strict 모드. API 응답 타입은 `web/src/lib/api/types.ts`에 수동 정의하고
-  `docs/API.md`와 동기화한다 (코드 생성 도입 전까지).
+- **TypeScript**: strict 모드. API 응답 타입은 `web/src/lib/api/types.ts`를 쓴다 —
+  `docs/openapi.json`에서 `pnpm gen:types`로 생성되는 파일이므로 직접 수정하지 않는다.
 - **테스트**: api는 tempdir에 git CLI로 fixture repo를 만들어 통합 테스트 (`api/tests/`).
   git CLI 호출은 `GIT_CONFIG_GLOBAL=/dev/null` `GIT_CONFIG_SYSTEM=/dev/null`로 호스트 설정을 차단하고
   `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`를 고정해 결정적으로 만든다.
@@ -105,18 +116,20 @@ docker build --tag axgit:latest .
 axgit/
   api/                # Rust crate (axum + git2)
     src/
-      main.rs         # 진입점, 라우터 구성
-      repo/           # 저장소 스캔, 메타데이터, git2 읽기
-      handlers/       # HTTP 핸들러 (API.md와 1:1)
+      main.rs         # 진입점 (thin), lib.rs가 모듈 선언
+      routes.rs       # 라우터 구성 + Swagger UI 마운트
+      repo/           # 저장소 스캔, 메타데이터, git2 읽기 (응답 구조체도 여기)
+      handlers/       # HTTP 핸들러 (API.md와 1:1, #[utoipa::path] 어노테이션)
+      openapi.rs      # #[derive(OpenApi)] — 스펙의 경로/태그 목록
       cache.rs        # 응답 캐시
       smart_http.rs   # git-upload-pack 프록시
-    tests/            # fixture repo 기반 통합 테스트
-  web/                # Astro + React + shadcn/ui
+    tests/            # fixture repo 기반 통합 테스트 (+ openapi_test.rs 스냅샷)
+  web/                # Astro + React + shadcn/ui (자체 pnpm workspace)
     src/
       pages/          # Astro 라우트
       components/     # React islands, ui/ (shadcn)
-      lib/api/        # fetch 클라이언트 + 타입
-  docs/               # ARCHITECTURE.md, API.md, DECISIONS.md, ROADMAP.md
+      lib/api/        # fetch 클라이언트 + types.ts (생성 파일)
+  docs/               # ARCHITECTURE.md, API.md, DECISIONS.md, ROADMAP.md, openapi.json
   lefthook.yml
   Dockerfile          # web build → api build → runtime (단일 이미지)
 ```

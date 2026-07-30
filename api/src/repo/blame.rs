@@ -5,31 +5,39 @@ use std::path::Path;
 
 use git2::{BlameOptions, Commit, Oid, Repository};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::blob;
 use super::commits::{CommitAuthor, signature_info, time_rfc3339};
 use crate::error::ApiError;
 
 /// One contiguous run of lines attributed to the same commit (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BlameRange {
     /// 1-based, inclusive.
     pub start_line: usize,
     pub line_count: usize,
+    /// Sha of the commit the lines are attributed to.
     pub sha: String,
     /// `None` for non-utf8 commit messages.
+    #[schema(required = true)]
     pub summary: Option<String>,
     pub author: CommitAuthor,
+    #[schema(required = true)]
     pub authored_at: Option<String>,
 }
 
 /// Response of the blame endpoint (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BlameInfo {
+    /// Resolved commit sha the file was blamed at.
     pub sha: String,
     pub path: String,
+    /// libgit2's NUL heuristic, or content that is not valid UTF-8.
     pub binary: bool,
+    /// `true` past the same 1 MiB cap the blob endpoint applies.
     pub too_large: bool,
+    /// Total line count; 0 for `binary`, `too_large`, or empty files.
     pub lines: usize,
     /// `start_line` ascending, covering the whole file with no gaps.
     /// Empty for `binary`, `too_large`, or empty files.

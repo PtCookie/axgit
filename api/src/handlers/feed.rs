@@ -10,7 +10,7 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 
 use super::{ATOM_CONTENT_TYPE, cached_response};
-use crate::error::ApiError;
+use crate::error::{ApiError, ErrorResponse};
 use crate::repo::commits::{self, CommitInfo, CommitsPage};
 use crate::repo::{RepoInfo, meta};
 use crate::state::AppState;
@@ -21,7 +21,32 @@ const FEED_ENTRY_LIMIT: usize = 20;
 /// `<updated>` on every feed and entry.
 const EPOCH: &str = "1970-01-01T00:00:00Z";
 
-/// `GET /api/v1/repos/{repo}/feed.atom`
+/// Atom feed of recent commits
+///
+/// The 20 most recent commits on HEAD. Absolute URLs are reconstructed from
+/// `X-Forwarded-Proto`/`X-Forwarded-Host`, falling back to `Host`; entry ids
+/// are `urn:sha1:{sha}` so they stay stable across hosts. An empty repository
+/// returns `200` with no entries.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}/feed.atom",
+    tag = "repos",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+    ),
+    responses(
+        (status = 200, description = "Atom 1.0 feed",
+            content_type = "application/atom+xml",
+            body = String,
+            headers(
+                ("ETag" = String, description = "Validator-derived; opaque"),
+                ("Cache-Control" = String, description = "`no-cache`"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 404, description = "`repo_not_found`", body = ErrorResponse),
+    ),
+)]
 pub async fn get_feed(
     State(state): State<AppState>,
     Path(name): Path<String>,

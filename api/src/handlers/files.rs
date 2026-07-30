@@ -4,16 +4,47 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
+use utoipa::IntoParams;
 
 use super::{
     IMMUTABLE_CACHE_CONTROL, JSON_CONTENT_TYPE, NO_CACHE_CONTROL, cached_response, if_none_match,
     not_modified, validator_etag,
 };
-use crate::error::ApiError;
+use crate::error::{ApiError, ErrorResponse};
+use crate::repo::blame::BlameInfo;
+use crate::repo::blob::BlobInfo;
+use crate::repo::readme::ReadmeInfo;
+use crate::repo::tree::TreeListing;
 use crate::repo::{blame, blob, meta, open, readme, resolve, tree};
 use crate::state::AppState;
 
-/// `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
+/// Directory listing
+///
+/// The `{ref}`/`{path}` boundary is resolved per request by longest-ref
+/// matching (`repo::resolve::resolve_ref_path`), because branch and tag names
+/// may contain `/`; with no match the first segment is taken as the ref.
+/// Omit `{path}` for the root tree.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}/tree/{ref}/{path}",
+    tag = "files",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+        ("ref" = String, Path, description = "Branch, tag, or commit sha", example = "main"),
+        ("path" = String, Path, description = "Directory path; omit (empty) for the root tree", example = "src"),
+    ),
+    responses(
+        (status = 200, description = "Directory entries, trees first then by name. Immutable caching only when `{ref}` is the resolved full sha (then no `ETag`).", body = TreeListing,
+            headers(
+                ("ETag" = String, description = "Validator-derived; absent on full-sha requests"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 400, description = "`invalid_param` — `.`, `..`, or an empty path segment", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found`, `ref_not_found`, `path_not_found` (missing or not a directory)", body = ErrorResponse),
+    ),
+)]
 pub async fn get_tree(
     State(state): State<AppState>,
     Path((name, rest)): Path<(String, String)>,
@@ -36,7 +67,31 @@ pub async fn get_tree(
     .await
 }
 
-/// `GET /api/v1/repos/{repo}/blob/{ref}/{path...}`
+/// File metadata and content
+///
+/// `{ref}`/`{path}` split as for the tree endpoint. Binary or over-1 MiB files
+/// report `content: null` — fetch the raw endpoint instead.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}/blob/{ref}/{path}",
+    tag = "files",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+        ("ref" = String, Path, description = "Branch, tag, or commit sha", example = "main"),
+        ("path" = String, Path, description = "File path", example = "README.md"),
+    ),
+    responses(
+        (status = 200, description = "Blob metadata and inline content. Immutable caching only when `{ref}` is the resolved full sha (then no `ETag`).", body = BlobInfo,
+            headers(
+                ("ETag" = String, description = "Validator-derived; absent on full-sha requests"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 400, description = "`invalid_param` — `.`, `..`, or an empty path segment", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found`, `ref_not_found`, `path_not_found` (missing, or a directory/submodule)", body = ErrorResponse),
+    ),
+)]
 pub async fn get_blob(
     State(state): State<AppState>,
     Path((name, rest)): Path<(String, String)>,
@@ -59,11 +114,36 @@ pub async fn get_blob(
     .await
 }
 
-/// `GET /api/v1/repos/{repo}/raw/{ref}/{path...}`
+/// Raw file contents
 ///
-/// Not routed through the response cache — raw bodies are unbounded binaries
-/// that would crowd out the JSON entries. Non-sha requests still carry an
-/// `ETag` so a 304 saves the transfer (the bytes are re-read either way).
+/// No size cap. Not routed through the response cache — raw bodies are
+/// unbounded binaries that would crowd out the JSON entries. Non-sha requests
+/// still carry an `ETag` so a 304 saves the transfer (the bytes are re-read
+/// either way). `{ref}`/`{path}` split as for the tree endpoint.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}/raw/{ref}/{path}",
+    tag = "files",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+        ("ref" = String, Path, description = "Branch, tag, or commit sha", example = "main"),
+        ("path" = String, Path, description = "File path", example = "README.md"),
+    ),
+    responses(
+        (status = 200, description = "File bytes. `Content-Type` is guessed from the extension, falling back to `text/plain; charset=utf-8` or `application/octet-stream`.",
+            content_type = "application/octet-stream",
+            body = String,
+            headers(
+                ("X-Content-Type-Options" = String, description = "Always `nosniff` — repository contents are untrusted"),
+                ("ETag" = String, description = "Validator-derived; absent on full-sha requests"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 400, description = "`invalid_param` — `.`, `..`, or an empty path segment", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found`, `ref_not_found`, `path_not_found`", body = ErrorResponse),
+    ),
+)]
 pub async fn get_raw(
     State(state): State<AppState>,
     Path((name, rest)): Path<(String, String)>,
@@ -127,7 +207,32 @@ pub async fn get_raw(
     Ok(response)
 }
 
-/// `GET /api/v1/repos/{repo}/blame/{ref}/{path...}`
+/// Per-line attribution
+///
+/// `{ref}`/`{path}` split as for the tree endpoint. Rename tracking is not
+/// performed — only moves within the file are attributed, per libgit2
+/// defaults.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}/blame/{ref}/{path}",
+    tag = "files",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+        ("ref" = String, Path, description = "Branch, tag, or commit sha", example = "main"),
+        ("path" = String, Path, description = "File path", example = "src/main.rs"),
+    ),
+    responses(
+        (status = 200, description = "Line ranges covering the whole file. Immutable caching only when `{ref}` is the resolved full sha (then no `ETag`).", body = BlameInfo,
+            headers(
+                ("ETag" = String, description = "Validator-derived; absent on full-sha requests"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 400, description = "`invalid_param` — `.`, `..`, or an empty path segment", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found`, `ref_not_found`, `path_not_found`", body = ErrorResponse),
+    ),
+)]
 pub async fn get_blame(
     State(state): State<AppState>,
     Path((name, rest)): Path<(String, String)>,
@@ -150,14 +255,39 @@ pub async fn get_blame(
     .await
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ReadmeQuery {
     /// Branch, tag, or commit sha; HEAD when absent.
     #[serde(rename = "ref")]
+    #[param(example = "main")]
     r#ref: Option<String>,
 }
 
-/// `GET /api/v1/repos/{repo}/readme?ref=`
+/// README lookup
+///
+/// Searches the root tree for `README.md` → `README.rst` → `README.txt` →
+/// `README`, matched case-insensitively. Symlinks and binary or over-1 MiB
+/// candidates are skipped. Rendering is the frontend's job.
+#[utoipa::path(
+    get,
+    path = "/api/v1/repos/{repo}/readme",
+    tag = "files",
+    params(
+        ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+        ReadmeQuery,
+    ),
+    responses(
+        (status = 200, description = "The first usable README. Immutable caching only when `ref` is the resolved full sha (then no `ETag`).", body = ReadmeInfo,
+            headers(
+                ("ETag" = String, description = "Validator-derived; absent on full-sha requests"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"),
+            ),
+        ),
+        (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 404, description = "`repo_not_found`, `ref_not_found` (including an empty repository), `path_not_found` (no README)", body = ErrorResponse),
+    ),
+)]
 pub async fn get_readme(
     State(state): State<AppState>,
     Path(name): Path<String>,

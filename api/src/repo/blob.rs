@@ -4,6 +4,7 @@ use std::path::Path;
 
 use git2::{Blob, Commit, Repository};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::error::ApiError;
 
@@ -11,17 +12,23 @@ use crate::error::ApiError;
 pub const BLOB_CONTENT_LIMIT: usize = 1024 * 1024;
 
 /// Response of the blob endpoint (docs/API.md).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BlobInfo {
     /// Resolved commit sha the blob was read from.
     pub sha: String,
     pub path: String,
     /// Octal file mode, e.g. `"100644"` (`"120000"` for symlinks).
+    #[schema(example = "100644")]
     pub mode: String,
+    /// Full size in bytes, regardless of `too_large`.
     pub size: u64,
+    /// libgit2's NUL heuristic, or content that is not valid UTF-8.
     pub binary: bool,
+    /// `true` past the 1 MiB inline-content cap; fetch the raw endpoint instead.
     pub too_large: bool,
-    /// UTF-8 content; `None` when `binary` or `too_large`.
+    /// UTF-8 content; `None` when `binary` or `too_large`. For a symlink this
+    /// is the link target path.
+    #[schema(required = true)]
     pub content: Option<String>,
 }
 

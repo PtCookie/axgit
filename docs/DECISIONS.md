@@ -60,7 +60,8 @@ sha 고정 응답은 불변 취급. 클라이언트는 ETag/immutable. (ARCHITEC
 
 ## #8 API 스타일
 
-- REST JSON, base `/api/v1`. 계약 문서는 `docs/API.md` 단일 소스 (OpenAPI 도입은 추후 검토).
+- REST JSON, base `/api/v1`. 계약의 규범 문서는 `docs/API.md`이며, 기계 판독용 OpenAPI 스펙은
+  코드에서 생성한다 (#15).
 - 커밋 작성자 이메일은 노출하지 않고 아바타 seed용 해시만 제공.
 - 페이지네이션은 커밋 sha cursor 방식.
 
@@ -127,3 +128,31 @@ Astro 내장 Shiki/markdown은 빌드 타임 전용이므로 런타임 데이터
   blame 거터를 그리는 프론트가 커밋 상세 API를 range 개수만큼 부르는 걸 막는다).
 - rename 추적(`git blame --follow` 상당)은 도입하지 않는다 — libgit2 기본 옵션 그대로
   파일 내 이동만 반영. 커밋 상세/diff의 rename 감지(#8 이전부터의 기존 방침)와는 별개 결정.
+
+## #15 OpenAPI 스펙은 utoipa로 코드에서 생성
+
+- #8에서 "추후 검토"로 미뤄둔 OpenAPI를 web 구현 **직전에** 도입한다. ROADMAP의 web 절이 예고했던
+  "`types.ts` 수동 정의 + API.md와 동기화" 부채를 애초에 만들지 않기 위해서다.
+- **손으로 쓴 `openapi.yaml`은 거부.** 코드와 별개의 두 번째 진실 공급원이 되어 드리프트한다
+  (실제로 산문 문서인 API.md조차 이미 두 군데 — 사라진 `501 not_implemented`, 실제와 다른
+  `charset=utf-8` — 드리프트해 있었다). 대신 `#[utoipa::path]` + `#[derive(ToSchema)]`로 코드에서
+  생성하고 결과를 `docs/openapi.json`에 커밋한다. `api/tests/openapi_test.rs`가 스냅샷 일치와
+  "라우팅된 오퍼레이션 = 스펙의 오퍼레이션"을 검증하므로, 어노테이션을 빠뜨린 엔드포인트는 CI에서 걸린다.
+  갱신은 `AXGIT_UPDATE_OPENAPI=1 cargo test --test openapi_test` (전용 바이너리 추가 없이).
+- **`utoipa-axum`의 `OpenApiRouter` 자동 수집은 쓰지 않는다.** tree/blob/raw/blame/archive는 axum에서
+  `{*rest}` 단일 catch-all이고 ref/path 경계는 요청 시점에 최장 매칭으로 정해지므로, 자동 수집하면
+  `/tree/{rest}`가 문서화되어 API.md의 `/tree/{ref}/{path}` 계약과 어긋난다. 경로는 `api/src/openapi.rs`에
+  손으로 적는다 — 라우터와 이중 관리가 되지만, 위 오퍼레이션 목록 테스트가 그 비용을 감당한다.
+- **Swagger UI는 `utoipa-swagger-ui`의 `vendored` 기능**으로 서빙한다 (`/swagger-ui`). 에셋이
+  크레이트에 포함되어 빌드·런타임 모두 외부 요청이 없다 — 아바타를 로컬 생성으로 결정한 #11과 같은
+  원칙이고, self-hosted 환경이 오프라인이어도 동작한다. 대가는 바이너리 수 MB 증가.
+  읽기 전용·무인증 API라 노출에 위험이 없으므로 별도 on/off 플래그는 두지 않는다.
+- **닫힌 문자열 집합은 진짜 enum으로 바꿨다**: `DiffStatus`, `EntryKind`, `LineOrigin`, `ReadmeFormat`.
+  `&'static str`/`char`는 스펙에서 그냥 `string`이 되어 문서 가치도 생성 타입의 이점도 없다.
+  JSON 출력은 serde rename으로 완전히 동일하게 유지된다(`LineOrigin`은 `" "`/`"+"`/`"-"`).
+  같은 이유로 항상 직렬화되는 `Option` 필드에는 `#[schema(required = true)]`를 달아,
+  생성 타입이 `field?: T | null`이 아니라 `field: T | null`이 되게 했다.
+- 에러 body는 `serde_json::json!` 리터럴에서 `ErrorResponse`/`ErrorBody` 구조체로 바꿨다 —
+  스키마를 붙일 대상이 필요했고, 그 덕에 스펙이 실제 응답에서 벗어날 수 없다.
+- web은 `docs/openapi.json`에서 `openapi-typescript`로 `web/src/lib/api/types.ts`를 생성한다
+  (`pnpm gen:types`). 생성 파일이므로 직접 수정하지 않고 eslint 대상에서도 제외한다.

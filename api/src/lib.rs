@@ -2,6 +2,7 @@ pub mod cache;
 pub mod config;
 pub mod error;
 pub mod handlers;
+pub mod openapi;
 pub mod repo;
 pub mod routes;
 pub mod smart_http;

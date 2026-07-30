@@ -21,6 +21,7 @@
         "build": "astro build",
         "preview": "astro preview",
         "astro": "astro",
+        "gen:types": "openapi-typescript ../docs/openapi.json -o src/lib/api/types.ts && prettier --write src/lib/api/types.ts",
         "lint": "eslint",
         "format": "prettier --write .",
         "test": "vitest"
@@ -51,6 +52,7 @@
         "eslint": "^10.8.0",
         "eslint-plugin-astro": "^3.0.1",
         "globals": "^17.8.0",
+        "openapi-typescript": "^7.13.0",
         "prettier": "3.9.6",
         "prettier-plugin-astro": "0.14.1",
         "prettier-plugin-tailwindcss": "0.8.1",

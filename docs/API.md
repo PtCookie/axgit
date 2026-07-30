@@ -1,11 +1,17 @@
-# Axgit API 명세 (v1 draft)
+# Axgit API 명세 (v1)
 
-web ↔ api 간 유일한 계약 문서. 엔드포인트를 추가/변경하는 커밋은 반드시 이 문서를 함께 갱신한다.
+web ↔ api 간 계약의 **규범 문서**. 엔드포인트를 추가/변경하는 커밋은 반드시 이 문서를 함께 갱신한다.
+
+기계 판독용 스펙은 `docs/openapi.json` (OpenAPI 3.1)이며 utoipa 어노테이션으로 **코드에서 생성**된다
+(DECISIONS.md #15). 서버 실행 중에는 `/swagger-ui`에서 탐색할 수 있고 원본은 `/api/v1/openapi.json`이다.
+스펙은 스키마·파라미터·상태코드를 담고, 이 문서는 스펙이 표현할 수 없는 **의미 규칙**(truncation 상한,
+refs 최장 매칭, merge simplification, 필드가 `null`이 되는 조건)을 담는다. **충돌하면 이 문서가 우선한다.**
 
 - Base path: `/api/v1`
-- 모든 응답은 `application/json; charset=utf-8` (raw/archive/feed 제외)
+- 모든 응답은 `application/json` (raw/archive/feed 제외)
 - 저장소 식별자 `{repo}`: `.git` 접미사를 제외한 저장소 이름 (예: `git-compose`)
 - ref 파라미터는 브랜치명, 태그명, 커밋 sha 모두 허용. 생략 시 HEAD.
+- 응답 객체의 필드는 값이 없어도 **키가 항상 존재**한다 (`null`로 직렬화, 생략이 아님).
 
 ## 공통
 
@@ -22,7 +28,10 @@ web ↔ api 간 유일한 계약 문서. 엔드포인트를 추가/변경하는 
 | 404  | `path_not_found`    | tree/blob 경로 없음 |
 | 400  | `invalid_param`     | 파라미터 형식 오류 |
 | 403  | `read_only`         | receive-pack 등 쓰기 시도 |
-| 501  | `not_implemented`   | 아직 구현되지 않은 엔드포인트 (스케폴딩 기간 한정, v1 완성 시 제거) |
+| 500  | `internal`          | 서버 오류 (원인은 로그에만 남고 클라이언트는 일반 메시지만 받는다) |
+
+이 envelope를 쓰지 않는 예외는 하나뿐이다: upload-pack 요청 body가 8 MiB를 넘으면 axum의
+`DefaultBodyLimit`이 평문으로 `413`을 응답한다.
 
 ### 캐싱 헤더
 

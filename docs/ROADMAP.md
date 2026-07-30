@@ -113,12 +113,27 @@
   - 후속 검토: `git blame --follow`(rename 추적)는 도입하지 않음 — 필요해지면 exec fallback과
     함께 재검토.
 
+- **OpenAPI 스펙 + Swagger UI + web 타입 생성** (`api/src/openapi.rs`, `docs/openapi.json`,
+  `web/src/lib/api/types.ts`, DECISIONS #15). web 구현 전에 계약을 기계 판독 가능하게 만들어
+  "types.ts 수동 정의" 부채를 없앴다. 확정된 설계:
+  - utoipa 5 + utoipa-swagger-ui 9(`vendored`). 스펙은 `/api/v1/openapi.json`, UI는 `/swagger-ui`.
+    `utoipa-axum` 자동 수집은 **미사용** — catch-all 라우트 때문에 경로를 `openapi.rs`에 손으로 적는다.
+  - `docs/openapi.json`을 커밋하고 `tests/openapi_test.rs`가 (1) 스냅샷 일치 (2) 라우팅된
+    오퍼레이션 = 스펙 오퍼레이션(16개) (3) 두 라우트의 스모크를 검증. 갱신은
+    `AXGIT_UPDATE_OPENAPI=1 cargo test --test openapi_test`.
+  - `&'static str`/`char` 필드를 enum으로 승격 (`DiffStatus`/`EntryKind`/`LineOrigin`/`ReadmeFormat`),
+    항상 직렬화되는 `Option`에는 `#[schema(required = true)]`. JSON 출력은 불변 — 기존 통합 테스트
+    129개가 그대로 통과하는 것이 그 증거다. 에러 body는 `ErrorResponse`/`ErrorBody` 구조체로 타입화.
+  - web은 `pnpm gen:types`(openapi-typescript + prettier)로 `types.ts` 생성. eslint 대상 제외.
+  - API.md 드리프트 2건 정정: 사라진 `501 not_implemented` 행, 실제와 다른 `charset=utf-8`.
+
 ## 다음 구현: web 스캐폴딩
 
 ### Context
 
-api의 v1 엔드포인트 표면이 완성되었다 (DECISIONS #9 전체 완료). `web/` 디렉토리가 아직
-없으므로 프론트엔드를 처음부터 세운다.
+api의 v1 엔드포인트 표면이 완성되었고(DECISIONS #9 전체 완료), OpenAPI 스펙과 그로부터
+생성한 `web/src/lib/api/types.ts`도 준비되어 있다. `web/`에는 Astro 초기 스캐폴드만 있으므로
+실제 화면을 여기서부터 세운다.
 
 ### 착수 시 검토할 것
 
@@ -127,7 +142,9 @@ api의 v1 엔드포인트 표면이 완성되었다 (DECISIONS #9 전체 완료)
 - 라우트: `/`(저장소 목록), `/{repo}/`(summary), `/{repo}/log`, `/{repo}/tree/[...path]`,
   `/{repo}/blob/[...path]`, `/{repo}/commit/{sha}`, `/{repo}/refs`, `/{repo}/blame/[...path]`.
   ref 선택은 URL 쿼리 `?ref=`로 통일.
-- API 응답 타입은 `web/src/lib/api/types.ts`에 수동 정의, `docs/API.md`와 동기화 (코드 생성
-  도입 전까지). 첫 커밋에서 fetch 클라이언트 + 저장소 목록 페이지 정도의 최소 뼈대로 시작 검토.
+- API 응답 타입은 `web/src/lib/api/types.ts`(생성 파일, 직접 수정 금지)에서 가져다 쓴다.
+  `components["schemas"]["RepoInfo"]` 식으로 참조하거나 `web/src/lib/api/`에 얇은 alias를 둔다.
+  API가 바뀌면 `pnpm gen:types`로 재생성. 첫 커밋은 fetch 클라이언트 + 저장소 목록 페이지 정도의
+  최소 뼈대로 시작 검토.
 - shadcn/ui 컴포넌트는 `web/src/components/ui/`에 생성(vendored, 수정 가능).
 - vitest + Testing Library, fetch mocking / fixture JSON으로 테스트.

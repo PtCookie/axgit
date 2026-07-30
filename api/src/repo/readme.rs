@@ -2,25 +2,37 @@
 
 use git2::{Commit, Repository};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::blob::BLOB_CONTENT_LIMIT;
 use crate::error::ApiError;
 
+/// How the frontend should render the README. Only `markdown` is converted to
+/// HTML; the rest are shown as plain text (docs/DECISIONS.md #11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadmeFormat {
+    Markdown,
+    Rst,
+    Plain,
+}
+
 /// Candidate file names in priority order, with their render format.
-const CANDIDATES: [(&str, &str); 4] = [
-    ("README.md", "markdown"),
-    ("README.rst", "rst"),
-    ("README.txt", "plain"),
-    ("README", "plain"),
+const CANDIDATES: [(&str, ReadmeFormat); 4] = [
+    ("README.md", ReadmeFormat::Markdown),
+    ("README.rst", ReadmeFormat::Rst),
+    ("README.txt", ReadmeFormat::Plain),
+    ("README", ReadmeFormat::Plain),
 ];
 
 const MODE_LINK: i32 = 0o120000;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ReadmeInfo {
     /// Actual file name as it appears in the tree (case may differ).
+    #[schema(example = "README.md")]
     pub path: String,
-    pub format: &'static str,
+    pub format: ReadmeFormat,
     pub content: String,
 }
 

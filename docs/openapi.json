@@ -1,0 +1,2154 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Axgit API",
+    "description": "Read-only JSON API over bare Git repositories, plus Smart HTTP (fetch/clone) and an Atom feed.\n\nThere are no mutation endpoints and no authentication: writes happen over SSH on the git-server container, never here.\n\nThis document describes shapes, parameters and status codes. The semantic rules it cannot express — truncation caps, longest-ref matching for the `{ref}`/`{path}` split, merge-commit log simplification, and the exact conditions under which a field is `null` — live in `docs/API.md`, which remains the normative contract.",
+    "license": {
+      "name": "MIT"
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/repos": {
+      "get": {
+        "tags": [
+          "repos"
+        ],
+        "summary": "List repositories",
+        "description": "Served from the scan snapshot ([`crate::cache::ScanCache`]), not the\nresponse cache — the list has no single backing repository, so its `ETag`\nis a hash of the serialized body.",
+        "operationId": "list_repos",
+        "responses": {
+          "200": {
+            "description": "Repository list",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Hash of the response body; opaque"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReposResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "500": {
+            "description": "Repository root could not be scanned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}": {
+      "get": {
+        "tags": [
+          "repos"
+        ],
+        "summary": "Repository summary",
+        "description": "An empty repository (unborn HEAD) still answers `200`, with `head`,\n`default_branch` and `last_modified` `null` and both counts 0.",
+        "operationId": "get_repo",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository summary",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; opaque"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSummary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`repo_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/archive/{ref}.{format}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Source archive",
+        "description": "Streams `git archive` output chunked (no `Content-Length`). The ref is\nresolved first and only the **full sha** reaches the command line. The\n`{ref}.{format}` split is suffix matching: `.tar.gz` first, then `.zip`.",
+        "operationId": "get_archive",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "description": "Branch, tag, or commit sha",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "format",
+            "in": "path",
+            "description": "`tar.gz` or `zip`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "tar.gz"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Archive stream (`application/gzip` or `application/zip`). If `git archive` fails mid-stream the response is truncated without a status change.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment; filename=\"{repo}-{safe_ref}.{format}\"`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "**Weak** (`W/\"...\"`); absent on full-sha requests"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `nosniff`"
+              }
+            },
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched — no git process is spawned"
+          },
+          "400": {
+            "description": "`invalid_param` — suffix is neither `.tar.gz` nor `.zip`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal` — `git archive` could not be spawned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/blame/{ref}/{path}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Per-line attribution",
+        "description": "`{ref}`/`{path}` split as for the tree endpoint. Rename tracking is not\nperformed — only moves within the file are attributed, per libgit2\ndefaults.",
+        "operationId": "get_blame",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "description": "Branch, tag, or commit sha",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "description": "File path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "src/main.rs"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Line ranges covering the whole file. Immutable caching only when `{ref}` is the resolved full sha (then no `ETag`).",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha requests"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlameInfo"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — `.`, `..`, or an empty path segment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`, `path_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/blob/{ref}/{path}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "File metadata and content",
+        "description": "`{ref}`/`{path}` split as for the tree endpoint. Binary or over-1 MiB files\nreport `content: null` — fetch the raw endpoint instead.",
+        "operationId": "get_blob",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "description": "Branch, tag, or commit sha",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "description": "File path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "README.md"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blob metadata and inline content. Immutable caching only when `{ref}` is the resolved full sha (then no `ETag`).",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha requests"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlobInfo"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — `.`, `..`, or an empty path segment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`, `path_not_found` (missing, or a directory/submodule)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/commits": {
+      "get": {
+        "tags": [
+          "commits"
+        ],
+        "summary": "Commit log",
+        "description": "Cursor-paginated, newest first. Merge commits survive the `path` filter\nonly when the path differs from **every** parent — an approximation of\n`git log -- <path>` simplification.",
+        "operationId": "list_commits",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "description": "Branch, tag, or commit sha; HEAD when absent. Ignored when `cursor` is set.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Only commits that changed this file or directory. A path that never\nexisted yields an empty list rather than a 404.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "`next_cursor` from a previous page, walked from **inclusive**. Opaque:\na malformed or unknown value is `400 invalid_param`, not a 404.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Parsed manually so an invalid value yields the JSON `invalid_param`\nenvelope instead of axum's plain-text 400. Never clamped.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            },
+            "example": 50
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of commits. An empty repository with no `ref` yields an empty page.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; opaque"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitsPage"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — bad `limit` or `cursor`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/commits/{sha}": {
+      "get": {
+        "tags": [
+          "commits"
+        ],
+        "summary": "Commit detail",
+        "description": "Superset of a log entry, plus the full message and the first-parent\ndiffstat. The diffstat has no file cap.",
+        "operationId": "get_commit",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "sha",
+            "in": "path",
+            "description": "Branch, tag, or commit sha",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Commit detail. Immutable caching only when `{sha}` is the resolved full sha (then no `ETag`).",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha requests"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitDetail"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/commits/{sha}/diff": {
+      "get": {
+        "tags": [
+          "commits"
+        ],
+        "summary": "Structured commit diff",
+        "description": "Unified diff as JSON (file → hunk → line), against the first parent.\nCaps: 1000 rendered lines per file (whole hunks are dropped, never cut) and\n300 files per response; `additions`/`deletions` stay complete either way.",
+        "operationId": "get_commit_diff",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "sha",
+            "in": "path",
+            "description": "Branch, tag, or commit sha",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Restrict the diff to one file (literal match, no globbing). A path that\nthis commit did not touch yields `files: []`, not a 404.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Structured diff. Immutable caching only when `{sha}` is the resolved full sha (then no `ETag`).",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha requests"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitDiff"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/feed.atom": {
+      "get": {
+        "tags": [
+          "repos"
+        ],
+        "summary": "Atom feed of recent commits",
+        "description": "The 20 most recent commits on HEAD. Absolute URLs are reconstructed from\n`X-Forwarded-Proto`/`X-Forwarded-Host`, falling back to `Host`; entry ids\nare `urn:sha1:{sha}` so they stay stable across hosts. An empty repository\nreturns `200` with no entries.",
+        "operationId": "get_feed",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Atom 1.0 feed",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; opaque"
+              }
+            },
+            "content": {
+              "application/atom+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`repo_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/raw/{ref}/{path}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Raw file contents",
+        "description": "No size cap. Not routed through the response cache — raw bodies are\nunbounded binaries that would crowd out the JSON entries. Non-sha requests\nstill carry an `ETag` so a 304 saves the transfer (the bytes are re-read\neither way). `{ref}`/`{path}` split as for the tree endpoint.",
+        "operationId": "get_raw",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "description": "Branch, tag, or commit sha",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "description": "File path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "README.md"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File bytes. `Content-Type` is guessed from the extension, falling back to `text/plain; charset=utf-8` or `application/octet-stream`.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha requests"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `nosniff` — repository contents are untrusted"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — `.`, `..`, or an empty path segment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`, `path_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/readme": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "README lookup",
+        "description": "Searches the root tree for `README.md` → `README.rst` → `README.txt` →\n`README`, matched case-insensitively. Symlinks and binary or over-1 MiB\ncandidates are skipped. Rendering is the frontend's job.",
+        "operationId": "get_readme",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "description": "Branch, tag, or commit sha; HEAD when absent.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The first usable README. Immutable caching only when `ref` is the resolved full sha (then no `ETag`).",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha requests"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadmeInfo"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found` (including an empty repository), `path_not_found` (no README)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/refs": {
+      "get": {
+        "tags": [
+          "repos"
+        ],
+        "summary": "Branches and tags",
+        "description": "Tag targets are peeled to the commit, so an annotated tag reports the\ncommit sha rather than the tag object.",
+        "operationId": "get_refs",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Branches and tags, each sorted by name",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; opaque"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefsInfo"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`repo_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/tree/{ref}/{path}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Directory listing",
+        "description": "The `{ref}`/`{path}` boundary is resolved per request by longest-ref\nmatching (`repo::resolve::resolve_ref_path`), because branch and tag names\nmay contain `/`; with no match the first segment is taken as the ref.\nOmit `{path}` for the root tree.",
+        "operationId": "get_tree",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "description": "Branch, tag, or commit sha",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Directory path; omit (empty) for the root tree",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "src"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Directory entries, trees first then by name. Immutable caching only when `{ref}` is the resolved full sha (then no `ETag`).",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha requests"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreeListing"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — `.`, `..`, or an empty path segment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`, `path_not_found` (missing or not a directory)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{repo_git}/git-receive-pack": {
+      "post": {
+        "tags": [
+          "smart-http"
+        ],
+        "summary": "Push is SSH-only (CLAUDE.md invariant): every method on this path is 403.",
+        "operationId": "receive_pack",
+        "parameters": [
+          {
+            "name": "repo_git",
+            "in": "path",
+            "description": "Repository directory name **including** the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose.git"
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "`read_only` — always; push via SSH instead. Every HTTP method answers the same way.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{repo_git}/git-upload-pack": {
+      "post": {
+        "tags": [
+          "smart-http"
+        ],
+        "summary": "Upload-pack negotiation (clone/fetch)",
+        "description": "Pipes the request body into `git upload-pack --stateless-rpc` and streams\nits stdout back chunked. If upload-pack dies mid-stream the status code\ncannot change, so the client sees an early EOF.",
+        "operationId": "upload_pack",
+        "parameters": [
+          {
+            "name": "repo_git",
+            "in": "path",
+            "description": "Repository directory name **including** the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose.git"
+          }
+        ],
+        "requestBody": {
+          "description": "upload-pack negotiation pkt-lines. `Content-Encoding: gzip` is inflated by the server. Limits: 8 MiB compressed, 64 MiB inflated.",
+          "content": {
+            "application/x-git-upload-pack-request": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Packfile stream",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `no-cache`; Smart HTTP never uses `ETag`"
+              }
+            },
+            "content": {
+              "application/x-git-upload-pack-result": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_param` — gzip inflation failed or the inflated body exceeded 64 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Compressed body over 8 MiB — axum's `DefaultBodyLimit` answers in plain text, not the JSON envelope"
+          },
+          "500": {
+            "description": "`internal` — upload-pack could not be spawned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{repo_git}/info/refs": {
+      "get": {
+        "tags": [
+          "smart-http"
+        ],
+        "summary": "Ref advertisement (clone/fetch)",
+        "description": "Spawns `git upload-pack --stateless-rpc --advertise-refs` and prepends the\npkt-line service header. A `Git-Protocol` request header is sanitized and\nforwarded as `GIT_PROTOCOL`, so protocol v2 negotiation works.",
+        "operationId": "info_refs",
+        "parameters": [
+          {
+            "name": "repo_git",
+            "in": "path",
+            "description": "Repository directory name **including** the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose.git"
+          },
+          {
+            "name": "service",
+            "in": "query",
+            "description": "Must be `git-upload-pack`. `git-receive-pack` is `403 read_only`;\nanything else (including the dumb protocol's missing value) is\n`400 invalid_param`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-upload-pack"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "pkt-line service header followed by the ref advertisement",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `no-cache`; Smart HTTP never uses `ETag`"
+              }
+            },
+            "content": {
+              "application/x-git-upload-pack-advertisement": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_param` — `service` missing or unsupported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`read_only` — `service=git-receive-pack`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found` — unknown repository, or a path without the `.git` suffix",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal` — upload-pack could not be spawned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BlameInfo": {
+        "type": "object",
+        "description": "Response of the blame endpoint (docs/API.md).",
+        "required": [
+          "sha",
+          "path",
+          "binary",
+          "too_large",
+          "lines",
+          "ranges"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string",
+            "description": "Resolved commit sha the file was blamed at."
+          },
+          "path": {
+            "type": "string"
+          },
+          "binary": {
+            "type": "boolean",
+            "description": "libgit2's NUL heuristic, or content that is not valid UTF-8."
+          },
+          "too_large": {
+            "type": "boolean",
+            "description": "`true` past the same 1 MiB cap the blob endpoint applies."
+          },
+          "lines": {
+            "type": "integer",
+            "description": "Total line count; 0 for `binary`, `too_large`, or empty files.",
+            "minimum": 0
+          },
+          "ranges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlameRange"
+            },
+            "description": "`start_line` ascending, covering the whole file with no gaps.\nEmpty for `binary`, `too_large`, or empty files."
+          }
+        }
+      },
+      "BlameRange": {
+        "type": "object",
+        "description": "One contiguous run of lines attributed to the same commit (docs/API.md).",
+        "required": [
+          "start_line",
+          "line_count",
+          "sha",
+          "summary",
+          "author",
+          "authored_at"
+        ],
+        "properties": {
+          "start_line": {
+            "type": "integer",
+            "description": "1-based, inclusive.",
+            "minimum": 0
+          },
+          "line_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha": {
+            "type": "string",
+            "description": "Sha of the commit the lines are attributed to."
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`None` for non-utf8 commit messages."
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommitAuthor"
+          },
+          "authored_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BlobInfo": {
+        "type": "object",
+        "description": "Response of the blob endpoint (docs/API.md).",
+        "required": [
+          "sha",
+          "path",
+          "mode",
+          "size",
+          "binary",
+          "too_large",
+          "content"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string",
+            "description": "Resolved commit sha the blob was read from."
+          },
+          "path": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "description": "Octal file mode, e.g. `\"100644\"` (`\"120000\"` for symlinks).",
+            "example": "100644"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Full size in bytes, regardless of `too_large`.",
+            "minimum": 0
+          },
+          "binary": {
+            "type": "boolean",
+            "description": "libgit2's NUL heuristic, or content that is not valid UTF-8."
+          },
+          "too_large": {
+            "type": "boolean",
+            "description": "`true` past the 1 MiB inline-content cap; fetch the raw endpoint instead."
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "UTF-8 content; `None` when `binary` or `too_large`. For a symlink this\nis the link target path."
+          }
+        }
+      },
+      "BranchRef": {
+        "type": "object",
+        "description": "Branch entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).",
+        "required": [
+          "name",
+          "target",
+          "committed_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "main"
+          },
+          "target": {
+            "type": "string",
+            "description": "Commit sha of the branch tip."
+          },
+          "committed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Authordate (RFC 3339) of the branch tip."
+          }
+        }
+      },
+      "CommitAuthor": {
+        "type": "object",
+        "description": "Commit author of `GET /api/v1/repos/{repo}/commits` (docs/API.md).\nThe raw email is never exposed; `email_hash` seeds locally generated avatars.",
+        "required": [
+          "name",
+          "email_hash"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email_hash": {
+            "type": "string",
+            "description": "sha256 hex of the trimmed, lowercased author email.",
+            "example": "b642b4217b34b1e8d3bd915fc65c4452"
+          }
+        }
+      },
+      "CommitDetail": {
+        "type": "object",
+        "description": "Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).\nSuperset of [`CommitInfo`] so the frontend can extend the log entry type.",
+        "required": [
+          "sha",
+          "summary",
+          "message",
+          "author",
+          "committer",
+          "authored_at",
+          "committed_at",
+          "parents",
+          "diffstat"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string",
+            "description": "Full commit sha, even when the request used a branch, tag or short sha."
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Full commit message. `None` for non-utf8 messages."
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommitAuthor"
+          },
+          "committer": {
+            "$ref": "#/components/schemas/CommitAuthor"
+          },
+          "authored_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "committed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "diffstat": {
+            "$ref": "#/components/schemas/DiffStat",
+            "description": "First-parent diffstat (docs/API.md)."
+          }
+        }
+      },
+      "CommitDiff": {
+        "type": "object",
+        "description": "Structured diff of `GET /api/v1/repos/{repo}/commits/{sha}/diff` (docs/API.md).",
+        "required": [
+          "sha",
+          "parent",
+          "truncated",
+          "files"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "First parent the diff was computed against; `null` for a root commit."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "`true` when files beyond [`MAX_DIFF_FILES`] were omitted."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileDiff"
+            }
+          }
+        }
+      },
+      "CommitInfo": {
+        "type": "object",
+        "description": "Log entry of `GET /api/v1/repos/{repo}/commits` (docs/API.md).",
+        "required": [
+          "sha",
+          "summary",
+          "author",
+          "authored_at",
+          "parents"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string",
+            "description": "Full commit sha."
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "First line of the commit message. `None` for non-utf8 commit messages."
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommitAuthor"
+          },
+          "authored_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Authordate (RFC 3339). `None` for unrepresentable timestamps.",
+            "example": "2026-07-01T14:00:00+09:00"
+          },
+          "parents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CommitsPage": {
+        "type": "object",
+        "required": [
+          "commits",
+          "next_cursor"
+        ],
+        "properties": {
+          "commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommitInfo"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sha of the first commit of the next page; `null` on the last page.\nPass it back as the `cursor` query parameter."
+          }
+        }
+      },
+      "DiffStat": {
+        "type": "object",
+        "description": "Diffstat of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).",
+        "required": [
+          "files",
+          "files_changed",
+          "total_additions",
+          "total_deletions"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiffStatFile"
+            }
+          },
+          "files_changed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_additions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_deletions": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "DiffStatFile": {
+        "type": "object",
+        "description": "Per-file entry shared by the diffstat and the diff (`#[serde(flatten)]`).",
+        "required": [
+          "path",
+          "old_path",
+          "status",
+          "additions",
+          "deletions",
+          "binary"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "example": "src/main.rs"
+          },
+          "old_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Previous path; only set for `renamed`/`copied`."
+          },
+          "status": {
+            "$ref": "#/components/schemas/DiffStatus"
+          },
+          "additions": {
+            "type": "integer",
+            "description": "Always the full count, even when the file's hunks were truncated.\nBinary files report 0.",
+            "minimum": 0
+          },
+          "deletions": {
+            "type": "integer",
+            "description": "Always the full count, even when the file's hunks were truncated.\nBinary files report 0.",
+            "minimum": 0
+          },
+          "binary": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DiffStatus": {
+        "type": "string",
+        "description": "How a file changed between the two trees. Rename detection runs with\nlibgit2 defaults (renames only, 50% similarity).",
+        "enum": [
+          "added",
+          "deleted",
+          "modified",
+          "renamed",
+          "copied",
+          "typechange"
+        ]
+      },
+      "EntryKind": {
+        "type": "string",
+        "description": "What a tree entry points at, derived from its file mode.",
+        "enum": [
+          "tree",
+          "blob",
+          "symlink",
+          "commit"
+        ]
+      },
+      "ErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "One of `repo_not_found`, `ref_not_found`, `path_not_found`,\n`invalid_param`, `read_only`, `internal`.",
+            "example": "repo_not_found"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable detail. Internal errors report a generic message; the\ncause only goes to the server log.",
+            "example": "repository 'foo' not found"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Error envelope shared by every failing endpoint (docs/API.md).",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        }
+      },
+      "FileDiff": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DiffStatFile"
+          },
+          {
+            "type": "object",
+            "required": [
+              "truncated",
+              "hunks"
+            ],
+            "properties": {
+              "truncated": {
+                "type": "boolean",
+                "description": "`true` when hunks were dropped past [`MAX_FILE_DIFF_LINES`].\n`additions`/`deletions` still count the full change."
+              },
+              "hunks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Hunk"
+                },
+                "description": "Empty for binary files."
+              }
+            }
+          }
+        ]
+      },
+      "Hunk": {
+        "type": "object",
+        "required": [
+          "header",
+          "old_start",
+          "old_lines",
+          "new_start",
+          "new_lines",
+          "lines"
+        ],
+        "properties": {
+          "header": {
+            "type": "string",
+            "description": "`@@ -a,b +c,d @@ <context>` line without the trailing newline.",
+            "example": "@@ -1,2 +1,2 @@"
+          },
+          "old_start": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "old_lines": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "new_start": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "new_lines": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Line"
+            }
+          }
+        }
+      },
+      "Line": {
+        "type": "object",
+        "required": [
+          "origin",
+          "content",
+          "old_lineno",
+          "new_lineno"
+        ],
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/LineOrigin"
+          },
+          "content": {
+            "type": "string",
+            "description": "Line content without the trailing newline (lossy utf-8)."
+          },
+          "old_lineno": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`null` on added lines.",
+            "minimum": 0
+          },
+          "new_lineno": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`null` on deleted lines.",
+            "minimum": 0
+          }
+        }
+      },
+      "LineOrigin": {
+        "type": "string",
+        "description": "Which side of the diff a line belongs to. Other libgit2 origins (EOF\nnewline markers and the like) are dropped rather than reported.",
+        "enum": [
+          " ",
+          "+",
+          "-"
+        ]
+      },
+      "ReadmeFormat": {
+        "type": "string",
+        "description": "How the frontend should render the README. Only `markdown` is converted to\nHTML; the rest are shown as plain text (docs/DECISIONS.md #11).",
+        "enum": [
+          "markdown",
+          "rst",
+          "plain"
+        ]
+      },
+      "ReadmeInfo": {
+        "type": "object",
+        "required": [
+          "path",
+          "format",
+          "content"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Actual file name as it appears in the tree (case may differ).",
+            "example": "README.md"
+          },
+          "format": {
+            "$ref": "#/components/schemas/ReadmeFormat"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "RefsInfo": {
+        "type": "object",
+        "required": [
+          "branches",
+          "tags"
+        ],
+        "properties": {
+          "branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BranchRef"
+            },
+            "description": "Sorted by name ascending; empty for a repository without commits."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagRef"
+            },
+            "description": "Sorted by name ascending."
+          }
+        }
+      },
+      "RepoInfo": {
+        "type": "object",
+        "description": "Repository list entry as defined by `GET /api/v1/repos` in docs/API.md.",
+        "required": [
+          "name",
+          "section",
+          "owner",
+          "description",
+          "default_branch",
+          "last_modified"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Repository name without the `.git` suffix.",
+            "example": "git-compose"
+          },
+          "section": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`."
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`."
+          },
+          "default_branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`None` for empty repositories (unborn HEAD)."
+          },
+          "last_modified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Agefile (`info/web/last-modified`), falling back to the HEAD authordate.\nRFC 3339. `None` for empty repositories without an agefile.",
+            "example": "2026-07-24T13:06:00+09:00"
+          }
+        }
+      },
+      "RepoSummary": {
+        "type": "object",
+        "description": "Repository summary as defined by `GET /api/v1/repos/{repo}` in docs/API.md.\nKept separate from [`RepoInfo`] — the list and summary responses are\ndistinct API contracts.",
+        "required": [
+          "name",
+          "section",
+          "owner",
+          "description",
+          "default_branch",
+          "last_modified",
+          "head",
+          "branch_count",
+          "tag_count",
+          "clone_url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "git-compose"
+          },
+          "section": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_modified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "2026-07-24T13:06:00+09:00"
+          },
+          "head": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "HEAD commit sha. `None` for empty repositories (unborn HEAD)."
+          },
+          "branch_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tag_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "clone_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`{clone_url_base}/{name}.git`; `None` when no base is configured."
+          }
+        }
+      },
+      "ReposResponse": {
+        "type": "object",
+        "required": [
+          "repos"
+        ],
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepoInfo"
+            }
+          }
+        }
+      },
+      "TagRef": {
+        "type": "object",
+        "description": "Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).",
+        "required": [
+          "name",
+          "target",
+          "annotation",
+          "tagged_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "v1.0.0"
+          },
+          "target": {
+            "type": "string",
+            "description": "Peeled commit sha (not the tag object), so clients can link to the commit."
+          },
+          "annotation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "First line of the tag message. `None` for lightweight tags."
+          },
+          "tagged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tagger date (RFC 3339). `None` for lightweight tags."
+          }
+        }
+      },
+      "TreeEntryInfo": {
+        "type": "object",
+        "description": "Tree entry of the tree endpoint (docs/API.md).",
+        "required": [
+          "name",
+          "type",
+          "mode",
+          "size"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EntryKind"
+          },
+          "mode": {
+            "type": "string",
+            "description": "Octal file mode, e.g. `\"100644\"`.",
+            "example": "100644"
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Object size in bytes; blobs only, `None` otherwise.",
+            "minimum": 0
+          }
+        }
+      },
+      "TreeListing": {
+        "type": "object",
+        "required": [
+          "sha",
+          "path",
+          "entries"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string",
+            "description": "Resolved commit sha the listing was taken from."
+          },
+          "path": {
+            "type": "string",
+            "description": "Requested directory path; empty string for the root tree."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TreeEntryInfo"
+            },
+            "description": "Trees first, then by name ascending."
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "repos",
+      "description": "Repository discovery, summary, refs, and feed"
+    },
+    {
+      "name": "commits",
+      "description": "Commit log, detail, and structured diff"
+    },
+    {
+      "name": "files",
+      "description": "Tree, blob, raw, readme, blame, and archive"
+    },
+    {
+      "name": "smart-http",
+      "description": "`git clone`/`fetch` over HTTP; push is rejected"
+    }
+  ]
+}
