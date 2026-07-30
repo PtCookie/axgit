@@ -7,7 +7,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::error::ApiError;
-use crate::handlers::{self, archive, commits, files, repos};
+use crate::handlers::{self, archive, commits, feed, files, repos};
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
@@ -33,7 +33,7 @@ pub fn build_router(state: AppState) -> Router {
             get(handlers::not_implemented),
         )
         .route("/repos/{repo}/archive/{*rest}", get(archive::get_archive))
-        .route("/repos/{repo}/feed.atom", get(handlers::not_implemented));
+        .route("/repos/{repo}/feed.atom", get(feed::get_feed));
 
     // Smart HTTP lives outside /api/v1; `{repo_git}` is the directory name
     // including `.git` (axum cannot capture partial segments).

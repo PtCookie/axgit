@@ -68,3 +68,14 @@ Astro 내장 Shiki/markdown은 빌드 타임 전용이므로 런타임 데이터
 - reStructuredText/man: 렌더링하지 않고 평문(`<pre>`) 표시. JS 렌더러 부재, docutils급 의존성 재도입 거부.
 - 커밋 메시지 링크화: React에서 정규식 linkify.
 - 아바타: Gravatar 대신 이메일 해시를 seed로 한 로컬 생성 아바타 (DiceBear 권장, 외부 요청 없음).
+
+## #12 archive/feed 구현 방식
+
+- archive는 **`git archive` exec** (#2 하이브리드 방침). ref를 서버에서 해석한 뒤 커맨드라인에는
+  **full sha만** 전달한다 — 사용자 입력이 exec 인자에 닿지 않아 인젝션 여지가 없다.
+  stdout은 `tokio-util` `ReaderStream`으로 chunked 스트리밍, 별도 task가 stderr 수집 + wait로 zombie를 방지한다.
+- Atom feed의 XML은 **수동 문자열 생성** (escape 헬퍼 포함). 고정 구조의 평평한 문서 하나에
+  런타임 XML crate를 들이지 않는다. quick-xml은 dev-dependency로만 (테스트의 well-formed 검증).
+- base URL 설정을 추가하지 않는다. feed의 절대 URL은 `X-Forwarded-Proto`/`X-Forwarded-Host`/`Host`
+  헤더에서 재구성한다 (#10 reverse proxy 방침의 귀결). entry `<id>`는 host와 무관하게 영구
+  안정적이어야 피드 리더가 중복 표시하지 않으므로 `urn:sha1:{sha}` 형식을 쓴다.

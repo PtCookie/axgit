@@ -294,7 +294,18 @@ ref 해석 후 **exec에는 full sha만 전달**한다 (사용자 입력이 커�
 
 ### `GET /api/v1/repos/{repo}/feed.atom`
 
-기본 브랜치 최근 커밋의 Atom 피드 (`application/atom+xml`).
+기본 브랜치(HEAD) 최근 커밋 **20개**의 Atom 피드. `Content-Type: application/atom+xml; charset=utf-8`.
+
+- feed: `<title>` = repo 이름, `<subtitle>` = description (있을 때만), `<id>`와 `rel="self"` link =
+  이 엔드포인트의 절대 URL, `<updated>` = 최신 커밋 authordate (커밋이 없으면 epoch).
+- entry: `<title>` = 커밋 summary (non-utf8이면 `(no message)`), `<id>` = **`urn:sha1:{full sha}`**
+  (host와 무관하게 안정 — 피드 리더의 중복 방지), `<updated>` = authordate,
+  `<author><name>`만 (이메일은 해시조차 미포함), `rel="alternate"` link = 커밋 상세 API URL
+  (**잠정** — web UI 커밋 페이지 라우트 확정 시 그쪽으로 교체).
+- 절대 URL의 base는 `X-Forwarded-Proto`(기본 `http`) + `X-Forwarded-Host` → `Host`(기본
+  `localhost`) 헤더에서 재구성한다 (별도 base URL 설정 없음, DECISIONS.md #12).
+- 빈 저장소(unborn HEAD)는 404가 아니라 entry 없는 피드로 `200`.
+- ETag/Cache-Control 없음 (응답 캐시 도입 시 일괄 — 캐싱 헤더 절 참고).
 
 ## Smart HTTP (clone/fetch 전용)
 

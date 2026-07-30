@@ -49,26 +49,37 @@
   - `sha_addressed_json`은 `handlers/mod.rs`로 이동해 공유 (commits와 files 공용).
     tree entry size는 `odb().read_header()` (내용 로드 없음).
 
-## 다음 구현: archive + Atom feed
+- `GET /api/v1/repos/{repo}/archive/{ref}.{format}`, `GET /.../feed.atom` —
+  아카이브 스트리밍 + Atom 피드 (`handlers/archive.rs`, `handlers/feed.rs`, DECISIONS #12). 확정된 설계:
+  - archive는 `git archive` exec: ref 해석 후 **exec에는 full sha만 전달** (인젝션 차단),
+    stdout을 `tokio-util` `ReaderStream`으로 스트리밍, reaper task가 stderr 수집 + zombie 방지.
+    `{ref}.{format}` 파싱은 접미사 매칭 (`.tar.gz` 우선 → `.zip`, 그 외 400).
+    파일명/`--prefix`는 `[A-Za-z0-9._-]` 외 문자를 `-` 치환한 `{repo}-{safe_ref}`.
+    full sha 요청만 immutable Cache-Control (기존 선례).
+  - feed는 `commits.rs::log` 재사용 (HEAD, 20개 고정), XML은 수동 문자열 + escape 헬퍼
+    (quick-xml은 dev-dep 검증 전용). base URL은 `X-Forwarded-*`/`Host` 헤더에서 재구성,
+    entry id는 `urn:sha1:{sha}`. 빈 저장소는 200 + entry 0개.
+  - 테스트 헬퍼 `tests/common::get_bytes_with_request_headers` (요청 헤더 주입) 신설.
+    tar.gz는 실제 `tar -xzf`로 풀어 검증, zip은 `git archive` 직접 실행 출력과 바이트 비교.
+
+## 다음 구현: Smart HTTP upload-pack
 
 ### Context
 
 DECISIONS.md #9 순서의 다음 단계 (blame은 마지막 고정).
-범위: `GET /api/v1/repos/{repo}/archive/{ref}.{format}` (`tar.gz`|`zip`),
-`GET /api/v1/repos/{repo}/feed.atom` (`docs/API.md` 참고).
+범위: `GET /{repo}.git/info/refs?service=git-upload-pack`, `POST /{repo}.git/git-upload-pack`
+(`api/src/smart_http.rs`에 설계 요약만 있음, 현재 501/403 stub. `docs/API.md` Smart HTTP 절 참고).
 
 ### 착수 시 검토할 것 (전 세션에서 확정하지 않음 — 착수 시점에 설계할 것)
 
-- archive는 **`git archive` exec** (CLAUDE.md 하이브리드 방침). spawn/스트리밍 방식과
-  `{ref}.{format}` 파싱 (`.tar.gz`의 이중 확장자), `Content-Disposition` 파일명 규칙.
-- ref 해석 검증 후 exec에 full sha만 넘겨 인젝션 여지 차단 검토.
-- Atom feed는 기본 브랜치 최근 커밋 (`repo/commits.rs::log` 재사용 가능), XML 생성 방식
-  (수동 문자열 vs crate) 결정.
+- `git upload-pack --stateless-rpc` spawn (advertise 시 `--advertise-refs`) vs
+  `git http-backend` CGI 방식 — archive에서 확립한 tokio::process + ReaderStream 패턴 재사용.
+- 요청 body의 gzip 해제 (`Content-Encoding: gzip`), pkt-line 서비스 헤더, no-cache 헤더 규약.
+- 통합 테스트는 실제 `git clone http://…` round-trip (docs/ARCHITECTURE.md 테스트 전략).
+- 이 시점부터 moka 기반 (repo, endpoint, params) 응답 캐시 도입 검토
+  (`api/src/cache.rs` 상단 주석 및 `docs/ARCHITECTURE.md#caching` 참고).
+  **API.md의 ETag/Cache-Control 규약도 아직 미구현** — 검증자(HEAD sha)를 쓰는
+  응답 캐시와 함께 이 시점에 일괄 구현한다 (summary/refs 구현 시 의도적으로 유예).
 
 ## 이후 항목 (DECISIONS.md #9 순서, 착수 전 재검토 필요)
 - blame (v1 포함, 구현 순서는 마지막 — API.md 명시).
-- Smart HTTP upload-pack (`api/src/smart_http.rs`에 설계 요약만 있음, 현재 501/403 stub만 존재).
-- 이 시점부터 moka 기반 (repo, endpoint, params) 응답 캐시 도입 검토
-  (`api/src/cache.rs` 상단 주석 및 `docs/ARCHITECTURE.md#caching` 참고).
-  **API.md의 ETag/Cache-Control 규약(L29-30)도 아직 미구현** — 검증자(HEAD sha)를 쓰는
-  응답 캐시와 함께 이 시점에 일괄 구현한다 (summary/refs 구현 시 의도적으로 유예).

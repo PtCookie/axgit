@@ -191,6 +191,27 @@ pub async fn get_bytes_with_headers(router: Router, uri: &str) -> (StatusCode, H
     (status, headers, bytes.to_vec())
 }
 
+/// Like [`get_bytes_with_headers`], but attaches request headers first
+/// (e.g. `Host` / `X-Forwarded-*` for the feed's base-URL reconstruction).
+pub async fn get_bytes_with_request_headers(
+    router: Router,
+    uri: &str,
+    request_headers: &[(&str, &str)],
+) -> (StatusCode, HeaderMap, Vec<u8>) {
+    let mut request = Request::get(uri);
+    for (name, value) in request_headers {
+        request = request.header(*name, *value);
+    }
+    let response = router
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, headers, bytes.to_vec())
+}
+
 /// Writes the cgit agefile (`info/web/last-modified`).
 pub fn write_agefile(repo_dir: &Path, content: &str) {
     let dir = repo_dir.join("info/web");

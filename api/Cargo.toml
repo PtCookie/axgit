@@ -23,5 +23,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
+# Atom feed well-formedness checks in tests only — production XML is built by hand.
+quick-xml = "0.37"
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
