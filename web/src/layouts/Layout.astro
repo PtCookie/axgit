@@ -1,27 +1,32 @@
 ---
 import "../styles/global.css";
+
+interface Props {
+  title?: string;
+}
+
+const { title = "Axgit" } = Astro.props;
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" href="/favicon.ico" />
     <meta name="generator" content={Astro.generator} />
-    <title>Astro Basics</title>
+    <meta name="description" content="Self-hosted Git 저장소 웹 뷰어" />
+    <title>{title}</title>
   </head>
-  <body>
-    <slot />
+  <body class="min-h-screen">
+    <header class="border-border border-b">
+      <div class="mx-auto flex max-w-5xl items-center px-4 py-3">
+        <a href="/" class="font-heading text-lg font-medium">Axgit</a>
+      </div>
+    </header>
+    <main class="mx-auto max-w-5xl px-4 py-6">
+      <slot />
+    </main>
   </body>
 </html>
-
-<style>
-  html,
-  body {
-    margin: 0;
-    width: 100%;
-    height: 100%;
-  }
-</style>

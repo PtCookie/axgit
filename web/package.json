@@ -24,7 +24,8 @@
         "lint": "eslint",
         "format": "prettier --write .",
         "check": "pnpm lint && prettier --check .",
-        "test": "vitest"
+        "test": "vitest",
+        "test:e2e": "playwright test"
     },
     "dependencies": {
         "@astrojs/react": "^6.0.2",
@@ -61,6 +62,7 @@
         "prettier-plugin-astro": "0.14.1",
         "prettier-plugin-tailwindcss": "0.8.1",
         "typescript-eslint": "^8.65.0",
-        "vitest": "^4.1.10"
+        "vitest": "^4.1.10",
+        "vitest-browser-react": "^2.2.0"
     }
 }

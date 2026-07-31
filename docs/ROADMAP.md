@@ -127,24 +127,48 @@
   - web은 `pnpm gen:types`(openapi-typescript + prettier)로 `types.ts` 생성. eslint 대상 제외.
   - API.md 드리프트 2건 정정: 사라진 `501 not_implemented` 행, 실제와 다른 `charset=utf-8`.
 
-## 다음 구현: web 스캐폴딩
+- **pnpm workspace를 리포 루트로 이관** (DECISIONS #7). `web/`이 자체 pnpm 프로젝트로 스캐폴딩된
+  탓에 CLAUDE.md/README.md가 문서화한 `pnpm install`(workspace root)과 `pnpm --filter web ...`이
+  실제로는 동작하지 않았다. 루트에 `package.json`/`pnpm-workspace.yaml`을 신설하고
+  `web/package.json`의 `name`을 `"web"`으로 바꿔 필터 매칭이 되게 했다. `web/pnpm-workspace.yaml`의
+  `allowBuilds`도 함께 루트로 옮김(pnpm이 루트에서만 읽음). `lefthook.yml`은 이미 `root: "web/"`
+  방식이라 변경 없이 그대로 동작.
+
+- **web 앱 셸 + `/` 저장소 목록 페이지 + API 클라이언트** (DECISIONS #16). Astro 템플릿 잔재
+  (`Welcome.astro`, 데모 에셋)를 걷어내고 실제 첫 화면을 세웠다. 확정된 관례:
+  - `web/src/lib/api/schemas.ts` — 생성 파일 `types.ts`에서 쓰기 편한 타입 alias만 재수출.
+    `client.ts`가 `apiFetch<T>`/`ApiError`(에러 envelope 파싱, 비-JSON/네트워크 실패도 정규화)를
+    제공하고, 리소스별 얇은 래퍼(`repos.ts`)가 그 위에 얹힌다. 다음 페이지도 이 패턴을 따를 것.
+  - 컴포넌트 테스트는 **vitest browser mode** (`@vitest/browser-playwright` provider +
+    `vitest-browser-react`), 테스트는 `web/tests/`(`vitest.config.ts`의 `include`가 이 경로만
+    matching). e2e는 Playwright, `web/e2e/`. 둘 다 `page.route`/`vi.mock`으로 API를 목킹해
+    백엔드 없이 돈다.
+  - section별 그룹핑(`RepoList.tsx`): `section: null`은 항상 "기타" 그룹으로 맨 뒤, 그 외 그룹은
+    응답 순서(= repo name 정렬)상 최초 등장 순서를 유지.
+  - `web/src/lib/format/time.ts`(상대/절대 시각) — 커밋 로그·blame 페이지에서 재사용 예정.
+  - 저장소 하위 경로(`/{repo}/...`)는 이번 커밋에서 만들지 않음 — SPA fallback 배선과 함께
+    다음 커밋에서.
+
+## 다음 구현: 저장소별 페이지
 
 ### Context
 
-api의 v1 엔드포인트 표면이 완성되었고(DECISIONS #9 전체 완료), OpenAPI 스펙과 그로부터
-생성한 `web/src/lib/api/types.ts`도 준비되어 있다. `web/`에는 Astro 초기 스캐폴드만 있으므로
-실제 화면을 여기서부터 세운다.
+`/` 저장소 목록 페이지와 API 클라이언트/테스트 관례가 갖춰졌다. 이제 저장소 하나를 파고드는
+페이지들(summary, log, tree, blob, commit, refs, blame)을 붙인다.
 
 ### 착수 시 검토할 것
 
-- ARCHITECTURE.md의 프론트엔드 절 그대로: Astro **static** 모드 + React islands + shadcn/ui
-  + Tailwind. SSR adapter 추가 금지 (배포 형태 변경, 별도 논의 필요).
-- 라우트: `/`(저장소 목록), `/{repo}/`(summary), `/{repo}/log`, `/{repo}/tree/[...path]`,
-  `/{repo}/blob/[...path]`, `/{repo}/commit/{sha}`, `/{repo}/refs`, `/{repo}/blame/[...path]`.
-  ref 선택은 URL 쿼리 `?ref=`로 통일.
-- API 응답 타입은 `web/src/lib/api/types.ts`(생성 파일, 직접 수정 금지)에서 가져다 쓴다.
-  `components["schemas"]["RepoInfo"]` 식으로 참조하거나 `web/src/lib/api/`에 얇은 alias를 둔다.
-  API가 바뀌면 `pnpm gen:types`로 재생성. 첫 커밋은 fetch 클라이언트 + 저장소 목록 페이지 정도의
-  최소 뼈대로 시작 검토.
-- shadcn/ui 컴포넌트는 `web/src/components/ui/`에 생성(vendored, 수정 가능).
-- vitest + Testing Library, fetch mocking / fixture JSON으로 테스트.
+- 라우트: `/{repo}/`(summary), `/{repo}/log`, `/{repo}/tree/[...path]`, `/{repo}/blob/[...path]`,
+  `/{repo}/commit/{sha}`, `/{repo}/refs`, `/{repo}/blame/[...path]`. ref 선택은 URL 쿼리
+  `?ref=`로 통일.
+- **SPA fallback 배선** (DECISIONS #16): Astro static 빌드는 이 경로들을 빌드 타임에 열거할 수
+  없으므로, api의 정적 파일 서빙에 fallback을 추가해 `/{repo}/...` 요청에 `index.html`을 돌려주고
+  클라이언트 라우터가 나머지를 처리하게 한다. **`nest("/api/v1")` 라우트가 바깥
+  `fallback_service`를 상속**하므로, api 라우터에 JSON 404 fallback을 별도로 달아야
+  `/api/v1/bogus`가 HTML 셸이 아니라 JSON 에러를 받는다 (`api/src/routes.rs:60`).
+  클라이언트 라우터 자체(예: 페이지 컴포넌트 내 매칭)는 아직 없으므로 이 커밋에서 도입.
+- 경로 세그먼트 이스케이프 헬퍼가 이제부터 실제로 필요해진다 — `web/src/lib/api/`에 실사용처와
+  함께 추가.
+- 나머지는 기존 관례를 그대로 따른다: 생성 타입은 `schemas.ts`에 alias 추가, API 클라이언트는
+  `client.ts`의 `apiFetch` 재사용, shadcn 컴포넌트는 `web/src/components/ui/`, 테스트는
+  vitest browser mode(`web/tests/`) + Playwright(`web/e2e/`).

@@ -89,7 +89,8 @@ immutable 여부가 ref 해석 후에야 결정되고, params 정규화와 conte
   (Astro 내장 Shiki/markdown은 빌드 타임 전용이라 런타임 fetch 데이터에는 쓸 수 없음.)
 - README 렌더링: **react-markdown + remark-gfm + rehype-sanitize** (markdown만, rst/plain은 `<pre>` 표시).
 - 아바타: 커밋 작성자 이메일 해시를 seed로 **DiceBear** 로컬 생성 (외부 요청 없음). 커밋 메시지 링크화는 정규식 linkify.
-- vitest + Testing Library. API 클라이언트는 fetch mocking으로, 컴포넌트는 fixture JSON으로 테스트.
+- vitest browser mode(`@vitest/browser-playwright` + `vitest-browser-react`) + Playwright e2e.
+  API 클라이언트는 fetch mocking으로, 컴포넌트는 fixture JSON으로 테스트.
 - 정적 빌드이므로 저장소별 페이지는 dynamic route 1벌 + client fetch로 해결 (빌드 시 저장소 목록 불필요).
 
 ## 빌드/배포

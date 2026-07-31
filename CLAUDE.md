@@ -107,7 +107,8 @@ docker build --tag axgit:latest .
 - **테스트**: api는 tempdir에 git CLI로 fixture repo를 만들어 통합 테스트 (`api/tests/`).
   git CLI 호출은 `GIT_CONFIG_GLOBAL=/dev/null` `GIT_CONFIG_SYSTEM=/dev/null`로 호스트 설정을 차단하고
   `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`를 고정해 결정적으로 만든다.
-  web은 vitest + Testing Library. 커밋 전 훅은 lefthook이 담당 (`lefthook.yml`).
+  web은 vitest browser mode(`@vitest/browser-playwright` + `vitest-browser-react`, `web/tests/`)
+  + Playwright e2e(`web/e2e/`). 커밋 전 훅은 lefthook이 담당 (`lefthook.yml`).
 - 사용자와의 대화는 한국어, 코드/커밋/문서 식별자는 영어.
 
 ## Repository layout
@@ -127,8 +128,13 @@ axgit/
   web/                # Astro + React + shadcn/ui (pnpm workspace 패키지, name: web)
     src/
       pages/          # Astro 라우트
+      layouts/        # 공용 레이아웃
       components/     # React islands, ui/ (shadcn)
-      lib/api/        # fetch 클라이언트 + types.ts (생성 파일)
+      lib/
+        api/          # fetch 클라이언트 + types.ts (생성 파일)
+        format/       # 날짜 등 표시 포맷 유틸
+    tests/            # vitest (browser mode)
+    e2e/              # Playwright
   docs/               # ARCHITECTURE.md, API.md, DECISIONS.md, ROADMAP.md, openapi.json
   lefthook.yml
   Dockerfile          # web build → api build → runtime (단일 이미지)

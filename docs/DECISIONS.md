@@ -56,7 +56,8 @@ sha 고정 응답은 불변 취급. 클라이언트는 ETag/immutable. (ARCHITEC
 - 패키지 매니저: **pnpm** (workspace). 루트 `pnpm-workspace.yaml`이 `web`을 패키지로 묶고,
   JS 명령은 루트에서 `pnpm --filter web <script>`로 실행한다. api는 Rust이므로 workspace 밖.
 - git hooks: **lefthook** — 단일 바이너리로 Rust/JS 훅을 한 설정에서 관리 (husky+lint-staged 대체).
-- 테스트: web은 **vitest**, api는 cargo test + fixture repo 통합 테스트.
+- 테스트: web은 **vitest**(browser mode, provider `@vitest/browser-playwright` +
+  `vitest-browser-react`) + Playwright e2e, api는 cargo test + fixture repo 통합 테스트.
 - 커밋: Conventional Commits (영어).
 
 ## #8 API 스타일
@@ -157,3 +158,15 @@ Astro 내장 Shiki/markdown은 빌드 타임 전용이므로 런타임 데이터
   스키마를 붙일 대상이 필요했고, 그 덕에 스펙이 실제 응답에서 벗어날 수 없다.
 - web은 `docs/openapi.json`에서 `openapi-typescript`로 `web/src/lib/api/types.ts`를 생성한다
   (`pnpm gen:types`). 생성 파일이므로 직접 수정하지 않고 eslint 대상에서도 제외한다.
+
+## #16 정적 빌드 + SPA fallback
+
+- Astro static 모드에서는 `{repo}`가 URL 첫 세그먼트라 빌드 타임에 저장소별 라우트를 열거할 수
+  없다 (`getStaticPaths`로 만들려면 빌드 시점에 저장소 목록이 필요한데, 그건 배포 환경마다 다르다).
+  `/{repo}/tree/...` 같은 저장소 하위 경로는 클라이언트 라우팅으로 처리하고, api는 해당 경로 요청에
+  `index.html`을 fallback으로 서빙해 SPA 셸을 띄운다.
+- **주의**: axum에서 `nest("/api/v1")`/merge된 라우트는 바깥 `fallback_service`를 상속한다. 배선 시
+  api 라우터에 JSON 404 fallback을 명시해야 `/api/v1/bogus`가 (SPA용 HTML 셸이 아니라) 정상적인
+  JSON 에러를 돌려준다 (`api/src/routes.rs:60`).
+- 이번 커밋(저장소 목록 페이지)은 방침만 기록한다. 실제 api 배선과 클라이언트 라우터 도입은
+  저장소별 페이지 구현 커밋에서 함께 한다.

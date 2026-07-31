@@ -1,0 +1,36 @@
+{
+    "repos": [
+        {
+            "name": "git-compose",
+            "section": "infra",
+            "owner": "PtCookie",
+            "description": "Compose project of Git server",
+            "default_branch": "main",
+            "last_modified": "2026-07-24T13:06:00+09:00"
+        },
+        {
+            "name": "axgit",
+            "section": "infra",
+            "owner": "PtCookie",
+            "description": "Cgit 대체 웹 프론트엔드",
+            "default_branch": "main",
+            "last_modified": "2026-07-30T09:00:00+09:00"
+        },
+        {
+            "name": "dotfiles",
+            "section": "tools",
+            "owner": null,
+            "description": null,
+            "default_branch": "master",
+            "last_modified": "2025-01-01T00:00:00+09:00"
+        },
+        {
+            "name": "scratch",
+            "section": null,
+            "owner": null,
+            "description": "임시 저장소",
+            "default_branch": null,
+            "last_modified": null
+        }
+    ]
+}
