@@ -39,6 +39,13 @@ pub fn router_for(repo_root: &Path) -> Router {
     build_router(AppState::new(test_config(repo_root)))
 }
 
+/// Router with a static frontend build directory set, for SPA fallback tests.
+pub fn router_with_static(repo_root: &Path, static_dir: &Path) -> Router {
+    let mut config = test_config(repo_root);
+    config.static_dir = Some(static_dir.to_owned());
+    build_router(AppState::new(config))
+}
+
 /// Runs git isolated from host configuration, with fixed author/dates.
 pub fn git(dir: &Path, args: &[&str]) {
     git_output(dir, args, &[]);

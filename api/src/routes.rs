@@ -1,7 +1,7 @@
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{any, get, post};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -37,7 +37,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/repos/{repo}/readme", get(files::get_readme))
         .route("/repos/{repo}/blame/{*rest}", get(files::get_blame))
         .route("/repos/{repo}/archive/{*rest}", get(archive::get_archive))
-        .route("/repos/{repo}/feed.atom", get(feed::get_feed));
+        .route("/repos/{repo}/feed.atom", get(feed::get_feed))
+        // `nest`ed routers inherit the outer `fallback_service` (the SPA shell
+        // below), so an unmatched `/api/v1/...` path must get its own JSON
+        // 404 rather than falling through to `index.html`.
+        .fallback(api_not_found);
 
     // Smart HTTP lives outside /api/v1; `{repo_git}` is the directory name
     // including `.git` (axum cannot capture partial segments).
@@ -58,7 +62,11 @@ pub fn build_router(state: AppState) -> Router {
         .merge(SwaggerUi::new(SWAGGER_UI_PATH).url(OPENAPI_JSON_PATH, ApiDoc::openapi()));
 
     if let Some(static_dir) = &state.config.static_dir {
-        router = router.fallback_service(ServeDir::new(static_dir));
+        // Astro static build cannot enumerate `/{repo}/...` routes at build
+        // time (docs/DECISIONS.md #16): serve real files when they exist,
+        // and fall back to the SPA shell so the client router takes over.
+        let index = static_dir.join("index.html");
+        router = router.fallback_service(ServeDir::new(static_dir).fallback(ServeFile::new(index)));
     }
 
     router.layer(TraceLayer::new_for_http()).with_state(state)
@@ -78,4 +86,10 @@ pub fn build_router(state: AppState) -> Router {
 )]
 pub(crate) async fn receive_pack() -> ApiError {
     ApiError::ReadOnly
+}
+
+/// Catches unmatched `/api/v1/...` paths so they answer with the standard
+/// JSON error envelope instead of inheriting the outer SPA-shell fallback.
+async fn api_not_found() -> ApiError {
+    ApiError::NotFound
 }

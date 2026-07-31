@@ -1,0 +1,107 @@
+import { useEffect, useState } from "react";
+
+import { ApiError } from "@/lib/api/client";
+import { getRepo } from "@/lib/api/repos";
+import type { RepoSummary as RepoSummaryData } from "@/lib/api/schemas";
+import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
+import { Skeleton } from "@/components/ui/skeleton";
+
+type State =
+  { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; summary: RepoSummaryData };
+
+interface RepoSummaryProps {
+  repo: string;
+}
+
+export default function RepoSummary({ repo }: RepoSummaryProps) {
+  const [state, setState] = useState<State>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getRepo(repo)
+      .then((summary) => {
+        if (!cancelled) {
+          setState({ status: "data", summary });
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setState({
+          status: "error",
+          error: error instanceof ApiError ? error : new ApiError("internal", "unknown error", 0),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repo]);
+
+  if (state.status === "loading") {
+    return (
+      <div className="space-y-2" aria-busy="true">
+        <Skeleton className="h-5 w-2/3" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    const message = state.error.status === 404 ? "저장소를 찾을 수 없습니다." : state.error.message;
+    return (
+      <p role="alert" className="text-destructive text-sm">
+        저장소 정보를 불러오지 못했습니다: {message}
+      </p>
+    );
+  }
+
+  const { summary } = state;
+
+  return (
+    <div className="space-y-6">
+      {summary.description && <p className="text-foreground">{summary.description}</p>}
+
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+        {summary.section && (
+          <>
+            <dt className="text-muted-foreground">구분</dt>
+            <dd>{summary.section}</dd>
+          </>
+        )}
+        {summary.owner && (
+          <>
+            <dt className="text-muted-foreground">소유자</dt>
+            <dd>{summary.owner}</dd>
+          </>
+        )}
+        <dt className="text-muted-foreground">기본 브랜치</dt>
+        <dd>{summary.default_branch ?? "—"}</dd>
+        <dt className="text-muted-foreground">최근 활동</dt>
+        <dd>
+          {summary.last_modified ? (
+            <span title={formatAbsoluteTime(summary.last_modified)}>{formatRelativeTime(summary.last_modified)}</span>
+          ) : (
+            "—"
+          )}
+        </dd>
+        <dt className="text-muted-foreground">HEAD</dt>
+        <dd className="font-mono">{summary.head ?? "—"}</dd>
+        <dt className="text-muted-foreground">브랜치</dt>
+        <dd>{summary.branch_count}</dd>
+        <dt className="text-muted-foreground">태그</dt>
+        <dd>{summary.tag_count}</dd>
+        {summary.clone_url && (
+          <>
+            <dt className="text-muted-foreground">Clone</dt>
+            <dd className="font-mono break-all">{summary.clone_url}</dd>
+          </>
+        )}
+      </dl>
+
+      {summary.head === null && <p className="text-muted-foreground text-sm">커밋이 없습니다.</p>}
+    </div>
+  );
+}

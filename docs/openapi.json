@@ -1705,7 +1705,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "One of `repo_not_found`, `ref_not_found`, `path_not_found`,\n`invalid_param`, `read_only`, `internal`.",
+            "description": "One of `repo_not_found`, `ref_not_found`, `path_not_found`,\n`invalid_param`, `read_only`, `not_found`, `internal`.",
             "example": "repo_not_found"
           },
           "message": {

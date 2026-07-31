@@ -13,7 +13,7 @@ pub struct ErrorResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorBody {
     /// One of `repo_not_found`, `ref_not_found`, `path_not_found`,
-    /// `invalid_param`, `read_only`, `internal`.
+    /// `invalid_param`, `read_only`, `not_found`, `internal`.
     #[schema(example = "repo_not_found")]
     pub code: String,
     /// Human-readable detail. Internal errors report a generic message; the
@@ -35,6 +35,11 @@ pub enum ApiError {
     InvalidParam(String),
     #[error("repository is read-only over HTTP; push via SSH")]
     ReadOnly,
+    /// Unmatched `/api/v1/...` route (docs/DECISIONS.md #16) — distinct from
+    /// [`Self::RepoNotFound`]/[`Self::PathNotFound`], which describe a
+    /// missing resource *within* a known route.
+    #[error("not found")]
+    NotFound,
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -59,6 +64,7 @@ impl ApiError {
             Self::PathNotFound(_) => (StatusCode::NOT_FOUND, "path_not_found"),
             Self::InvalidParam(_) => (StatusCode::BAD_REQUEST, "invalid_param"),
             Self::ReadOnly => (StatusCode::FORBIDDEN, "read_only"),
+            Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
     }

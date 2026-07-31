@@ -28,6 +28,7 @@ refs 최장 매칭, merge simplification, 필드가 `null`이 되는 조건)을 
 | 404  | `path_not_found`    | tree/blob 경로 없음 |
 | 400  | `invalid_param`     | 파라미터 형식 오류 |
 | 403  | `read_only`         | receive-pack 등 쓰기 시도 |
+| 404  | `not_found`         | `/api/v1/...` 아래 매칭되는 라우트가 없음 (DECISIONS.md #16) |
 | 500  | `internal`          | 서버 오류 (원인은 로그에만 남고 클라이언트는 일반 메시지만 받는다) |
 
 이 envelope를 쓰지 않는 예외는 하나뿐이다: upload-pack 요청 body가 8 MiB를 넘으면 axum의

@@ -149,26 +149,49 @@
   - 저장소 하위 경로(`/{repo}/...`)는 이번 커밋에서 만들지 않음 — SPA fallback 배선과 함께
     다음 커밋에서.
 
-## 다음 구현: 저장소별 페이지
+- **SPA fallback 배선 + 저장소 summary/refs 페이지** (DECISIONS #16). `/{repo}/...`를 실제로
+  라우팅 가능하게 만든 커밋. 확정된 설계:
+  - api 쪽: `api/src/routes.rs` — `/api/v1` 라우터에 `.fallback(api_not_found)`을 달아 `NotFound`
+    (`error.rs`, `not_found` 코드)를 반환하고, 정적 파일 서빙은
+    `ServeDir::new(static_dir).fallback(ServeFile::new(index.html))`로 바꿔 실제 파일이 없는
+    모든 경로가 SPA 셸을 받게 했다. `nest`된 라우터가 바깥 `fallback_service`를 상속하는 axum의
+    동작 때문에 두 fallback을 분리 배선해야 했다 — 순서상 API fallback이 없으면
+    `/api/v1/bogus`도 HTML 셸을 받는다. `docs/API.md` 에러 코드 표와 `docs/openapi.json`도
+    같은 커밋에서 갱신(ErrorBody 설명 문구).
+  - `astro dev`는 이 fallback이 없으므로 `astro.config.mjs`에 vite 미들웨어
+    (`spaFallback`)를 추가해 dev/e2e에서도 `/{repo}/...` 내비게이션이 `/`로 리라이트되게 했다
+    (정적 빌드 자체는 건드리지 않음).
+  - web 쪽: **클라이언트 라우터는 히스토리 API 없이 `location.pathname` 1회 파싱**
+    (`lib/router.ts::parseRoute`) — 내비게이션은 전부 풀 페이지 로드라 라우트가 마운트 중
+    바뀔 일이 없다는 전제. `components/App.tsx`는 `client:only="react"`로 마운트(정적 빌드는
+    `/` 하나의 HTML만 가지므로 `client:load`의 빌드 타임 렌더가 다른 라우트와 어긋난다).
+    라우트는 지금은 `repos`/`repo`(summary)/`refs`/`not-found` 네 가지뿐 — log/tree/blob/
+    commit/blame은 다음 커밋에서 `parseRoute`에 추가.
+  - `RepoSummary.tsx`/`RefsView.tsx`는 `RepoList.tsx`와 동일한 loading/error/data 상태 패턴
+    (컴포넌트 테스트도 `RepoList.test.tsx`와 동일 구조로 추가), `RepoNav.tsx`는 상태 없는 탭
+    내비게이션(`<a>` — 풀 페이지 로드 전제와 동일한 이유로 `Tabs` 대신).
+  - `web/src/lib/api/path.ts::encodeSegment` 신설(저장소 이름을 URL 세그먼트로 이스케이프),
+    `repos.ts`에 `getRepo`/`getRefs` 추가.
+  - e2e(`web/e2e/repo.spec.ts`)는 summary → refs 탭 이동과 미지원 하위 경로의 not-found 표시를
+    커버.
+
+## 다음 구현: 저장소별 나머지 페이지 (log, tree, blob, commit, blame)
 
 ### Context
 
-`/` 저장소 목록 페이지와 API 클라이언트/테스트 관례가 갖춰졌다. 이제 저장소 하나를 파고드는
-페이지들(summary, log, tree, blob, commit, refs, blame)을 붙인다.
+`/{repo}/`(summary)와 `/{repo}/refs`가 붙었고, SPA fallback과 클라이언트 라우터(`lib/router.ts`)
+관례가 갖춰졌다. 이제 나머지 저장소 하위 페이지를 같은 관례로 붙인다.
 
 ### 착수 시 검토할 것
 
-- 라우트: `/{repo}/`(summary), `/{repo}/log`, `/{repo}/tree/[...path]`, `/{repo}/blob/[...path]`,
-  `/{repo}/commit/{sha}`, `/{repo}/refs`, `/{repo}/blame/[...path]`. ref 선택은 URL 쿼리
-  `?ref=`로 통일.
-- **SPA fallback 배선** (DECISIONS #16): Astro static 빌드는 이 경로들을 빌드 타임에 열거할 수
-  없으므로, api의 정적 파일 서빙에 fallback을 추가해 `/{repo}/...` 요청에 `index.html`을 돌려주고
-  클라이언트 라우터가 나머지를 처리하게 한다. **`nest("/api/v1")` 라우트가 바깥
-  `fallback_service`를 상속**하므로, api 라우터에 JSON 404 fallback을 별도로 달아야
-  `/api/v1/bogus`가 HTML 셸이 아니라 JSON 에러를 받는다 (`api/src/routes.rs:60`).
-  클라이언트 라우터 자체(예: 페이지 컴포넌트 내 매칭)는 아직 없으므로 이 커밋에서 도입.
-- 경로 세그먼트 이스케이프 헬퍼가 이제부터 실제로 필요해진다 — `web/src/lib/api/`에 실사용처와
-  함께 추가.
+- 라우트: `/{repo}/log`, `/{repo}/tree/[...path]`, `/{repo}/blob/[...path]`,
+  `/{repo}/commit/{sha}`, `/{repo}/blame/[...path]`. ref 선택은 URL 쿼리 `?ref=`로 통일.
+  `lib/router.ts::parseRoute`/`Route`에 각 라우트를 추가하고 `App.tsx`의 switch에 매칭시킬 것.
+- tree/blob/blame은 API가 `{ref}/{path...}` catch-all 하나로 받는 것과 달리, 클라이언트 라우트는
+  `path` 세그먼트 수가 가변이라 `parseRoute`가 `ref`/`path` 경계를 정해야 한다 — API처럼
+  브랜치/태그 최장 매칭을 클라이언트에서 다시 구현할지, 아니면 `?ref=` 그대로 두고 나머지 전체를
+  path로 취급할지 결정 필요(후자가 API 계약과 더 어긋나지 않아 보임, 착수 시 재확인).
+  RepoNav.tsx의 TABS 배열에도 각 라우트를 추가.
 - 나머지는 기존 관례를 그대로 따른다: 생성 타입은 `schemas.ts`에 alias 추가, API 클라이언트는
   `client.ts`의 `apiFetch` 재사용, shadcn 컴포넌트는 `web/src/components/ui/`, 테스트는
   vitest browser mode(`web/tests/`) + Playwright(`web/e2e/`).
