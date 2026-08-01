@@ -95,12 +95,21 @@ is opened within request scope.
 
 ## Frontend (web/)
 
-- **Astro static** + React islands + shadcn/ui + Tailwind. All data is fetched client-side.
-- Route layout (Astro pages are shells; data loading happens in islands):
-  - `/` repository list (grouped by section, equivalent to cgit's index)
-  - `/{repo}/` summary · `/{repo}/log` · `/{repo}/tree/[...path]` · `/{repo}/blob/[...path]`
-  - `/{repo}/commit/{sha}` · `/{repo}/refs` · `/{repo}/blame/[...path]`
+- **Astro static** + React islands + shadcn/ui + Tailwind. Astro pages are prerendered shells —
+  page chrome (heading, tab nav, `<title>`) is static HTML; only the data regions are client-fetched
+  React islands (`client:only="react"`, with a static `slot="fallback"` skeleton).
+- Route layout — each is a real file under `web/src/pages/` (✅ implemented, others planned):
+  - ✅ `/` repository list (grouped by section, equivalent to cgit's index)
+  - ✅ `/{repo}/` summary · ✅ `/{repo}/refs`
+  - planned: `/{repo}/log` · `/{repo}/tree/[...path]` · `/{repo}/blob/[...path]` ·
+    `/{repo}/commit/{sha}` · `/{repo}/blame/[...path]`
   - ref selection is unified via the `?ref=` URL query
+- Per-repository pages can't be enumerated at build time (the repo list is per-deployment), so
+  `src/pages/[repo]/*.astro` is prerendered once under a reserved placeholder param and the server
+  maps request path *shapes* onto the matching shell (`api/src/shell.rs`, docs/DECISIONS.md #17).
+  There is no client-side router; the only client-side URL parsing left is recovering the real
+  repository name from `location` for the data islands and for one `is:inline` script that fills in
+  the heading/tab links/title before first paint.
 - Code highlighting: **Shiki, client-side**, with lazy-loaded language grammars. Highlighting is
   skipped above a size threshold for large files. (Astro's built-in Shiki/markdown is build-time
   only, so it can't be used for runtime-fetched data.)
@@ -110,8 +119,6 @@ is opened within request scope.
   address (no external requests). Commit message linkification uses regex-based linkify.
 - vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`) + Playwright e2e.
   The API client is tested with fetch mocking, components with fixture JSON.
-- Since it's a static build, per-repository pages resolve to a single dynamic route + client-side
-  fetch (no need for the repo list at build time).
 
 ## Build/deploy
 

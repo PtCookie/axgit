@@ -1,0 +1,51 @@
+---
+import Layout from "./Layout.astro";
+import RepoNav from "../components/repo/RepoNav.astro";
+
+interface Props {
+  /** Which tab renders as current; also selects the document title shape. */
+  active: "summary" | "refs";
+  /** Static <title>, shown until the inline script substitutes the repo name. */
+  title?: string;
+}
+
+const { active, title } = Astro.props;
+const titleSuffix = active === "refs" ? " refs — Axgit" : " — Axgit";
+---
+
+<Layout title={title}>
+  <RepoNav active={active} />
+  {
+    /*
+      Everything on a repository page is static except the repository *name*:
+      the shell is prerendered under a placeholder param (`lib/shell.ts`), so
+      the name only exists in `location`. `is:inline` keeps this a
+      synchronous classic script that runs before first paint — a bundled
+      `<script>` is deferred (`type="module"`) and would flash an empty
+      heading and dead tab links.
+    */
+  }
+  <script is:inline data-title-suffix={titleSuffix}>
+    {
+      const suffix = document.currentScript.dataset.titleSuffix;
+      // The raw segment is already correctly encoded for use in an href;
+      // only the displayed name needs decoding.
+      const segment = location.pathname.split("/")[1] ?? "";
+      let name = segment;
+      try {
+        name = decodeURIComponent(segment);
+      } catch {
+        // A malformed escape means a hand-typed URL — show it verbatim
+        // rather than aborting the script and leaving dead links.
+      }
+
+      document.title = name + suffix;
+      document.querySelector("[data-repo-name]").textContent = name;
+      for (const link of document.querySelectorAll("[data-repo-href]")) {
+        const sub = link.dataset.repoHref;
+        link.setAttribute("href", sub ? `/${segment}/${sub}` : `/${segment}`);
+      }
+    }
+  </script>
+  <slot />
+</Layout>

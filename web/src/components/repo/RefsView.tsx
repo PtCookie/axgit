@@ -4,22 +4,41 @@ import { ApiError } from "@/lib/api/client";
 import { getRefs } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
+import { repoFromPathname } from "@/lib/repo-param";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type State = { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; refs: RefsInfo };
 
 interface RefsViewProps {
-  repo: string;
+  /**
+   * Omitted by the prerendered `/{repo}/refs` shell, which is built under a
+   * placeholder param (`lib/shell.ts`) — the real name is read from the URL
+   * in the browser. `client:only` guarantees this default is only ever
+   * evaluated there.
+   */
+  repo?: string;
+}
+
+/** Also rendered statically into the page shell as the island's
+ *  `slot="fallback"`, so the prerendered HTML is not blank. */
+export function RefsViewSkeleton() {
+  return (
+    <div className="space-y-2" aria-busy="true">
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-full" />
+    </div>
+  );
 }
 
 export default function RefsView({ repo }: RefsViewProps) {
+  const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
 
-    getRefs(repo)
+    getRefs(resolvedRepo)
       .then((refs) => {
         if (!cancelled) {
           setState({ status: "data", refs });
@@ -38,15 +57,10 @@ export default function RefsView({ repo }: RefsViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [repo]);
+  }, [resolvedRepo]);
 
   if (state.status === "loading") {
-    return (
-      <div className="space-y-2" aria-busy="true">
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
-      </div>
-    );
+    return <RefsViewSkeleton />;
   }
 
   if (state.status === "error") {

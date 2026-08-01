@@ -1,0 +1,43 @@
+---
+interface Props {
+  active: "summary" | "refs";
+}
+
+const { active } = Astro.props;
+
+/**
+ * Static repository heading + tab bar. The repository name is unknown at
+ * build time (this page is prerendered once under a placeholder param, see
+ * `lib/shell.ts`), so `href`s carry a `data-repo-href` hook and the heading
+ * carries `data-repo-name` — both are filled in by the inline script in
+ * `RepoLayout.astro` before first paint. `sub` is the path segment appended
+ * to `/{repo}`; `""` is the summary page.
+ */
+const TABS = [
+  { key: "summary", sub: "", label: "Summary" },
+  { key: "refs", sub: "refs", label: "Refs" },
+] as const;
+---
+
+<div class="mb-6 space-y-3">
+  <h1 class="font-heading text-2xl font-medium break-all" data-repo-name></h1>
+  <nav class="border-border flex gap-4 border-b">
+    {
+      TABS.map((tab) => (
+        <a
+          href="/"
+          data-repo-href={tab.sub}
+          aria-current={tab.key === active ? "page" : undefined}
+          class:list={[
+            "-mb-px border-b-2 px-1 pb-2 text-sm font-medium",
+            tab.key === active
+              ? "border-primary text-foreground"
+              : "text-muted-foreground hover:text-foreground border-transparent",
+          ]}
+        >
+          {tab.label}
+        </a>
+      ))
+    }
+  </nav>
+</div>

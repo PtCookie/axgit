@@ -5,5 +5,6 @@ pub mod handlers;
 pub mod openapi;
 pub mod repo;
 pub mod routes;
+pub mod shell;
 pub mod smart_http;
 pub mod state;

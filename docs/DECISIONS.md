@@ -193,13 +193,51 @@ libraries instead:
 
 ## #16 Static build + SPA fallback
 
+Superseded by #17.
+
 - In Astro static mode, `{repo}` is the URL's first segment, so per-repository routes can't be
   enumerated at build time (`getStaticPaths` would need the repo list at build time, and that
   differs per deployment). Subpaths like `/{repo}/tree/...` are handled by client-side routing;
   the api serves `index.html` as a fallback for those requests to boot the SPA shell.
 - **Note**: in axum, routes that are `nest("/api/v1")`'d or merged inherit the outer
   `fallback_service`. Wiring this up requires an explicit JSON 404 fallback on the api router,
-  otherwise `/api/v1/bogus` would get the SPA's HTML shell instead of a proper JSON error
-  (`api/src/routes.rs:60`).
+  otherwise `/api/v1/bogus` would get the SPA's HTML shell instead of a proper JSON error.
 - This commit (the repo list page) records the policy only. Actually wiring up the api and
   introducing the client-side router happens together with the per-repository pages commit.
+
+## #17 Prerendered page shells per route shape (refines #16)
+
+- **Astro pages are the routing layer again.** `src/pages/[repo]/index.astro` and
+  `[repo]/refs.astro` are prerendered once under a reserved `getStaticPaths` param (`__repo__`,
+  `web/src/lib/shell.ts`), producing `dist/__repo__/index.html` and `dist/__repo__/refs/index.html`
+  alongside `dist/index.html` and `dist/404.html`. `output: "static"` and the single-container
+  shape (#3, #4) are unchanged — this is a build-output and routing change only, not a
+  deployment-shape change.
+- **The server maps path *shape* → shell** (`api/src/shell.rs`), replacing #16's blanket
+  `ServeFile(index.html)`. `ServeDir` still serves real files first (`_astro/*`, favicons); what is
+  left is matched as `[]` → `index.html`, `[repo]` → the repo shell, `[repo, "refs"]` → the refs
+  shell, anything else → `404.html` with a real `404`. Unmatched paths therefore stop answering
+  200. The `{repo}` segment is matched but never used to build a filesystem path, so it carries no
+  traversal surface. #16's note about `nest`ed routers inheriting the outer fallback still stands —
+  the `/api/v1` JSON 404 is still required.
+- **The client-side router is deleted** (`lib/router.ts`, `App.tsx`). Per-page chrome —
+  repository heading, tab bar, active tab, `<title>` — is static HTML from
+  `RepoLayout.astro`/`RepoNav.astro`. Only the repository *name* is unknowable at build time, so
+  one `is:inline` script in the repo layout fills the heading, the tab `href`s and `document.title`
+  from `location.pathname`'s first segment. `is:inline` (not a bundled `<script>`) because bundled
+  scripts are deferred and would flash an empty heading.
+- **Data islands stay `client:only="react"`, now with `slot="fallback"` skeletons.** `client:load`
+  was considered and rejected: the shell is built with a placeholder param, so a hydrated island
+  would receive `"__repo__"` as a prop and would have to re-derive the repository from `location` in
+  an effect — three render passes, broken component tests, and a hydration-mismatch footgun right
+  before log/tree/blob land. `client:only` + a fallback slot puts the same skeleton in the
+  prerendered HTML with no matching constraint.
+- **Cost: the mapping table exists three times** — `api/src/shell.rs::shell_for`,
+  `web/src/lib/shell.ts::shellFor` (also driving the `astro dev` middleware in `astro.config.mjs`),
+  and the `src/pages/` tree. Each carries a "change both together" comment and the two functions
+  share an identical test case table. Single-sourcing this would require SSR, which #3 rules out.
+  Adding a route means touching all three.
+- **A repository literally named `__repo__` is shadowed** — its requests resolve to the shell files
+  directly rather than through the mapping. Benign today (they are the same files it would have
+  been mapped to) and documented rather than defended in code; it only becomes a real collision if
+  a future route shape lacks a corresponding shell file.

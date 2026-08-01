@@ -1,0 +1,23 @@
+/**
+ * Reserved `getStaticPaths` param the `/{repo}` page shells are built under.
+ * The static build has one HTML file per *route shape*, not per repository —
+ * the repository list is per-deployment and unknown at build time — so the
+ * server rewrites `/{repo}/…` requests onto these files
+ * (`api/src/shell.rs`, docs/DECISIONS.md #17).
+ */
+export const REPO_SHELL_PARAM = "__repo__";
+
+/**
+ * Maps a request path to the page shell that serves it, as a site-root path.
+ * Mirrors `api/src/shell.rs::shell_for` — the two must change together; both
+ * are covered by the same case table (`web/tests/lib/shell.test.ts`,
+ * `api/src/shell.rs`'s unit tests).
+ */
+export function shellFor(pathname: string): string {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length === 0) return "/";
+  if (segments.length === 1) return `/${REPO_SHELL_PARAM}`;
+  if (segments.length === 2 && segments[1] === "refs") return `/${REPO_SHELL_PARAM}/refs`;
+  return "/404";
+}

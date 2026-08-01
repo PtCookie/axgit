@@ -106,8 +106,15 @@ progress.
 
 - Astro is pinned to **static mode**. Don't add an SSR adapter (that's a deployment-shape change
   that needs discussion first).
-- Dynamic data is fetched from React islands. Routing is via Astro pages + URL query/path
-  parameters.
+- Routing is Astro file-based (`web/src/pages/`); there is no client-side router. Per-repository
+  pages can't be enumerated at build time, so `src/pages/[repo]/*.astro` is prerendered once under
+  a reserved placeholder param (`__repo__`) and the server maps request path shapes onto the
+  matching shell (`api/src/shell.rs`, docs/DECISIONS.md #17). **Adding a route means updating three
+  places together**: `web/src/pages/`, `web/src/lib/shell.ts::shellFor`, and
+  `api/src/shell.rs::shell_for`.
+- Dynamic data is fetched from React islands. They stay `client:only="react"` with a static
+  `slot="fallback"` skeleton — don't switch to `client:load` without re-reading DECISIONS.md #17
+  (the shell is built under a placeholder param, so a hydrated island would receive it as a prop).
 - Code highlighting uses Shiki, lazy-loaded client-side (dynamic import per language).
   READMEs use react-markdown + rehype-sanitize; avatars are generated locally with DiceBear
   (no external requests, DECISIONS.md #11).

@@ -4,22 +4,41 @@ import { ApiError } from "@/lib/api/client";
 import { getRepo } from "@/lib/api/repos";
 import type { RepoSummary as RepoSummaryData } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
+import { repoFromPathname } from "@/lib/repo-param";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type State =
   { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; summary: RepoSummaryData };
 
 interface RepoSummaryProps {
-  repo: string;
+  /**
+   * Omitted by the prerendered `/{repo}` shell, which is built under a
+   * placeholder param (`lib/shell.ts`) — the real name is read from the URL
+   * in the browser. `client:only` guarantees this default is only ever
+   * evaluated there.
+   */
+  repo?: string;
+}
+
+/** Also rendered statically into the page shell as the island's
+ *  `slot="fallback"`, so the prerendered HTML is not blank. */
+export function RepoSummarySkeleton() {
+  return (
+    <div className="space-y-2" aria-busy="true">
+      <Skeleton className="h-5 w-2/3" />
+      <Skeleton className="h-24 w-full" />
+    </div>
+  );
 }
 
 export default function RepoSummary({ repo }: RepoSummaryProps) {
+  const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
 
-    getRepo(repo)
+    getRepo(resolvedRepo)
       .then((summary) => {
         if (!cancelled) {
           setState({ status: "data", summary });
@@ -38,15 +57,10 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
     return () => {
       cancelled = true;
     };
-  }, [repo]);
+  }, [resolvedRepo]);
 
   if (state.status === "loading") {
-    return (
-      <div className="space-y-2" aria-busy="true">
-        <Skeleton className="h-5 w-2/3" />
-        <Skeleton className="h-24 w-full" />
-      </div>
-    );
+    return <RepoSummarySkeleton />;
   }
 
   if (state.status === "error") {

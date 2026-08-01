@@ -1,0 +1,21 @@
+---
+import RepoLayout from "../../layouts/RepoLayout.astro";
+import RepoSummary, { RepoSummarySkeleton } from "../../components/repo/RepoSummary";
+import { REPO_SHELL_PARAM } from "../../lib/shell";
+
+/**
+ * One shell per route shape, not per repository: the repository list is
+ * per-deployment and unknown at build time, so this page is prerendered once
+ * under a reserved placeholder param and the server maps `/{repo}` onto it
+ * (`api/src/shell.rs`, docs/DECISIONS.md #17).
+ */
+export function getStaticPaths() {
+  return [{ params: { repo: REPO_SHELL_PARAM } }];
+}
+---
+
+<RepoLayout active="summary">
+  <RepoSummary client:only="react">
+    <div slot="fallback"><RepoSummarySkeleton /></div>
+  </RepoSummary>
+</RepoLayout>

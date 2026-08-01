@@ -1,8 +1,10 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import App from "../components/App";
+import RepoList, { RepoListSkeleton } from "../components/RepoList";
 ---
 
 <Layout>
-  <App client:only="react" />
+  <RepoList client:only="react">
+    <div slot="fallback"><RepoListSkeleton /></div>
+  </RepoList>
 </Layout>

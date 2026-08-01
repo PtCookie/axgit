@@ -34,6 +34,18 @@ function groupBySection(repos: RepoInfo[]): RepoGroup[] {
 
 type State = { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; repos: RepoInfo[] };
 
+/** Also rendered statically into the page shell as the island's
+ *  `slot="fallback"`, so the prerendered HTML is not blank. */
+export function RepoListSkeleton() {
+  return (
+    <div className="space-y-2" aria-busy="true">
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-full" />
+    </div>
+  );
+}
+
 export default function RepoList() {
   const [state, setState] = useState<State>({ status: "loading" });
 
@@ -62,13 +74,7 @@ export default function RepoList() {
   }, []);
 
   if (state.status === "loading") {
-    return (
-      <div className="space-y-2" aria-busy="true">
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
-      </div>
-    );
+    return <RepoListSkeleton />;
   }
 
   if (state.status === "error") {

@@ -205,26 +205,64 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - e2e (`web/e2e/repo.spec.ts`) covers summary → refs tab navigation and the not-found display for
     an unsupported subpath.
 
+- **Serve prerendered page shells per route shape** (DECISIONS #17, refining #16). Astro pages
+  became the routing layer again instead of a client-side-routed SPA. Finalized design:
+  - web side: `src/pages/[repo]/index.astro` and `[repo]/refs.astro` prerender once under a
+    reserved `getStaticPaths` param (`__repo__`, `web/src/lib/shell.ts::REPO_SHELL_PARAM`),
+    producing `dist/__repo__/index.html` and `dist/__repo__/refs/index.html` alongside
+    `dist/index.html` and the new `dist/404.html` (`pages/404.astro`, real 404 content instead of
+    the deleted `NotFound.tsx`). Deleted `components/App.tsx`, `lib/router.ts`,
+    `components/repo/RepoNav.tsx`, `components/NotFound.tsx`.
+  - Page chrome (heading, tab nav, `<title>`) is now static HTML: `layouts/RepoLayout.astro` wraps
+    `Layout.astro` and renders the new `components/repo/RepoNav.astro` (a static tab bar, `<a>`
+    hrefs marked `data-repo-href`) plus one `is:inline` script that fills in the repository name,
+    tab hrefs, and `document.title` from `location.pathname`'s first segment before first paint. A
+    bundled `<script>` was rejected — Astro 5+ defers those (`type="module"`), which would flash an
+    empty heading.
+  - Data islands (`RepoList`, `RepoSummary`, `RefsView`) stay `client:only="react"` (not
+    `client:load` — see DECISIONS #17) but now render into a static `slot="fallback"` skeleton, each
+    extracted as a named export (`RepoListSkeleton` etc.) shared with the component's own
+    `loading` state. `RepoSummary`/`RefsView`'s `repo` prop became optional, defaulting to
+    `lib/repo-param.ts::repoFromPathname(window.location.pathname)` — existing component tests are
+    unaffected since they pass `repo` explicitly.
+  - api side: `api/src/shell.rs` (new module) maps a request path's *shape* to its shell file —
+    `shell_for` is a pure function with its own unit tests; `serve_shell` reads the file per request
+    (not slurped at startup, so `astro build` output is picked up without an api restart).
+    `api/src/routes.rs`'s static fallback changed from `ServeDir::fallback(ServeFile(index.html))`
+    to `ServeDir::fallback(get(shell::serve_shell))`. Unmatched paths now answer a real `404` instead
+    of the old blanket `200`.
+  - dev parity: `astro.config.mjs`'s `spaFallback` middleware became `shellFallback`, driven by the
+    same `web/src/lib/shell.ts::shellFor` the pages/api rely on. Also fixed a latent bug — the old
+    middleware dropped the query string on rewrite, which would have broken a future `?ref=` link.
+  - `api/tests/spa_fallback_test.rs` renamed to `static_shell_test.rs` and rewritten around the
+    four shells; added coverage for Smart HTTP and Swagger UI taking precedence over the fallback
+    (nothing previously exercised that with a static dir configured).
+    `web/tests/lib/router.test.ts` replaced by `web/tests/lib/shell.test.ts`. `web/e2e/*.spec.ts`
+    needed no changes (they assert visible content and URLs, not HTTP status).
+  - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` untouched.
+
 ## Next up: remaining per-repository pages (log, tree, blob, commit, blame)
 
 ### Context
 
-`/{repo}/` (summary) and `/{repo}/refs` are in place, and the SPA fallback + client router
-(`lib/router.ts`) conventions are established. Next: attach the remaining per-repository subpages
-using the same conventions.
+`/{repo}/` (summary) and `/{repo}/refs` are in place as prerendered Astro page shells (DECISIONS
+#17); there is no client-side router. Next: attach the remaining per-repository subpages using the
+same conventions.
 
 ### Things to review before starting
 
 - Routes: `/{repo}/log`, `/{repo}/tree/[...path]`, `/{repo}/blob/[...path]`,
   `/{repo}/commit/{sha}`, `/{repo}/blame/[...path]`. ref selection is unified via the `?ref=` URL
-  query. Add each route to `lib/router.ts::parseRoute`/`Route` and match them in `App.tsx`'s
-  switch.
-- Unlike the API, where tree/blob/blame all use a single `{ref}/{path...}` catch-all, the client
-  route has a variable number of `path` segments, so `parseRoute` needs to decide the `ref`/`path`
-  boundary itself — decide whether to reimplement the API's branch/tag longest-match on the
-  client, or keep `?ref=` as-is and treat everything else as `path` (the latter seems to fit the
-  API contract better; confirm again when starting). Also add each route to `RepoNav.tsx`'s `TABS`
+  query. For each: add `src/pages/[repo]/{route}.astro` (`getStaticPaths` returning
+  `REPO_SHELL_PARAM`, same shape as `[repo]/refs.astro`), add the matching shape to **both**
+  `web/src/lib/shell.ts::shellFor` and `api/src/shell.rs::shell_for` (they must change together —
+  each has its own test with the same case table), and add the tab to `RepoNav.astro`'s `TABS`
   array.
+- Unlike the API, where tree/blob/blame all use a single `{ref}/{path...}` catch-all, the client
+  route has a variable number of `path` segments, so `shellFor`/`shell_for` need to decide the
+  `ref`/`path` boundary themselves — decide whether to reimplement the API's branch/tag
+  longest-match on the client, or keep `?ref=` as-is and treat everything else as `path` (the
+  latter seems to fit the API contract better; confirm again when starting).
 - Everything else follows existing conventions: generated types get an alias added in
   `schemas.ts`, the API client reuses `client.ts`'s `apiFetch`, shadcn components go in
   `web/src/components/ui/`, tests are vitest browser mode (`web/tests/`) + Playwright

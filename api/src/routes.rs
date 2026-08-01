@@ -1,7 +1,8 @@
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
-use axum::routing::{any, get, post};
-use tower_http::services::{ServeDir, ServeFile};
+use axum::http::Uri;
+use axum::routing::{MethodRouter, any, get, post};
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -9,6 +10,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::error::{ApiError, ErrorResponse};
 use crate::handlers::{archive, commits, feed, files, repos};
 use crate::openapi::ApiDoc;
+use crate::shell;
 use crate::smart_http;
 use crate::state::AppState;
 
@@ -62,11 +64,13 @@ pub fn build_router(state: AppState) -> Router {
         .merge(SwaggerUi::new(SWAGGER_UI_PATH).url(OPENAPI_JSON_PATH, ApiDoc::openapi()));
 
     if let Some(static_dir) = &state.config.static_dir {
-        // Astro static build cannot enumerate `/{repo}/...` routes at build
-        // time (docs/DECISIONS.md #16): serve real files when they exist,
-        // and fall back to the SPA shell so the client router takes over.
-        let index = static_dir.join("index.html");
-        router = router.fallback_service(ServeDir::new(static_dir).fallback(ServeFile::new(index)));
+        // The Astro build has one HTML file per route *shape*, not per
+        // repository (docs/DECISIONS.md #17): serve real files first, then
+        // map whatever is left onto the matching prerendered page shell —
+        // or `404.html` with a real 404 status.
+        let dir = static_dir.clone();
+        let shell: MethodRouter<()> = get(move |uri: Uri| shell::serve_shell(dir.clone(), uri));
+        router = router.fallback_service(ServeDir::new(static_dir).fallback(shell));
     }
 
     router.layer(TraceLayer::new_for_http()).with_state(state)
