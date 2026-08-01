@@ -129,6 +129,62 @@ test("navigates from the log to a commit's detail", async ({ page }) => {
   await expect(page.getByText("More text")).toBeVisible();
 });
 
+const TREE_ROOT = {
+  sha: COMMIT_SHA,
+  path: "",
+  entries: [
+    { name: "src", type: "tree", mode: "040000", size: null },
+    { name: "README.md", type: "blob", mode: "100644", size: 16 },
+  ],
+};
+
+const TREE_SRC = {
+  sha: COMMIT_SHA,
+  path: "src",
+  entries: [{ name: "main.rs", type: "blob", mode: "100644", size: 42 }],
+};
+
+const BLOB_MAIN = {
+  sha: COMMIT_SHA,
+  path: "src/main.rs",
+  mode: "100644",
+  size: 42,
+  binary: false,
+  too_large: false,
+  content: 'fn main() {\n    println!("hi");\n}\n',
+};
+
+test("navigates from the tree into a subdirectory and a file", async ({ page }) => {
+  await page.route("**/api/v1/repos/git-compose", async (route) => {
+    await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/tree/HEAD", async (route) => {
+    await route.fulfill({ json: TREE_ROOT });
+  });
+
+  await page.goto("/git-compose");
+  await page.getByRole("link", { name: "Tree" }).click();
+
+  await expect(page).toHaveURL("/git-compose/tree");
+  await expect(page.getByRole("link", { name: "src/" })).toBeVisible();
+
+  await page.route("**/api/v1/repos/git-compose/tree/HEAD/src", async (route) => {
+    await route.fulfill({ json: TREE_SRC });
+  });
+  await page.getByRole("link", { name: "src/" }).click();
+
+  await expect(page).toHaveURL("/git-compose/tree/src");
+  await expect(page.getByRole("link", { name: "main.rs" })).toBeVisible();
+
+  await page.route("**/api/v1/repos/git-compose/blob/HEAD/src/main.rs", async (route) => {
+    await route.fulfill({ json: BLOB_MAIN });
+  });
+  await page.getByRole("link", { name: "main.rs" }).click();
+
+  await expect(page).toHaveURL("/git-compose/blob/src/main.rs");
+  await expect(page.getByText('println!("hi");')).toBeVisible();
+});
+
 test("shows a not-found page for unsupported sub-routes", async ({ page }) => {
   await page.goto("/git-compose/stats");
 

@@ -267,3 +267,38 @@ plus two smaller choices made alongside them.
   `identicon`) import an `escape` helper that v10's `@dicebear/core` no longer exports — installing
   the two majors together breaks Vite's dependency pre-bundling. Revisit the pin once
   `@dicebear/collection` publishes a v10-compatible release.
+
+## #19 `/{repo}/tree` + `/{repo}/blob` pages, Shiki highlighting, dev shell-fallback fix
+
+- **`shellFor`/`shell_for` (#17) generalized from a fixed-arity tuple match to a segment-slice
+  match** (`match segments.as_slice()` in Rust, an equivalent length/prefix check in TS) — tree and
+  blob paths have unbounded depth (`/{repo}/tree/a/b/c`), which the old fixed 4-lookahead-segment
+  match couldn't express. `/{repo}/tree` (root, no path) is valid; `/{repo}/blob` (no path) is not
+  — there's nothing to display — and 404s like the other unmatched shapes.
+- **Fixed a latent dev-only bug found while wiring the tree/blob shells**: `astro.config.mjs`'s
+  `shellFallback` middleware used `path.extname(pathname) === ""` to decide whether a request was
+  an app route, skipping the rewrite for any path with a dot in it. A blob path
+  (`/{repo}/blob/src/main.rs`) has a dot but is still an app route, so this 404'd in `astro dev`/
+  Playwright while production (`api/src/shell.rs`, which has no such restriction) worked fine. The
+  heuristic was replaced with an actual `public/`-file existence check (normalized and prefix
+  checked against `public/` to rule out `..` escaping), mirroring what `ServeDir`'s real-file-first
+  fallback order does in production.
+- **Shiki, `shiki/core` + `shiki/engine/javascript` (the JavaScript RegExp engine, `forgiving:
+  true`)** — not the default Oniguruma/WASM engine. Avoids shipping a ~500 KiB `.wasm` asset; the
+  tradeoff is reduced grammar accuracy for a handful of complex languages, accepted without
+  benchmarking a specific one. Both `github-light`/`github-dark` themes are loaded and tokenized
+  together (`codeToTokens` with `themes: {light, dark}`), and each token's `htmlStyle` (a `color` +
+  a `--shiki-dark` custom property) is used directly as a React inline `style` object — matching
+  Shiki's documented dual-theme CSS-variables pattern. `global.css` adds
+  `.dark .shiki-code span { color: var(--shiki-dark) !important; }` to complete it; there's no
+  dark-mode toggle wired up yet, so this only activates once one exists (`.dark` is shadcn's
+  existing, currently-unused, convention).
+- **Language grammars are lazy-loaded per file** (`lib/format/highlight.ts`'s `LANG_LOADERS`,
+  keyed by extension) — only about twenty common languages are mapped; anything else renders as
+  plain text. Highlighting is skipped above **512 KiB or 5000 lines** regardless of language.
+  Tokens are rendered as React nodes (`<span style=...>`), never `dangerouslySetInnerHTML` —
+  repository content is untrusted input, the same rule `lib/format/linkify.tsx` follows.
+- **No new API contract** — tree/blob/raw already existed (an earlier session). The web only added
+  `getTree`/`getBlob`/`rawUrl` to `lib/api/repos.ts`, reusing `apiFetch`. `ref` continues to be
+  `?ref=`-only (#18); when absent, the literal string `HEAD` is passed as the API path's `{ref}`
+  segment rather than fetching the refs list to resolve a default.

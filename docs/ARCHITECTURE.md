@@ -101,7 +101,7 @@ is opened within request scope.
 - Route layout — each is a real file under `web/src/pages/` (✅ implemented, others planned):
   - ✅ `/` repository list (grouped by section, equivalent to cgit's index)
   - ✅ `/{repo}/` summary · ✅ `/{repo}/refs` · ✅ `/{repo}/log` · ✅ `/{repo}/commit/{sha}`
-  - planned: `/{repo}/tree/[...path]` · `/{repo}/blob/[...path]` · `/{repo}/blame/[...path]`
+  - ✅ `/{repo}/tree/[...path]` · ✅ `/{repo}/blob/[...path]` · planned: `/{repo}/blame/[...path]`
   - ref selection is unified via the `?ref=` URL query
 - Per-repository pages can't be enumerated at build time (the repo list is per-deployment), so
   `src/pages/[repo]/*.astro` is prerendered once under a reserved placeholder param and the server
@@ -109,9 +109,10 @@ is opened within request scope.
   There is no client-side router; the only client-side URL parsing left is recovering the real
   repository name from `location` for the data islands and for one `is:inline` script that fills in
   the heading/tab links/title before first paint.
-- Code highlighting: **Shiki, client-side**, with lazy-loaded language grammars. Highlighting is
-  skipped above a size threshold for large files. (Astro's built-in Shiki/markdown is build-time
-  only, so it can't be used for runtime-fetched data.)
+- Code highlighting: **Shiki, client-side**, with lazy-loaded language grammars, using the
+  **JavaScript RegExp engine** (not Oniguruma/WASM, DECISIONS.md #19). Highlighting is skipped
+  above a size threshold for large files. (Astro's built-in Shiki/markdown is build-time only, so
+  it can't be used for runtime-fetched data.)
 - README rendering: **react-markdown + remark-gfm + rehype-sanitize** (markdown only; rst/plain
   are shown as `<pre>`).
 - Avatars: generated locally with **DiceBear**, seeded from a hash of the committer's email

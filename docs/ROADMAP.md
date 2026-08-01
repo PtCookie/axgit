@@ -278,33 +278,61 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`
     untouched; `schemas.ts` gained re-exported aliases for the commit/diff schema types.
 
-## Next up: tree + blob pages
+- **`/{repo}/tree` + `/{repo}/blob` pages, with Shiki syntax highlighting** (DECISIONS.md #19).
+  Closed the biggest remaining gap versus cgit — there was previously no way to browse into a
+  repository's files at all. Finalized design:
+  - **`shellFor`/`shell_for` generalized to segment-slice matching** (`web/src/lib/shell.ts`,
+    `api/src/shell.rs`) — tree/blob paths have unbounded depth, which the old fixed-arity tuple
+    match (#17) couldn't express. `/{repo}/tree` (no path) is the root tree and is valid;
+    `/{repo}/blob` (no path) 404s, since there's nothing to display.
+  - **Fixed a latent dev-only bug**: `web/astro.config.mjs`'s `shellFallback` used an
+    `extname(pathname) === ""` heuristic to detect app routes, which wrongly skipped the rewrite
+    for any dotted path (a blob path like `/{repo}/blob/src/main.rs`) — 404ing in `astro dev`/
+    Playwright only. Replaced with an actual `public/`-file existence check.
+  - Routing: `web/src/pages/[repo]/tree/[...path].astro`, `[repo]/blob/[...path].astro`
+    (`getStaticPaths` with `path: undefined`, same rest-param pattern as `commit/[...sha].astro`).
+    `RepoNav.astro` gained a "Tree" tab; blob maps back to "Tree" for the active-tab highlight
+    (`RepoLayout.astro`), same as commit → log.
+  - New `web/src/components/repo/PathBreadcrumbs.tsx` (shared by tree/blob, exports `treeHref`),
+    `TreeView.tsx` (entries table; `tree`/`blob`/`symlink` link, `commit` gitlinks don't),
+    `BlobView.tsx` (binary/too-large/symlink branches, `Raw`/`History` links), `CodeBlock.tsx`
+    (line-numbered viewer, renders plain text immediately then swaps in Shiki tokens — no loading
+    flash). `lib/repo-param.ts` gained `filePathFromPathname`/`paramFromSearch` (the latter
+    factored out of `CommitLog.tsx`, which now reuses it too). `lib/api/repos.ts` gained
+    `getTree`/`getBlob`/`rawUrl`; `ref` continues to be `?ref=`-only (#18) — when absent, the
+    literal `HEAD` is sent as the API path's `{ref}` segment rather than resolving a default
+    client-side.
+  - **Shiki**: `shiki/core` + `shiki/engine/javascript` (JS RegExp engine, not Oniguruma/WASM —
+    avoids a ~500 KiB wasm asset). `lib/format/highlight.ts` lazy-loads ~20 common languages by
+    extension; anything else, or content over 512 KiB/5000 lines, renders as plain text. Both
+    `github-light`/`github-dark` themes are tokenized together and each token's Shiki-provided
+    `htmlStyle` (`color` + `--shiki-dark`) is used directly as a React inline style — `global.css`
+    adds the matching `.dark .shiki-code span` override (inert until a dark-mode toggle exists).
+  - No API contract change — `docs/API.md`/`docs/openapi.json` untouched; `schemas.ts` gained
+    `TreeListing`/`TreeEntryInfo`/`EntryKind`/`BlobInfo` aliases.
+
+## Next up: blame page
 
 ### Context
 
-`/{repo}/log` and `/{repo}/commit/{sha}` are now in place alongside summary/refs. Remaining:
-`/{repo}/tree/[...path]` and `/{repo}/blob/[...path]` (blame stays last, per the original v1
-ordering).
+`/{repo}/tree` and `/{repo}/blob` are now in place alongside summary/refs/log/commit. The one
+remaining v1-scope page is `/{repo}/blame/[...path]`, backed by the existing
+`GET /api/v1/repos/{repo}/blame/{ref}/{path...}` endpoint.
 
 ### Things to review before starting
 
-- **`web/astro.config.mjs`'s `shellFallback` middleware must be fixed before these routes work in
-  dev.** It only rewrites requests where `path.extname(pathname) === ""`
-  (`isAppRoute` check) — fine for log/commit (no dots in a sha), but a blob path like
-  `/{repo}/blob/src/main.rs` has an extension and would currently skip the rewrite and 404 in
-  `astro dev`/Playwright, even though production (`api/src/shell.rs`) has no such restriction. The
-  fix likely needs `shellFor`'s own shape-matching to decide app-route-ness instead of an extname
-  heuristic.
-- Add `src/pages/[repo]/tree/[...path].astro` and `[repo]/blob/[...path].astro`
-  (`getStaticPaths` with `path: undefined`, same pattern as this commit's `commit/[...sha].astro`),
-  update `shellFor`/`shell_for` (two more shapes, same "change both together" discipline), add a
-  "Tree" tab to `RepoNav.astro`'s `TABS` (blob likely maps back to "Tree" the same way commit maps
-  to "Log").
-- ref stays `?ref=`-only (settled in the previous entry) — `path` is the entire route path after
-  `/tree/`/`/blob/`, no ref/path boundary logic needed client-side.
-- Code highlighting: Shiki client-side, lazy-loaded per language grammar (ARCHITECTURE.md), skipped
-  above a size threshold — not yet started anywhere in the frontend.
+- Routing follows the exact tree/blob pattern from the previous entry: a new
+  `src/pages/[repo]/blame/[...path].astro` shell (`getStaticPaths` with `path: undefined`), one
+  more `shellFor`/`shell_for` shape (`[repo, "blame", ..]`, requiring at least one path segment
+  like blob), and a nav tab — likely mapping back to "Tree" for the active-tab highlight, same as
+  blob.
+- The response shape (`BlameInfo`/`BlameRange`) is per-line-range, not per-line — check
+  `docs/API.md`'s blame section for the exact `ranges`/`lines` fields before designing the
+  component. `AuthorAvatar`/`formatRelativeTime`/`formatAbsoluteTime` are all reusable as-is.
+- `CodeBlock.tsx` (from the previous entry) renders line-numbered code with Shiki highlighting
+  already — blame likely wants a variant or a wrapping component that adds a per-range author
+  gutter alongside it rather than duplicating the line-numbering/highlighting logic.
+- ref stays `?ref=`-only; `path` is the whole route path after `/blame/`, same as tree/blob.
 - Everything else follows existing conventions: generated types get an alias added in
-  `schemas.ts`, the API client reuses `client.ts`'s `apiFetch`, shadcn components go in
-  `web/src/components/ui/`, tests are vitest browser mode (`web/tests/`) + Playwright
-  (`web/e2e/`).
+  `schemas.ts`, the API client reuses `client.ts`'s `apiFetch`, tests are vitest browser mode
+  (`web/tests/`) + Playwright (`web/e2e/`).

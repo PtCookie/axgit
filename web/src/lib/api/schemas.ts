@@ -20,3 +20,7 @@ export type FileDiff = components["schemas"]["FileDiff"];
 export type Hunk = components["schemas"]["Hunk"];
 export type Line = components["schemas"]["Line"];
 export type LineOrigin = components["schemas"]["LineOrigin"];
+export type TreeListing = components["schemas"]["TreeListing"];
+export type TreeEntryInfo = components["schemas"]["TreeEntryInfo"];
+export type EntryKind = components["schemas"]["EntryKind"];
+export type BlobInfo = components["schemas"]["BlobInfo"];

@@ -23,12 +23,15 @@ const REPO_HTML: &str = "<!doctype html><html><body>REPO SUMMARY</body></html>";
 const REFS_HTML: &str = "<!doctype html><html><body>REPO REFS</body></html>";
 const LOG_HTML: &str = "<!doctype html><html><body>REPO LOG</body></html>";
 const COMMIT_HTML: &str = "<!doctype html><html><body>REPO COMMIT</body></html>";
+const TREE_HTML: &str = "<!doctype html><html><body>REPO TREE</body></html>";
+const BLOB_HTML: &str = "<!doctype html><html><body>REPO BLOB</body></html>";
 const NOT_FOUND_HTML: &str = "<!doctype html><html><body>NOT FOUND</body></html>";
 const ASSET_JS: &str = "console.log('app');";
 
-/// A repo root with one repository, and a static dir with the six page
+/// A repo root with one repository, and a static dir with the eight page
 /// shells (`index.html`, `__repo__/index.html`, `__repo__/refs/index.html`,
-/// `__repo__/log/index.html`, `__repo__/commit/index.html`, `404.html`) plus
+/// `__repo__/log/index.html`, `__repo__/commit/index.html`,
+/// `__repo__/tree/index.html`, `__repo__/blob/index.html`, `404.html`) plus
 /// a real asset under `_astro/`.
 fn setup_fixtures() -> (TempDir, TempDir) {
     let repo_root = tempfile::tempdir().expect("failed to create repo root");
@@ -40,6 +43,8 @@ fn setup_fixtures() -> (TempDir, TempDir) {
     std::fs::create_dir_all(static_dir.path().join("__repo__/refs")).unwrap();
     std::fs::create_dir_all(static_dir.path().join("__repo__/log")).unwrap();
     std::fs::create_dir_all(static_dir.path().join("__repo__/commit")).unwrap();
+    std::fs::create_dir_all(static_dir.path().join("__repo__/tree")).unwrap();
+    std::fs::create_dir_all(static_dir.path().join("__repo__/blob")).unwrap();
     std::fs::write(static_dir.path().join("__repo__/index.html"), REPO_HTML).unwrap();
     std::fs::write(
         static_dir.path().join("__repo__/refs/index.html"),
@@ -50,6 +55,16 @@ fn setup_fixtures() -> (TempDir, TempDir) {
     std::fs::write(
         static_dir.path().join("__repo__/commit/index.html"),
         COMMIT_HTML,
+    )
+    .unwrap();
+    std::fs::write(
+        static_dir.path().join("__repo__/tree/index.html"),
+        TREE_HTML,
+    )
+    .unwrap();
+    std::fs::write(
+        static_dir.path().join("__repo__/blob/index.html"),
+        BLOB_HTML,
     )
     .unwrap();
     std::fs::create_dir_all(static_dir.path().join("_astro")).unwrap();
@@ -126,11 +141,40 @@ async fn repo_commit_paths_should_serve_the_commit_shell() {
 }
 
 #[tokio::test]
+async fn repo_tree_paths_should_serve_the_tree_shell() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in [
+        "/git-compose/tree",
+        "/git-compose/tree/",
+        "/git-compose/tree/src",
+        "/git-compose/tree/src/lib",
+    ] {
+        let router = router_with_static(repo_root.path(), static_dir.path());
+        assert_html_shell(router, uri, StatusCode::OK, TREE_HTML).await;
+    }
+}
+
+#[tokio::test]
+async fn repo_blob_paths_should_serve_the_blob_shell() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in [
+        "/git-compose/blob/src/main.rs",
+        "/git-compose/blob/README.md",
+    ] {
+        let router = router_with_static(repo_root.path(), static_dir.path());
+        assert_html_shell(router, uri, StatusCode::OK, BLOB_HTML).await;
+    }
+}
+
+#[tokio::test]
 async fn unknown_paths_should_serve_the_404_shell_with_a_404_status() {
     let (repo_root, static_dir) = setup_fixtures();
 
     for uri in [
-        "/git-compose/tree/src",
+        "/git-compose/blob",
+        "/git-compose/blob/",
         "/git-compose/commit",
         "/git-compose/commit/abc123/extra",
         "/git-compose/stats",

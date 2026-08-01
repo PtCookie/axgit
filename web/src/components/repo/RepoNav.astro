@@ -1,6 +1,6 @@
 ---
 interface Props {
-  active: "summary" | "refs" | "log";
+  active: "summary" | "refs" | "log" | "tree";
 }
 
 const { active } = Astro.props;
@@ -15,6 +15,7 @@ const { active } = Astro.props;
  */
 const TABS = [
   { key: "summary", sub: "", label: "Summary" },
+  { key: "tree", sub: "tree", label: "Tree" },
   { key: "log", sub: "log", label: "Log" },
   { key: "refs", sub: "refs", label: "Refs" },
 ] as const;

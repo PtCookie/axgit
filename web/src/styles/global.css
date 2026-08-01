@@ -133,3 +133,16 @@
         @apply font-sans;
     }
 }
+
+/*
+ * Shiki dual-theme tokens (`lib/format/highlight.ts`, DECISIONS.md #19):
+ * each token's inline `style` carries the light theme's `color` plus a
+ * `--shiki-dark` custom property. This is Shiki's documented CSS-variables
+ * pattern for shipping both themes without picking one at render time; the
+ * `!important` here is required by that pattern to win over the inline
+ * `color` the light theme already set. `var(...)` with no fallback is a
+ * no-op on a token that has no `--shiki-dark` set (whitespace, etc.).
+ */
+.dark .shiki-code span {
+    color: var(--shiki-dark) !important;
+}

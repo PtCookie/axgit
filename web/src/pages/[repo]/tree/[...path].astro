@@ -1,0 +1,23 @@
+---
+import RepoLayout from "../../../layouts/RepoLayout.astro";
+import TreeView, { TreeViewSkeleton } from "../../../components/repo/TreeView";
+import { REPO_SHELL_PARAM } from "../../../lib/shell";
+
+/**
+ * One shell per route shape, not per repository — see `[repo]/index.astro`
+ * (`api/src/shell.rs`, docs/DECISIONS.md #17). `path` is a rest param so
+ * this page's own segment count doesn't matter to Astro; passing
+ * `undefined` builds exactly one file (`tree/index.html`) with no `path`
+ * segment appended. The real path is read from `location.pathname` at
+ * runtime by `TreeView` — the shell never needs a build-time value.
+ */
+export function getStaticPaths() {
+  return [{ params: { repo: REPO_SHELL_PARAM, path: undefined } }];
+}
+---
+
+<RepoLayout active="tree" title="Tree — Axgit">
+  <TreeView client:only="react">
+    <div slot="fallback"><TreeViewSkeleton /></div>
+  </TreeView>
+</RepoLayout>

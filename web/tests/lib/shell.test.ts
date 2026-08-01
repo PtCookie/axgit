@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { REPO_SHELL_PARAM, shellFor } from "@/lib/shell";
-import { commitShaFromPathname, repoFromPathname } from "@/lib/repo-param";
+import { commitShaFromPathname, filePathFromPathname, repoFromPathname } from "@/lib/repo-param";
 
 // Same case table as `api/src/shell.rs`'s unit tests — the two must change
 // together (see the doc comment on `shellFor`).
@@ -34,9 +34,31 @@ describe("shellFor", () => {
     }
   });
 
+  it("maps repo tree paths to the placeholder tree shell", () => {
+    for (const path of [
+      "/git-compose/tree",
+      "/git-compose/tree/",
+      "/git-compose/tree/src",
+      "/git-compose/tree/src/lib",
+    ]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/tree`);
+    }
+  });
+
+  it("maps repo blob paths to the placeholder blob shell", () => {
+    for (const path of [
+      "/git-compose/blob/src/main.rs",
+      "/git-compose/blob/src/main.rs/",
+      "/git-compose/blob/README.md",
+    ]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/blob`);
+    }
+  });
+
   it("maps unmatched shapes to /404", () => {
     for (const path of [
-      "/git-compose/tree/src",
+      "/git-compose/blob",
+      "/git-compose/blob/",
       "/git-compose/commit",
       "/git-compose/commit/abc123/extra",
       "/git-compose/stats",
@@ -76,5 +98,28 @@ describe("commitShaFromPathname", () => {
 
   it("falls back to the raw segment for a malformed escape", () => {
     expect(commitShaFromPathname("/git-compose/commit/%zz")).toBe("%zz");
+  });
+});
+
+describe("filePathFromPathname", () => {
+  it("returns an empty string when there is no path segment", () => {
+    expect(filePathFromPathname("/")).toBe("");
+    expect(filePathFromPathname("/git-compose")).toBe("");
+    expect(filePathFromPathname("/git-compose/tree")).toBe("");
+    expect(filePathFromPathname("/git-compose/tree/")).toBe("");
+  });
+
+  it("returns the decoded remainder joined by /", () => {
+    expect(filePathFromPathname("/git-compose/tree/src")).toBe("src");
+    expect(filePathFromPathname("/git-compose/tree/src/lib")).toBe("src/lib");
+    expect(filePathFromPathname("/git-compose/blob/src/main.rs")).toBe("src/main.rs");
+  });
+
+  it("decodes each segment independently", () => {
+    expect(filePathFromPathname("/git-compose/blob/my%20dir/file.rs")).toBe("my dir/file.rs");
+  });
+
+  it("falls back to the raw segment for a malformed escape", () => {
+    expect(filePathFromPathname("/git-compose/blob/%zz")).toBe("%zz");
   });
 });

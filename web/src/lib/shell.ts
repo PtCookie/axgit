@@ -21,5 +21,10 @@ export function shellFor(pathname: string): string {
   if (segments.length === 2 && segments[1] === "refs") return `/${REPO_SHELL_PARAM}/refs`;
   if (segments.length === 2 && segments[1] === "log") return `/${REPO_SHELL_PARAM}/log`;
   if (segments.length === 3 && segments[1] === "commit") return `/${REPO_SHELL_PARAM}/commit`;
+  // tree: the path after `/tree/` is optional (empty means the root tree).
+  if (segments.length >= 2 && segments[1] === "tree") return `/${REPO_SHELL_PARAM}/tree`;
+  // blob: at least one path segment is required — there's nothing to show
+  // for `/{repo}/blob` itself.
+  if (segments.length >= 3 && segments[1] === "blob") return `/${REPO_SHELL_PARAM}/blob`;
   return "/404";
 }

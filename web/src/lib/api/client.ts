@@ -2,6 +2,13 @@ import type { ErrorResponse } from "./schemas";
 
 const API_BASE = import.meta.env.PUBLIC_AXGIT_API_BASE ?? "/api/v1";
 
+/** Builds a full API URL for use as a link `href` (e.g. `raw`, which the
+ *  client never `fetch`es directly). Not used by `apiFetch` itself, which
+ *  keeps `API_BASE` private to this module. */
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;

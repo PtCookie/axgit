@@ -1,6 +1,29 @@
-import { apiFetch } from "./client";
-import { encodeSegment } from "./path";
-import type { CommitDetail, CommitDiff, CommitsPage, RefsInfo, ReposResponse, RepoSummary } from "./schemas";
+import { apiFetch, apiUrl } from "./client";
+import { encodePath, encodeSegment } from "./path";
+import type {
+  BlobInfo,
+  CommitDetail,
+  CommitDiff,
+  CommitsPage,
+  RefsInfo,
+  ReposResponse,
+  RepoSummary,
+  TreeListing,
+} from "./schemas";
+
+/** Defaulted when `?ref=` is absent from the page URL — `resolve_ref_path`
+ *  on the api side falls back to `HEAD` for an unrecognized/missing ref
+ *  segment too, so passing it explicitly here doesn't need a refs lookup. */
+const DEFAULT_REF = "HEAD";
+
+/** Builds the `{ref}/{path...}` wildcard segment shared by tree/blob/raw —
+ *  each part is percent-encoded independently (`encodePath` splits on `/`),
+ *  since a literal `/` inside `ref` (a branch name) or `path` must survive
+ *  for the api's refs longest-match to see it. */
+function refPathSegment(ref: string | undefined, path: string): string {
+  const encodedRef = encodePath(ref || DEFAULT_REF);
+  return path ? `${encodedRef}/${encodePath(path)}` : encodedRef;
+}
 
 export function listRepos(): Promise<ReposResponse> {
   return apiFetch<ReposResponse>("/repos");
@@ -46,4 +69,18 @@ export function getCommit(name: string, sha: string): Promise<CommitDetail> {
 export function getCommitDiff(name: string, sha: string, path?: string): Promise<CommitDiff> {
   const query = buildQuery({ path });
   return apiFetch<CommitDiff>(`/repos/${encodeSegment(name)}/commits/${encodeSegment(sha)}/diff${query}`);
+}
+
+export function getTree(name: string, ref: string | undefined, path: string): Promise<TreeListing> {
+  return apiFetch<TreeListing>(`/repos/${encodeSegment(name)}/tree/${refPathSegment(ref, path)}`);
+}
+
+export function getBlob(name: string, ref: string | undefined, path: string): Promise<BlobInfo> {
+  return apiFetch<BlobInfo>(`/repos/${encodeSegment(name)}/blob/${refPathSegment(ref, path)}`);
+}
+
+/** Link-only (never `fetch`ed by the client) — the raw content is streamed
+ *  straight from the api, so `BlobView` renders it as an `<a>` href. */
+export function rawUrl(name: string, ref: string | undefined, path: string): string {
+  return apiUrl(`/repos/${encodeSegment(name)}/raw/${refPathSegment(ref, path)}`);
 }

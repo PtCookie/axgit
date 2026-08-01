@@ -29,3 +29,27 @@ export function commitShaFromPathname(pathname: string): string {
   if (sha === undefined) return "";
   return decodeSegment(sha);
 }
+
+/**
+ * The `{path...}` remainder of a `/{repo}/(tree|blob)/{path...}` page URL,
+ * decoded segment-by-segment and rejoined with `/`. Used by `TreeView`/
+ * `BlobView`, mounted on the placeholder `/{repo}/tree` or `/{repo}/blob`
+ * shell — the real path only exists in `location`, never as a build-time
+ * prop. Empty for the tree root (`/{repo}/tree`).
+ */
+export function filePathFromPathname(pathname: string): string {
+  const segments = pathname
+    .split("/")
+    .filter((part) => part.length > 0)
+    .slice(2);
+  return segments.map(decodeSegment).join("/");
+}
+
+/**
+ * One query-string param from a page URL (`?ref=`, `?cursor=`, …). There's
+ * no client-side router (DECISIONS.md #17), so this reads `location.search`
+ * directly rather than anything stateful.
+ */
+export function paramFromSearch(name: string, search: string): string | undefined {
+  return new URLSearchParams(search).get(name) ?? undefined;
+}

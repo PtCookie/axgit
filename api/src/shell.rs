@@ -25,31 +25,40 @@ pub const REPO_SHELL_PARAM: &str = "__repo__";
 /// matched but never used to build a filesystem path, so percent-encoding or
 /// `..` inside it are structurally harmless here.
 fn shell_for(path: &str) -> (PathBuf, StatusCode) {
-    let mut segments = path.split('/').filter(|segment| !segment.is_empty());
+    let segments: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
 
-    match (
-        segments.next(),
-        segments.next(),
-        segments.next(),
-        segments.next(),
-    ) {
-        (None, _, _, _) => (PathBuf::from("index.html"), StatusCode::OK),
-        (Some(_), None, _, _) => (
+    match segments.as_slice() {
+        [] => (PathBuf::from("index.html"), StatusCode::OK),
+        [_repo] => (
             Path::new(REPO_SHELL_PARAM).join("index.html"),
             StatusCode::OK,
         ),
-        (Some(_), Some("refs"), None, _) => (
+        [_repo, "refs"] => (
             Path::new(REPO_SHELL_PARAM).join("refs").join("index.html"),
             StatusCode::OK,
         ),
-        (Some(_), Some("log"), None, _) => (
+        [_repo, "log"] => (
             Path::new(REPO_SHELL_PARAM).join("log").join("index.html"),
             StatusCode::OK,
         ),
-        (Some(_), Some("commit"), Some(_), None) => (
+        [_repo, "commit", _sha] => (
             Path::new(REPO_SHELL_PARAM)
                 .join("commit")
                 .join("index.html"),
+            StatusCode::OK,
+        ),
+        // The path after `/tree/` is optional (empty means the root tree).
+        [_repo, "tree", ..] => (
+            Path::new(REPO_SHELL_PARAM).join("tree").join("index.html"),
+            StatusCode::OK,
+        ),
+        // At least one path segment is required — there's nothing to show
+        // for `/{repo}/blob` itself.
+        [_repo, "blob", _first, ..] => (
+            Path::new(REPO_SHELL_PARAM).join("blob").join("index.html"),
             StatusCode::OK,
         ),
         _ => (PathBuf::from("404.html"), StatusCode::NOT_FOUND),
@@ -157,9 +166,47 @@ mod tests {
     }
 
     #[test]
+    fn repo_tree_paths_map_to_the_tree_shell() {
+        for path in [
+            "/git-compose/tree",
+            "/git-compose/tree/",
+            "/git-compose/tree/src",
+            "/git-compose/tree/src/lib",
+        ] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM).join("tree").join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn repo_blob_paths_map_to_the_blob_shell() {
+        for path in [
+            "/git-compose/blob/src/main.rs",
+            "/git-compose/blob/src/main.rs/",
+            "/git-compose/blob/README.md",
+        ] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM).join("blob").join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
     fn unmatched_shapes_map_to_the_404_shell() {
         for path in [
-            "/git-compose/tree/src",
+            "/git-compose/blob",
+            "/git-compose/blob/",
             "/git-compose/commit",
             "/git-compose/commit/abc123/extra",
             "/git-compose/stats",

@@ -5,7 +5,7 @@ import { encodeSegment } from "@/lib/api/path";
 import { listCommits } from "@/lib/api/repos";
 import type { CommitsPage } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
-import { repoFromPathname } from "@/lib/repo-param";
+import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -43,10 +43,6 @@ export function CommitLogSkeleton() {
   );
 }
 
-function paramFromSearch(name: string): string | undefined {
-  return new URLSearchParams(window.location.search).get(name) ?? undefined;
-}
-
 /** Builds a `/{repo}/log` href, keeping the given params and clearing any
  *  key set to `undefined` in `overrides`. */
 function logHref(
@@ -65,9 +61,9 @@ function logHref(
 
 export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor: cursorParam }: CommitLogProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
-  const resolvedRef = refParam ?? paramFromSearch("ref");
-  const resolvedPath = pathParam ?? paramFromSearch("path");
-  const resolvedCursor = cursorParam ?? paramFromSearch("cursor");
+  const resolvedRef = refParam ?? paramFromSearch("ref", window.location.search);
+  const resolvedPath = pathParam ?? paramFromSearch("path", window.location.search);
+  const resolvedCursor = cursorParam ?? paramFromSearch("cursor", window.location.search);
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
