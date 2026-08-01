@@ -1,20 +1,5 @@
 {
     "name": "web",
-    "version": "0.0.1",
-    "description": "Web interface for Git repositories",
-    "keywords": [
-        "Git",
-        "Astro",
-        "React",
-        "TailwindCSS"
-    ],
-    "license": "MIT",
-    "author": {
-        "name": "Minsup Ju",
-        "email": "me@ptcookie.net",
-        "url": "https://devlog.ptcookie.net/"
-    },
-    "type": "module",
     "scripts": {
         "dev": "astro dev",
         "build": "astro build",
