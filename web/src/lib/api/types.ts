@@ -266,6 +266,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/repos/{repo}/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Repository search
+     * @description git2 in-process scan across file content, file paths, or commit messages
+     *     (docs/DECISIONS.md #26) — not a `git grep` exec or a persistent index.
+     *     Every scan is bounded by its own byte/file/commit budget independent of
+     *     `limit`; either cap sets `truncated: true`.
+     */
+    get: operations["get_search"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/repos/{repo}/tree/{ref}/{path}": {
     parameters: {
       query?: never;
@@ -518,7 +541,7 @@ export interface components {
     ErrorBody: {
       /**
        * @description One of `repo_not_found`, `ref_not_found`, `path_not_found`,
-       *     `invalid_param`, `read_only`, `internal`.
+       *     `invalid_param`, `read_only`, `not_found`, `internal`.
        * @example repo_not_found
        */
       code: string;
@@ -541,6 +564,15 @@ export interface components {
       truncated: boolean;
       /** @description Empty for binary files. */
       hunks: components["schemas"]["Hunk"][];
+    };
+    /** @description A file with at least one match (docs/API.md). */
+    FileMatch: {
+      path: string;
+      /**
+       * @description Empty for `type=path` matches — the path itself is the match, there is
+       *     no line to point at.
+       */
+      lines: components["schemas"]["LineMatch"][];
     };
     Hunk: {
       /**
@@ -572,6 +604,13 @@ export interface components {
        * @description `null` on deleted lines.
        */
       new_lineno: number | null;
+    };
+    /** @description Matched line within a file (docs/API.md). */
+    LineMatch: {
+      /** @description 1-based line number. */
+      line: number;
+      /** @description The matching line, truncated to [`MAX_LINE_CHARS`] characters. */
+      text: string;
     };
     /**
      * @description Which side of the diff a line belongs to. Other libgit2 origins (EOF
@@ -645,6 +684,33 @@ export interface components {
     };
     ReposResponse: {
       repos: components["schemas"]["RepoInfo"][];
+    };
+    /**
+     * @description Requested search variant, echoed back in the response's `type` field.
+     * @enum {string}
+     */
+    SearchKind: "content" | "path" | "message";
+    /** @description Response of `GET /api/v1/repos/{repo}/search` (docs/API.md). */
+    SearchResults: {
+      /**
+       * @description Resolved commit sha the search ran against. `None` only for an empty
+       *     repository (unborn HEAD) with no explicit `ref`.
+       */
+      sha: string | null;
+      type: components["schemas"]["SearchKind"];
+      /**
+       * @description `true` when a scan or result budget was hit before the search
+       *     finished — the results are a prefix, not necessarily the complete
+       *     match set.
+       */
+      truncated: boolean;
+      /** @description `content`/`path` results; empty for `type=message`. */
+      files: components["schemas"]["FileMatch"][];
+      /**
+       * @description `message` results; empty otherwise. Reuses the commit log's shape so
+       *     the frontend can render matches the same way as log rows.
+       */
+      commits: components["schemas"]["CommitInfo"][];
     };
     /** @description Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md). */
     TagRef: {
@@ -1363,6 +1429,84 @@ export interface operations {
         content?: never;
       };
       /** @description `repo_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_search: {
+    parameters: {
+      query?: {
+        /**
+         * @description Fixed-string, case-insensitive query. Trimmed; empty or over 200
+         *     characters is `invalid_param`.
+         * @example TODO
+         */
+        q?: string;
+        /**
+         * @description `content` (default), `path`, or `message`.
+         * @example content
+         */
+        type?: string;
+        /**
+         * @description Branch, tag, or commit sha; HEAD when absent.
+         * @example main
+         */
+        ref?: string;
+        /**
+         * @description Parsed manually so an invalid value yields the JSON `invalid_param`
+         *     envelope instead of axum's plain-text 400. Never clamped.
+         * @example 50
+         */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        /**
+         * @description Repository name without the `.git` suffix
+         * @example git-compose
+         */
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Search results. An empty repository with no `ref` yields an empty result. */
+      200: {
+        headers: {
+          /** @description `no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref` */
+          "Cache-Control"?: string;
+          /** @description Validator-derived; absent on full-sha `ref` requests */
+          ETag?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchResults"];
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `invalid_param` — missing/oversized `q`, unknown `type`, or bad `limit` */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description `repo_not_found`, `ref_not_found` */
       404: {
         headers: {
           [name: string]: unknown;

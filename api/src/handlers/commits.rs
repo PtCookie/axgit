@@ -8,7 +8,7 @@ use axum::response::Response;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::{JSON_CONTENT_TYPE, cached_response};
+use super::{JSON_CONTENT_TYPE, cached_response, parse_limit};
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::commits::{CommitDetail, CommitsPage};
 use crate::repo::diff::CommitDiff;
@@ -32,21 +32,6 @@ pub struct CommitsQuery {
     /// envelope instead of axum's plain-text 400. Never clamped.
     #[param(value_type = Option<u32>, minimum = 1, maximum = 100, example = 50)]
     limit: Option<String>,
-}
-
-const DEFAULT_LIMIT: usize = 50;
-const MAX_LIMIT: usize = 100;
-
-fn parse_limit(raw: Option<&str>) -> Result<usize, ApiError> {
-    let Some(raw) = raw else {
-        return Ok(DEFAULT_LIMIT);
-    };
-    match raw.parse::<usize>() {
-        Ok(limit) if (1..=MAX_LIMIT).contains(&limit) => Ok(limit),
-        _ => Err(ApiError::InvalidParam(format!(
-            "limit must be an integer between 1 and {MAX_LIMIT}"
-        ))),
-    }
 }
 
 /// Tree lookups need a relative path without empty segments at the ends.

@@ -112,7 +112,9 @@ pub fn log(
     })
 }
 
-fn commit_info(commit: &Commit) -> CommitInfo {
+/// Shared by the log walk and search's commit-message matcher
+/// (`repo/search.rs`).
+pub(crate) fn commit_info(commit: &Commit) -> CommitInfo {
     CommitInfo {
         sha: commit.id().to_string(),
         summary: commit.summary().map(str::to_owned),

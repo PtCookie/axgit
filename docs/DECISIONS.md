@@ -613,3 +613,46 @@ route/page, and `web/src/lib/shell.ts::shellFor` / `api/src/shell.rs::shell_for`
   whole tree every call) or an index, which would be this app's first piece of mutable persistent
   state in an otherwise stateless, read-only container (CLAUDE.md's core invariants). Left as the
   next ROADMAP.md item.
+
+## #26 Repository search API: git2 in-process scan, not exec or an index
+
+The second half of #9's deferred "repository search" (#25 was the client-side list filter) —
+searching *inside* a repository: file content, file paths, and commit messages. `GET
+/api/v1/repos/{repo}/search?q=&type=&ref=&limit=` (docs/API.md).
+
+- **git2 in-process scan, not `git grep` exec, not a persistent index.** An index would be this
+  app's first piece of mutable, persistent state in an otherwise stateless, read-only container —
+  it changes the deployment shape (CLAUDE.md's core invariants) and was rejected outright. Between
+  the two exec-free choices, git2 won over `git grep`: `cached_response` (`handlers/mod.rs`) is
+  synchronous and git2 fits it directly, whereas an exec is inherently async and would force that
+  helper into an async-closure shape for one caller. git2 also lets every scan enforce an *exact*
+  byte/file/commit budget (below) instead of only a process timeout, and no query string ever
+  reaches a command line. Same reasoning blame applied choosing git2 over exec (#14); if a large
+  repository proves this too slow, a `git grep` exec fallback is the same escape hatch #14 left
+  itself for blame.
+- **One endpoint, `type=content|path|message`,** rather than three. All three share the "resolve a
+  ref, walk something, cap the results" shape and the same response envelope (`sha`, `truncated`,
+  `files`, `commits`) — splitting them into separate routes would triple the OpenAPI/shell
+  boilerplate for no real gain, and cgit's own search UI presents them as one box with a type
+  selector anyway.
+- **Two independent budgets, not one.** `limit` (1–100, default 50, same rule as the commit log)
+  caps *results*; a separate, fixed scan budget caps *work done regardless of matches* — 20,000
+  tree entries walked, 32 MiB of blob content actually read (checked via `Odb::read_header` before
+  a blob is loaded, so oversized/over-budget blobs are never pulled into memory), and 10,000
+  commits walked for `type=message`. Either running out sets `truncated: true`. Content search
+  reuses `repo/blob.rs::classify` (binary/1 MiB-cap detection) — the same classification blame and
+  the blob endpoint already apply — so a search never surfaces something the blob view itself
+  would refuse to render.
+- **`q` is a fixed string, not a regex**, matched case-insensitively (ASCII fast path via
+  `to_ascii_lowercase`, falling back to full `to_lowercase` for non-ASCII haystacks) — regex
+  support would reopen the "unbounded worst-case cost from user input" problem the budgets above
+  exist to close, for a feature cgit's own search doesn't offer either.
+- Caching, immutability, and the empty-repository (unborn HEAD) carve-out all follow existing
+  precedent exactly: commit-detail's "immutable only when `ref` is the resolved full sha" rule, and
+  the commit log's "omitting `ref` on an empty repo is a 200 with empty results, an explicit `ref`
+  is `404 ref_not_found`" rule.
+- `handlers/commits.rs`'s `parse_limit`/`DEFAULT_LIMIT`/`MAX_LIMIT` moved to `handlers/mod.rs`
+  (now `pub(crate)`) since search needed the identical rule — the second caller of the same logic.
+  `repo/commits.rs`'s private `commit_info` was promoted to `pub(crate)` so `type=message` results
+  reuse the exact log-entry shape (`CommitInfo`) rather than a parallel struct.
+- The `/{repo}/search` web page is deferred to a follow-up commit (ROADMAP.md).

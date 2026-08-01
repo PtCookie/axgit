@@ -3,6 +3,7 @@ pub mod commits;
 pub mod feed;
 pub mod files;
 pub mod repos;
+pub mod search;
 
 use axum::body::Bytes;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -23,6 +24,25 @@ pub(crate) const NO_CACHE_CONTROL: &str = "no-cache";
 
 pub(crate) const JSON_CONTENT_TYPE: &str = "application/json";
 pub(crate) const ATOM_CONTENT_TYPE: &str = "application/atom+xml; charset=utf-8";
+
+pub(crate) const DEFAULT_LIMIT: usize = 50;
+pub(crate) const MAX_LIMIT: usize = 100;
+
+/// Shared by `commits::list_commits` and `search::get_search` — both page
+/// results with the same "default 50, 1-100, never clamped" rule
+/// (docs/API.md). Parsed manually so an invalid value yields the JSON
+/// `invalid_param` envelope instead of axum's plain-text 400.
+pub(crate) fn parse_limit(raw: Option<&str>) -> Result<usize, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(DEFAULT_LIMIT);
+    };
+    match raw.parse::<usize>() {
+        Ok(limit) if (1..=MAX_LIMIT).contains(&limit) => Ok(limit),
+        _ => Err(ApiError::InvalidParam(format!(
+            "limit must be an integer between 1 and {MAX_LIMIT}"
+        ))),
+    }
+}
 
 /// Serves one per-repo endpoint through the response cache
 /// (docs/ARCHITECTURE.md#caching). `compute` builds the serialized body and

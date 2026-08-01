@@ -965,6 +965,120 @@
         }
       }
     },
+    "/api/v1/repos/{repo}/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Repository search",
+        "description": "git2 in-process scan across file content, file paths, or commit messages\n(docs/DECISIONS.md #26) — not a `git grep` exec or a persistent index.\nEvery scan is bounded by its own byte/file/commit budget independent of\n`limit`; either cap sets `truncated: true`.",
+        "operationId": "get_search",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Fixed-string, case-insensitive query. Trimmed; empty or over 200\ncharacters is `invalid_param`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "TODO"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "`content` (default), `path`, or `message`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "content"
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "description": "Branch, tag, or commit sha; HEAD when absent.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Parsed manually so an invalid value yields the JSON `invalid_param`\nenvelope instead of axum's plain-text 400. Never clamped.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            },
+            "example": 50
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results. An empty repository with no `ref` yields an empty result.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha `ref` requests"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — missing/oversized `q`, unknown `type`, or bad `limit`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/repos/{repo}/tree/{ref}/{path}": {
       "get": {
         "tags": [
@@ -1754,6 +1868,26 @@
           }
         ]
       },
+      "FileMatch": {
+        "type": "object",
+        "description": "A file with at least one match (docs/API.md).",
+        "required": [
+          "path",
+          "lines"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineMatch"
+            },
+            "description": "Empty for `type=path` matches — the path itself is the match, there is\nno line to point at."
+          }
+        }
+      },
       "Hunk": {
         "type": "object",
         "required": [
@@ -1831,6 +1965,25 @@
             "format": "int32",
             "description": "`null` on deleted lines.",
             "minimum": 0
+          }
+        }
+      },
+      "LineMatch": {
+        "type": "object",
+        "description": "Matched line within a file (docs/API.md).",
+        "required": [
+          "line",
+          "text"
+        ],
+        "properties": {
+          "line": {
+            "type": "integer",
+            "description": "1-based line number.",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string",
+            "description": "The matching line, truncated to [`MAX_LINE_CHARS`] characters."
           }
         }
       },
@@ -2040,6 +2193,56 @@
           }
         }
       },
+      "SearchKind": {
+        "type": "string",
+        "description": "Requested search variant, echoed back in the response's `type` field.",
+        "enum": [
+          "content",
+          "path",
+          "message"
+        ]
+      },
+      "SearchResults": {
+        "type": "object",
+        "description": "Response of `GET /api/v1/repos/{repo}/search` (docs/API.md).",
+        "required": [
+          "sha",
+          "type",
+          "truncated",
+          "files",
+          "commits"
+        ],
+        "properties": {
+          "sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Resolved commit sha the search ran against. `None` only for an empty\nrepository (unborn HEAD) with no explicit `ref`."
+          },
+          "type": {
+            "$ref": "#/components/schemas/SearchKind"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "`true` when a scan or result budget was hit before the search\nfinished — the results are a prefix, not necessarily the complete\nmatch set."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileMatch"
+            },
+            "description": "`content`/`path` results; empty for `type=message`."
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommitInfo"
+            },
+            "description": "`message` results; empty otherwise. Reuses the commit log's shape so\nthe frontend can render matches the same way as log rows."
+          }
+        }
+      },
       "TagRef": {
         "type": "object",
         "description": "Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).",
@@ -2145,6 +2348,10 @@
     {
       "name": "files",
       "description": "Tree, blob, raw, readme, blame, and archive"
+    },
+    {
+      "name": "search",
+      "description": "Content, path, and commit-message search within a repository"
     },
     {
       "name": "smart-http",

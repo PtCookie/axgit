@@ -87,6 +87,22 @@ is opened within request scope.
   (`Content-Encoding: gzip`).
 - receive-pack is never exposed in any form (403).
 
+### Search
+
+`repo/search.rs` implements content/path/commit-message search as an **in-process git2 scan** —
+not a `git grep` exec, and not a persistent index (DECISIONS.md #26). An index was rejected
+outright: it would be the first piece of mutable, persistent state in an otherwise stateless,
+read-only container. git2 was chosen over exec because it fits the existing synchronous
+`cached_response` helper directly and lets every scan enforce an exact byte/file/commit budget,
+rather than only a process timeout.
+
+Every scan carries **two independent caps**: `limit` bounds the number of results returned, while
+a fixed scan budget (tree entries walked, blob bytes actually read, commits walked) bounds the
+*work done* regardless of how many results are found — either one sets `truncated: true` in the
+response. Content search reuses the blob endpoint's binary/size classification
+(`repo/blob.rs::classify`), so search never reads something the blob view itself would refuse to
+render.
+
 ### Test strategy
 
 - `api/tests/` builds fixture bare repos with the git CLI in a tempdir (commits/tags/submodules

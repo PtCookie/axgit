@@ -28,3 +28,7 @@ export type BlameInfo = components["schemas"]["BlameInfo"];
 export type BlameRange = components["schemas"]["BlameRange"];
 export type ReadmeInfo = components["schemas"]["ReadmeInfo"];
 export type ReadmeFormat = components["schemas"]["ReadmeFormat"];
+export type SearchResults = components["schemas"]["SearchResults"];
+export type SearchKind = components["schemas"]["SearchKind"];
+export type FileMatch = components["schemas"]["FileMatch"];
+export type LineMatch = components["schemas"]["LineMatch"];

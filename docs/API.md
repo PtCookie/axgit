@@ -400,6 +400,51 @@ An Atom feed of the default branch's (HEAD's) most recent **20 commits**.
 - ETag + `Cache-Control: no-cache` (see the caching headers section). Since the body embeds the
   base URL, the server response cache key includes the base URL too.
 
+### `GET /api/v1/repos/{repo}/search?q=&type=&ref=&limit=`
+
+Repository search: file content, file paths, or commit messages. Implemented as an in-process
+git2 scan (not a `git grep` exec, not a persistent index — DECISIONS.md #26); every scan is
+bounded by its own size budget, independent of `limit`.
+
+```json
+{
+  "sha": "<full sha, or null for an empty repository>",
+  "type": "content",
+  "truncated": false,
+  "files": [
+    { "path": "src/main.rs", "lines": [{ "line": 12, "text": "..." }] }
+  ],
+  "commits": []
+}
+```
+
+- `q`: **required**. A fixed string (not a regex), matched case-insensitively. Trimmed; empty
+  after trimming or over 200 characters is `400 invalid_param`.
+- `type`: `content` (default), `path`, or `message`. Any other value is `400 invalid_param`.
+  - `content`: matches file content line by line. Binary files and files over the blob endpoint's
+    1 MiB inline-content cap are skipped, same as the blob endpoint's classification. Symlinks are
+    excluded (their "content" is a link target, not text).
+  - `path`: matches the full file path (case-insensitive substring), no content is read. Symlinks
+    are included; directories are not (there is nothing to match beyond the files under them).
+  - `message`: matches a commit's full message (title + body), walking history from `ref`
+    (or HEAD).
+- `ref`: branch/tag/sha, defaults to HEAD. `404 ref_not_found` on resolution failure.
+- `limit`: default 50, allowed range 1–100, same rules as the commit log's `limit` (not clamped).
+  For `content`/`path` it caps the number of files returned; for `message` it caps the number of
+  commits.
+- `files`: populated for `type=content`/`type=path`; empty for `type=message`. Each entry's
+  `lines` holds up to 10 matches (each truncated to 500 characters), empty for `type=path`.
+- `commits`: populated for `type=message` only, using the same shape as a commit log entry
+  (`CommitInfo`).
+- `truncated`: `true` when either `limit` or an internal scan budget (20,000 tree entries scanned,
+  32 MiB of blob content read for `content`, or 10,000 commits walked for `message`) was hit
+  before the search finished — the results are a prefix, not necessarily the complete match set.
+- Empty repository (unborn HEAD): omitting `ref` returns `200` with `"sha": null` and empty
+  `files`/`commits`. An explicit `ref` returns `404 ref_not_found` — the same carve-out the
+  commit log applies.
+- Caching follows the commit-detail pattern: immutable only when `ref` is given and equals the
+  resolved commit's full sha as a string; otherwise `ETag` + `Cache-Control: no-cache`.
+
 ## Smart HTTP (clone/fetch only)
 
 Outside the API prefix, mapped directly to repository paths. Handled by spawning

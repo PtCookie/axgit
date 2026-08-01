@@ -456,31 +456,48 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - No new page/route, so no `shellFor`/`shell_for` change. No API contract change —
     `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` untouched, `api/src` untouched.
 
-## Next up: Repository content search
+- **`GET /api/v1/repos/{repo}/search` — content/path/commit-message search** (DECISIONS.md #26).
+  The second half of #9's deferred "repository search" (#25 was the client-side list filter) —
+  searching *inside* a repository. Finalized design:
+  - git2 in-process scan (`repo/search.rs`), not a `git grep` exec or a persistent index — an
+    index would be this app's first piece of mutable, persistent state in an otherwise stateless,
+    read-only container. `type=content|path|message` is one endpoint, not three; all three share
+    the "resolve a ref, walk something, cap the results" shape and response envelope.
+  - **Two independent budgets**: `limit` (1–100, default 50, same rule as the commit log) caps
+    *results*; a separate scan budget caps *work done regardless of matches* — 20,000 tree entries
+    walked, 32 MiB of blob content actually read (checked via `Odb::read_header` before a blob is
+    loaded), 10,000 commits walked for `message`. Either sets `truncated: true`. Content search
+    reuses `repo/blob.rs::classify` (binary/1 MiB cap) so a search never surfaces something the
+    blob view itself would refuse to render.
+  - `q` is a fixed string (not regex), case-insensitive, 1–200 characters.
+  - Caching/immutability and the empty-repository (unborn HEAD) carve-out both follow existing
+    precedent exactly (commit-detail's full-sha immutability rule; the commit log's "omit `ref` on
+    an empty repo → 200 with empty results, explicit `ref` → 404" rule).
+  - `handlers/commits.rs`'s `parse_limit`/`DEFAULT_LIMIT`/`MAX_LIMIT` moved to `handlers/mod.rs`
+    (`pub(crate)`) as the second caller; `repo/commits.rs::commit_info` promoted to `pub(crate)` so
+    `type=message` results reuse `CommitInfo` rather than a parallel struct.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` all updated (new endpoint);
+    `schemas.ts` gained `SearchResults`/`SearchKind`/`FileMatch`/`LineMatch` aliases.
+
+## Next up: `/{repo}/search` page
 
 ### Context
 
-DECISIONS.md #9 also excluded searching *inside* repository content (file contents, commit
-messages) — the bigger half of "repository search", deferred out of the client-side filter above.
-Together with commit-statistics graphs (`stats`, #9's other exclusion), it's the last remaining gap
-versus cgit.
+The API landed above; there is no web UI for it yet. Together with commit-statistics graphs
+(`stats`, #9's other exclusion), it's the last remaining gap versus cgit.
 
 ### Things to review before starting
 
-- This needs a new API endpoint — unlike the list filter, the data isn't already on the client.
-  Decide whether it shells out to `git grep` per-request (simple, matches the existing "exec for
-  heavy operations" pattern in `smart_http.rs`/archive handling, but scans the whole tree every
-  call) or needs a real index — and if so, where it lives given the container is otherwise
-  stateless and `/srv/git` is read-only (CLAUDE.md's core invariants: no writes outside
-  SSH-to-git-server, repos are read-only bare repos). An index would be the first piece of mutable,
-  persistent state this app has ever needed.
-- Keep the read-only invariant in view: search is inherently a read operation, but a naive
-  `git grep`-per-request implementation over many/large repos could become a resource-exhaustion
-  vector — worth at least a size/timeout bound before shipping, consistent with the existing
-  archive/diff/blob caps (1000 lines/file, 300 files/diff, 1 MiB blob, etc. — see docs/API.md).
-- Decide where the UI lives: likely a per-repository search page (`/{repo}/search`), which would
-  need a new route shape in both `web/src/lib/shell.ts::shellFor` and `api/src/shell.rs::shell_for`,
-  per the "adding a route" rule in CLAUDE.md.
-- Commit-message search is a separate question from file-content search — `commits.rs::log` already
-  walks history, so filtering its output may not need `git grep`/an index at all; worth scoping
-  separately rather than assuming both share one implementation.
+- New route shape `/{repo}/search`, needed in three places together (CLAUDE.md's "adding a route"
+  rule): `web/src/pages/[repo]/search.astro`, `web/src/lib/shell.ts::shellFor`,
+  `api/src/shell.rs::shell_for` — follow `log.astro`'s shape (no path segments, just `?q=` etc. in
+  the query string). `RepoNav.astro`/`RepoLayout.astro` need a "Search" tab.
+- The search form should be a plain `<form method="get">` so it works with and without
+  `<ClientRouter />` (#24) intercepting the submit — consistent with #18's "no client-side router
+  state" premise; every other page reads params from `location` at mount.
+- `type=content` results should link into the blob view at the matching line
+  (`repo-href.ts::blobHref` + `CodeBlock.tsx`'s existing `id="L{n}"` anchors); `type=message`
+  results can reuse `CommitLog`'s row layout (`AuthorAvatar` + summary link + short sha + relative
+  time).
+- Show a visible notice when the response's `truncated` is `true` — the API endpoint itself has no
+  way to signal "there may be more" otherwise.
