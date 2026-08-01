@@ -12,6 +12,8 @@ import react from "@astrojs/react";
  * can take over, but Astro's dev server has no such fallback and 404s.
  * Only affects `astro dev` / Playwright against it — the static build is
  * untouched.
+ *
+ * @returns {NonNullable<import("astro").ViteUserConfig["plugins"]>[number]}
  */
 function spaFallback() {
   return {
