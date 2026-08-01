@@ -13,3 +13,30 @@ test("shows repositories grouped by section", async ({ page }) => {
   await expect(page.getByText("git-compose")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Other", level: 2 })).toBeVisible();
 });
+
+test("filters the repository list and syncs the query into the URL", async ({ page }) => {
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({ json: fixture });
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "dotfiles" })).toBeVisible();
+
+  await page.getByRole("searchbox", { name: "Filter repositories" }).fill("dotfiles");
+
+  await expect(page.getByRole("link", { name: "dotfiles" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "git-compose" })).not.toBeVisible();
+  await expect(page).toHaveURL(/\?q=dotfiles$/);
+});
+
+test("deep-links a filtered list from ?q=", async ({ page }) => {
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({ json: fixture });
+  });
+
+  await page.goto("/?q=axgit");
+
+  await expect(page.getByRole("searchbox", { name: "Filter repositories" })).toHaveValue("axgit");
+  await expect(page.getByRole("link", { name: "axgit", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "git-compose" })).not.toBeVisible();
+});

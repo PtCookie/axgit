@@ -584,3 +584,32 @@ no new page/route/API surface is involved.
   `shellFor`/`shell_for` change — no new route shape.
 - No API contract change — `docs/API.md`, `docs/openapi.json`, and `web/src/lib/api/types.ts` are
   untouched, and `api/src` is not touched at all.
+
+## #25 Repository list filter (client-side, `?q=`)
+
+The first cut of #9's deferred "repository search" — a client-side filter over the repository list
+`/` already fetches. Chosen as the "obviously in bounds" first step: `GET /api/v1/repos` already
+returns `name`/`description`/`owner`/`section` for every repository, so no API change, no new
+route/page, and `web/src/lib/shell.ts::shellFor` / `api/src/shell.rs::shell_for` are both untouched.
+
+- **Matching rule** (`web/src/lib/repo-filter.ts::filterRepos`): the query is split on whitespace
+  into terms; a repository matches only if *every* term (AND) is a case-insensitive substring of
+  *at least one* of `name`/`description`/`owner`/`section`. A `null` field is skipped rather than
+  matched or thrown on. An empty/whitespace-only query returns the input array unchanged — cheap
+  and lets the caller detect "no filter active" by reference equality instead of a second flag.
+  Filtering happens before `groupBySection`, so a section with no matches simply doesn't render.
+- **`?q=` via `history.replaceState`, not `pushState`.** A history entry per keystroke would break
+  the back button; `replaceState` still gives a shareable/bookmarkable/reload-safe URL. This
+  doesn't interact with `<ClientRouter />` (#24) — the router only reads `location` at the moment
+  of a link click, never observing the in-between states. The initial query is read once via the
+  existing `lib/repo-param.ts::paramFromSearch` (same helper `CommitLog`/`TreeView`/`BlobView` use
+  for `?ref=`/`?cursor=`/`?path=`), so a deep link lands already filtered.
+- **`ui/input.tsx` added via `pnpm exec shadcn add input`** (vendored, same as every other
+  `components/ui/` file) — the first shadcn component this project needed beyond what `dropdown-menu`
+  (#23) and `table`/`skeleton` (#16) already brought in.
+- No debounce: filtering an already-fetched in-memory array needs no async work to throttle.
+- **Content search (file contents, commit messages) is explicitly not this** — it needs a new API
+  endpoint and, per #9's original note, a real resource bound (`git grep`-per-request scans the
+  whole tree every call) or an index, which would be this app's first piece of mutable persistent
+  state in an otherwise stateless, read-only container (CLAUDE.md's core invariants). Left as the
+  next ROADMAP.md item.

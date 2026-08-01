@@ -5,10 +5,16 @@ import { encodeSegment } from "@/lib/api/path";
 import { listRepos } from "@/lib/api/repos";
 import type { RepoInfo } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
+import { filterRepos } from "@/lib/repo-filter";
+import { paramFromSearch } from "@/lib/repo-param";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const UNSECTIONED_LABEL = "Other";
+/** Query-string param the filter box reads its initial value from and keeps
+ *  in sync with (`?q=`, docs/DECISIONS.md #25). */
+const QUERY_PARAM = "q";
 
 interface RepoGroup {
   section: string | null;
@@ -36,19 +42,29 @@ function groupBySection(repos: RepoInfo[]): RepoGroup[] {
 type State = { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; repos: RepoInfo[] };
 
 /** Also rendered statically into the page shell as the island's
- *  `slot="fallback"`, so the prerendered HTML is not blank. */
+ *  `slot="fallback"`, so the prerendered HTML is not blank. The filter input
+ *  is included but disabled — there's nothing to filter yet, and enabling it
+ *  would let a keystroke land before hydration takes over. */
 export function RepoListSkeleton() {
   return (
-    <div className="space-y-2" aria-busy="true">
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-8 w-full" />
+    <div className="space-y-4" aria-busy="true">
+      <Input type="search" placeholder="Filter repositories…" aria-label="Filter repositories" disabled />
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
     </div>
   );
 }
 
 export default function RepoList() {
   const [state, setState] = useState<State>({ status: "loading" });
+  // Seeded from `?q=` so a deep link (or a reload) lands already filtered —
+  // `lib/repo-param.ts`'s usual pattern for reading page-URL state, reused
+  // here instead of a dedicated `props` default since this is the one island
+  // that isn't mounted on a `/{repo}/…` shell.
+  const [query, setQuery] = useState(() => paramFromSearch(QUERY_PARAM, window.location.search) ?? "");
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +90,23 @@ export default function RepoList() {
     };
   }, []);
 
+  // Keeps `?q=` mirrored to the typed query, so the current filter survives
+  // a reload and can be shared/bookmarked. `replaceState`, not `pushState` —
+  // a history entry per keystroke would break the back button; the
+  // `<ClientRouter />` (DECISIONS.md #24) only reads `location` on a link
+  // click, so it never observes this in between.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (query.trim() === "") {
+      url.searchParams.delete(QUERY_PARAM);
+    } else {
+      url.searchParams.set(QUERY_PARAM, query);
+    }
+    if (url.href !== window.location.href) {
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }, [query]);
+
   if (state.status === "loading") {
     return <RepoListSkeleton />;
   }
@@ -90,45 +123,69 @@ export default function RepoList() {
     return <p className="text-muted-foreground text-sm">No repositories found.</p>;
   }
 
+  const filtered = filterRepos(state.repos, query);
+  // `filterRepos` returns the same array reference when the query is
+  // empty/whitespace-only — a cheap way to tell "no filter active" apart
+  // from "filter active, matched everything" without recomputing.
+  const isFiltered = filtered !== state.repos;
+
   return (
-    <div className="space-y-8">
-      {groupBySection(state.repos).map(({ section, repos }) => (
-        <section key={section ?? UNSECTIONED_LABEL}>
-          <h2 className="text-muted-foreground mb-2 text-sm font-medium">{section ?? UNSECTIONED_LABEL}</h2>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Last activity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {repos.map((repo) => (
-                <TableRow key={repo.name}>
-                  <TableCell className="font-medium">
-                    <a className="hover:underline" href={`/${encodeSegment(repo.name)}`}>
-                      {repo.name}
-                    </a>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{repo.description ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{repo.owner ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {repo.last_modified ? (
-                      <span title={formatAbsoluteTime(repo.last_modified)}>
-                        {formatRelativeTime(repo.last_modified)}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </section>
-      ))}
+    <div className="space-y-4">
+      <Input
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Filter repositories…"
+        aria-label="Filter repositories"
+      />
+      {isFiltered && (
+        <p role="status" className="text-muted-foreground text-sm">
+          {filtered.length} of {state.repos.length} repositories
+        </p>
+      )}
+      {filtered.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No repositories match &quot;{query.trim()}&quot;.</p>
+      ) : (
+        <div className="space-y-8">
+          {groupBySection(filtered).map(({ section, repos }) => (
+            <section key={section ?? UNSECTIONED_LABEL}>
+              <h2 className="text-muted-foreground mb-2 text-sm font-medium">{section ?? UNSECTIONED_LABEL}</h2>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Owner</TableHead>
+                    <TableHead>Last activity</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {repos.map((repo) => (
+                    <TableRow key={repo.name}>
+                      <TableCell className="font-medium">
+                        <a className="hover:underline" href={`/${encodeSegment(repo.name)}`}>
+                          {repo.name}
+                        </a>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{repo.description ?? "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{repo.owner ?? "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {repo.last_modified ? (
+                          <span title={formatAbsoluteTime(repo.last_modified)}>
+                            {formatRelativeTime(repo.last_modified)}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -439,34 +439,48 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     a test is exercising client-side routing rather than a downgraded full reload. No new
     route/page, no API contract change.
 
-## Next up: Repository search
+- **Repository list filter, client-side (`?q=`)** (DECISIONS.md #25). The first cut of #9's
+  deferred repository search. Finalized design:
+  - `web/src/lib/repo-filter.ts::filterRepos` — AND across whitespace-separated terms, each matched
+    case-insensitively as a substring of `name`/`description`/`owner`/`section` (`null` fields
+    skipped). Filtering happens before `RepoList.tsx`'s existing `groupBySection`, so an
+    unmatched section just doesn't render. Zero API change: `GET /api/v1/repos` already returns
+    every field searched.
+  - `RepoList.tsx` mirrors the typed query into `?q=` via `history.replaceState` (not `pushState` —
+    one entry per keystroke would break the back button) and seeds it back out via the existing
+    `lib/repo-param.ts::paramFromSearch`, so a deep link/reload lands already filtered. Doesn't
+    interact with `<ClientRouter />` (#24), which only reads `location` on a link click.
+  - New `web/src/components/ui/input.tsx` (`pnpm exec shadcn add input`, vendored like every other
+    `ui/` file) — the search box. `RepoListSkeleton` grew a matching disabled input so the
+    prerendered fallback and loading state don't shift layout once data arrives.
+  - No new page/route, so no `shellFor`/`shell_for` change. No API contract change —
+    `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` untouched, `api/src` untouched.
+
+## Next up: Repository content search
 
 ### Context
 
-DECISIONS.md #9 explicitly excluded search from v1 scope ("Excluded (for later): stats, repository
-search, HTTP push"). Every v1 page and dark mode are now done, making this and commit-statistics
-graphs (`stats`, the other #9 exclusion) the remaining gaps versus cgit. Search is the more useful
-of the two for a self-hosted server with a growing number of repositories.
+DECISIONS.md #9 also excluded searching *inside* repository content (file contents, commit
+messages) — the bigger half of "repository search", deferred out of the client-side filter above.
+Together with commit-statistics graphs (`stats`, #9's other exclusion), it's the last remaining gap
+versus cgit.
 
 ### Things to review before starting
 
-- Scope the first cut: filtering the existing repo list client-side (name/description/owner —
-  data already fetched by `RepoList.tsx`, zero API change) is the cheap, obviously-in-bounds
-  version. Searching *inside* file contents or commit messages is a much bigger step (needs a new
-  API endpoint, and likely an index — bare repos have no full-text search built in) and should be
-  scoped as a separate follow-up rather than bundled in here.
-- If a content-search API endpoint is added later: decide whether it shells out to `git grep`
-  per-request (simple, matches the existing "exec for heavy operations" pattern in
-  `smart_http.rs`/archive handling, but scans the whole tree every call) or needs a real index —
-  and if so, where it lives given the container is otherwise stateless and `/srv/git` is
-  read-only (CLAUDE.md's core invariants: no writes outside SSH-to-git-server, repos are read-only
-  bare repos). An index would be the first piece of mutable, persistent state this app has ever
-  needed.
+- This needs a new API endpoint — unlike the list filter, the data isn't already on the client.
+  Decide whether it shells out to `git grep` per-request (simple, matches the existing "exec for
+  heavy operations" pattern in `smart_http.rs`/archive handling, but scans the whole tree every
+  call) or needs a real index — and if so, where it lives given the container is otherwise
+  stateless and `/srv/git` is read-only (CLAUDE.md's core invariants: no writes outside
+  SSH-to-git-server, repos are read-only bare repos). An index would be the first piece of mutable,
+  persistent state this app has ever needed.
 - Keep the read-only invariant in view: search is inherently a read operation, but a naive
   `git grep`-per-request implementation over many/large repos could become a resource-exhaustion
   vector — worth at least a size/timeout bound before shipping, consistent with the existing
   archive/diff/blob caps (1000 lines/file, 300 files/diff, 1 MiB blob, etc. — see docs/API.md).
-- Decide where the UI lives: a search box on the repo list (matches the client-side-filter scope
-  above) vs. a per-repository search page (`/{repo}/search`, which would need a new route shape in
-  both `web/src/lib/shell.ts::shellFor` and `api/src/shell.rs::shell_for`, per the "adding a route"
-  rule in CLAUDE.md).
+- Decide where the UI lives: likely a per-repository search page (`/{repo}/search`), which would
+  need a new route shape in both `web/src/lib/shell.ts::shellFor` and `api/src/shell.rs::shell_for`,
+  per the "adding a route" rule in CLAUDE.md.
+- Commit-message search is a separate question from file-content search — `commits.rs::log` already
+  walks history, so filtering its output may not need `git grep`/an index at all; worth scoping
+  separately rather than assuming both share one implementation.
