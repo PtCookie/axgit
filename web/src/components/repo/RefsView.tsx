@@ -50,10 +50,10 @@ export default function RefsView({ repo }: RefsViewProps) {
   }
 
   if (state.status === "error") {
-    const message = state.error.status === 404 ? "저장소를 찾을 수 없습니다." : state.error.message;
+    const message = state.error.status === 404 ? "Repository not found." : state.error.message;
     return (
       <p role="alert" className="text-destructive text-sm">
-        브랜치/태그 정보를 불러오지 못했습니다: {message}
+        Failed to load refs: {message}
       </p>
     );
   }
@@ -63,16 +63,16 @@ export default function RefsView({ repo }: RefsViewProps) {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-muted-foreground mb-2 text-sm font-medium">브랜치</h2>
+        <h2 className="text-muted-foreground mb-2 text-sm font-medium">Branches</h2>
         {refs.branches.length === 0 ? (
-          <p className="text-muted-foreground text-sm">브랜치가 없습니다.</p>
+          <p className="text-muted-foreground text-sm">No branches.</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>이름</TableHead>
-                <TableHead>커밋</TableHead>
-                <TableHead>커밋 시각</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Commit</TableHead>
+                <TableHead>Committed</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -97,17 +97,17 @@ export default function RefsView({ repo }: RefsViewProps) {
       </section>
 
       <section>
-        <h2 className="text-muted-foreground mb-2 text-sm font-medium">태그</h2>
+        <h2 className="text-muted-foreground mb-2 text-sm font-medium">Tags</h2>
         {refs.tags.length === 0 ? (
-          <p className="text-muted-foreground text-sm">태그가 없습니다.</p>
+          <p className="text-muted-foreground text-sm">No tags.</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>이름</TableHead>
-                <TableHead>커밋</TableHead>
-                <TableHead>메시지</TableHead>
-                <TableHead>태그 시각</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Commit</TableHead>
+                <TableHead>Message</TableHead>
+                <TableHead>Tagged</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

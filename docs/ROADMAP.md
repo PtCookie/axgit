@@ -1,197 +1,231 @@
-# Axgit 구현 로드맵
+# Axgit Implementation Roadmap
 
-`api/`의 엔드포인트를 어떤 순서로, 어떤 설계로 구현할지 세션 간에 이어가기 위한 문서.
-완료 시 다음 절을 갱신하고, "다음 구현" 절을 그 다음 대상으로 교체할 것.
+Tracks the order and design of `api/` endpoint implementation across sessions. When finishing a
+piece of work, update the "Done" section and replace "Next up" with the next target.
 
-## 완료됨
+## Done
 
-- `GET /api/v1/repos` — 저장소 스캔(`api/src/repo/scan.rs`, `meta.rs`), TTL 캐시(`cache.rs`),
-  `[axgit]`/`[cgit]` 메타데이터 읽기. 나머지 엔드포인트는 501 stub, `git-receive-pack`은 403.
-- `GET /api/v1/repos/{repo}`, `GET /api/v1/repos/{repo}/refs` — 저장소 요약 + refs.
-  이때 확정된 공통 기반: `repo/open.rs::open_named`(`{repo}` 검증 + bare open, 이후 모든
-  per-repo 엔드포인트가 사용할 것), `repo/refs.rs::list_refs`, `meta.rs`의
-  `git_time_to_zoned`/`format_rfc3339` 공유. 핸들러의 git2 작업은 `spawn_blocking`으로 감싼다
-  (이후 엔드포인트도 동일하게). ETag/Cache-Control은 유예(아래 캐시 항목 참고).
-- `GET /api/v1/repos/{repo}/commits` — 커밋 로그 (`repo/commits.rs::log`). 확정된 설계:
-  - **ref 해석 공통 헬퍼 `repo/resolve.rs::resolve_commit`** (브랜치/태그/sha → Commit,
-    실패는 전부 `RefNotFound`). 이후 tree/blob/raw가 재사용할 것.
-    git2 에러를 bare `?`로 올리면 500이 되므로 사용자 입력 유래 호출은 반드시 `map_err`.
-  - cursor는 inclusive이며 `ref`를 무시. 잘못된 cursor는 400 (opaque 토큰). `limit` 초과는
-    400 (clamp 안 함, API.md 명시).
-  - `path` 필터는 git2 tree entry-id 비교 (`git log` exec 아님). merge는 모든 부모와 다를 때만
-    포함 — git log simplification의 근사. 긴 히스토리에서 드물게 변경되는 경로는 walk가 길어질
-    수 있음: 성능 문제가 생기면 `git log` exec fallback으로 전환 검토.
-  - `email_hash` = sha256(trim + lowercase). 테스트 헬퍼 `tests/common::commit_history`
-    (다중 커밋 히스토리, 커밋별 고정 날짜) 신설.
-- `GET /api/v1/repos/{repo}/commits/{sha}`, `GET /.../commits/{sha}/diff?path=` — 커밋 상세 +
-  구조화 diff (`repo/diff.rs`, `handlers/commits.rs` 신설 — commits 관련 핸들러는 `list_commits`
-  포함 이쪽으로 이동, 이후 엔드포인트도 리소스별 핸들러 파일로 분할). 확정된 설계:
-  - diff는 git2 `diff_tree_to_tree` + **첫 부모 기준** (merge 포함, root는 empty tree).
-    rename 감지는 `find_similar` libgit2 기본값. exec fallback은 병목 확인 시로 유예.
-  - 상한: 파일당 렌더 1000줄(hunk 단위 절단), diff 응답 파일 300개. 초과 시 `truncated: true`,
-    `additions`/`deletions`는 항상 전체 값. 바이너리는 `binary: true` + `hunks: []`.
-  - `?path=`는 리터럴 pathspec, 미존재/미변경 경로는 `files: []` (log의 빈 결과 선례 유지;
-    `PathNotFound`는 tree/blob용으로 남김).
-  - **immutable Cache-Control 선반영**: 요청의 `{sha}`가 해석된 full sha와 문자열 일치할 때만
-    부착 (`handlers/commits.rs::sha_addressed_json`). ETag/응답 캐시 일괄 도입은 여전히 유예.
-  - 테스트 헬퍼 `tests/common::commit_all`(다중 파일/삭제/rename/바이너리 커밋 구성),
-    `get_json_with_headers` 신설.
+- `GET /api/v1/repos` — repository scanning (`api/src/repo/scan.rs`, `meta.rs`), TTL cache
+  (`cache.rs`), reading `[axgit]`/`[cgit]` metadata. Remaining endpoints are 501 stubs;
+  `git-receive-pack` is 403.
+- `GET /api/v1/repos/{repo}`, `GET /api/v1/repos/{repo}/refs` — repository summary + refs. This
+  established the common foundation used by everything after it: `repo/open.rs::open_named`
+  (validates `{repo}` + opens bare, used by all subsequent per-repo endpoints),
+  `repo/refs.rs::list_refs`, and `meta.rs`'s shared `git_time_to_zoned`/`format_rfc3339`. git2 work
+  in handlers is wrapped in `spawn_blocking` (later endpoints follow the same pattern).
+  ETag/Cache-Control were deferred (see the caching item below).
+- `GET /api/v1/repos/{repo}/commits` — commit log (`repo/commits.rs::log`). Finalized design:
+  - **Shared ref-resolution helper `repo/resolve.rs::resolve_commit`** (branch/tag/sha → Commit,
+    any failure becomes `RefNotFound`). Reused by tree/blob/raw afterward. Bubbling a git2 error up
+    with bare `?` turns into a 500, so any call driven by user input must `map_err`.
+  - The cursor is inclusive and ignores `ref`. A malformed cursor is 400 (it's an opaque token).
+    Exceeding `limit` is 400 (not clamped, per API.md).
+  - The `path` filter compares git2 tree entry ids (not a `git log` exec). A merge is included only
+    when it differs from all parents — an approximation of `git log` simplification. Paths that
+    change rarely across a long history can make the walk slow: if that becomes a performance
+    problem, consider falling back to `git log` exec.
+  - `email_hash` = sha256(trim + lowercase). New test helper `tests/common::commit_history`
+    (multi-commit history with fixed per-commit dates).
+- `GET /api/v1/repos/{repo}/commits/{sha}`, `GET /.../commits/{sha}/diff?path=` — commit detail +
+  structured diff (`repo/diff.rs`, new `handlers/commits.rs` — commit-related handlers, including
+  `list_commits`, moved here; later endpoints follow the same per-resource handler file split).
+  Finalized design:
+  - Diff via git2 `diff_tree_to_tree` against the **first parent** (including for merges; root is
+    diffed against an empty tree). Rename detection uses libgit2's default `find_similar`. An exec
+    fallback is deferred until a bottleneck is confirmed.
+  - Limits: 1000 rendered lines per file (cut at hunk boundaries), 300 files per diff response.
+    Beyond that, `truncated: true`; `additions`/`deletions` are always the full totals. Binary
+    files get `binary: true` + `hunks: []`.
+  - `?path=` is a literal pathspec; a missing/unchanged path returns `files: []` (following log's
+    precedent of an empty result; `PathNotFound` is reserved for tree/blob).
+  - **Immutable Cache-Control rolled out early**: attached only when the request's `{sha}` matches
+    the resolved full sha as a string (`handlers/commits.rs::sha_addressed_json`). A full
+    ETag/response-cache rollout is still deferred.
+  - New test helpers `tests/common::commit_all` (multi-file/delete/rename/binary commit setup),
+    `get_json_with_headers`.
 
-- `GET /api/v1/repos/{repo}/tree|blob|raw/{ref}/{path...}`, `GET /.../readme?ref=` —
-  파일 브라우징 (`repo/tree.rs`, `blob.rs`, `readme.rs`, `handlers/files.rs`). 확정된 설계:
-  - **`{ref}/{path...}` 분리는 refs 최장 매칭** (`repo/resolve.rs::resolve_ref_path`):
-    브랜치/태그명과 일치하는 최장 선행 세그먼트 열이 ref (git ref 규칙상 유일), 없으면
-    첫 세그먼트를 ref(sha)로 fallback. path의 `.`/`..`/빈 세그먼트는 400.
-  - blob 바이너리 판정은 `Blob::is_binary()` + 비UTF-8도 바이너리 취급. **content 상한
-    1 MiB** (`repo/blob.rs::BLOB_CONTENT_LIMIT`, readme에도 적용). raw는 상한 없음,
-    MIME은 mime_guess 확장자 기반 + 내용 fallback, `nosniff` 부착.
-  - readme는 대소문자 무시 우선순위 탐색, symlink·바이너리·초과 후보는 skip, 없으면 404.
-  - `sha_addressed_json`은 `handlers/mod.rs`로 이동해 공유 (commits와 files 공용).
-    tree entry size는 `odb().read_header()` (내용 로드 없음).
+- `GET /api/v1/repos/{repo}/tree|blob|raw/{ref}/{path...}`, `GET /.../readme?ref=` — file browsing
+  (`repo/tree.rs`, `blob.rs`, `readme.rs`, `handlers/files.rs`). Finalized design:
+  - **`{ref}/{path...}` splitting via refs longest-match**
+    (`repo/resolve.rs::resolve_ref_path`): the longest sequence of leading segments matching a
+    branch/tag name is the ref (unambiguous per git ref rules), else the first segment is used as
+    the ref (sha) fallback. `.`/`..`/empty segments in the path are 400.
+  - Blob binary detection uses `Blob::is_binary()` plus non-UTF-8 counts as binary too.
+    **1 MiB content limit** (`repo/blob.rs::BLOB_CONTENT_LIMIT`, also applied to readme). raw has
+    no size limit; MIME is extension-based via mime_guess with a content fallback, plus `nosniff`.
+  - readme searches case-insensitively in priority order; symlink/binary/over-limit candidates are
+    skipped; 404 if none found.
+  - `sha_addressed_json` moved to `handlers/mod.rs` to be shared (commits and files both use it).
+    Tree entry size uses `odb().read_header()` (no content load).
 
-- `GET /api/v1/repos/{repo}/archive/{ref}.{format}`, `GET /.../feed.atom` —
-  아카이브 스트리밍 + Atom 피드 (`handlers/archive.rs`, `handlers/feed.rs`, DECISIONS #12). 확정된 설계:
-  - archive는 `git archive` exec: ref 해석 후 **exec에는 full sha만 전달** (인젝션 차단),
-    stdout을 `tokio-util` `ReaderStream`으로 스트리밍, reaper task가 stderr 수집 + zombie 방지.
-    `{ref}.{format}` 파싱은 접미사 매칭 (`.tar.gz` 우선 → `.zip`, 그 외 400).
-    파일명/`--prefix`는 `[A-Za-z0-9._-]` 외 문자를 `-` 치환한 `{repo}-{safe_ref}`.
-    full sha 요청만 immutable Cache-Control (기존 선례).
-  - feed는 `commits.rs::log` 재사용 (HEAD, 20개 고정), XML은 수동 문자열 + escape 헬퍼
-    (quick-xml은 dev-dep 검증 전용). base URL은 `X-Forwarded-*`/`Host` 헤더에서 재구성,
-    entry id는 `urn:sha1:{sha}`. 빈 저장소는 200 + entry 0개.
-  - 테스트 헬퍼 `tests/common::get_bytes_with_request_headers` (요청 헤더 주입) 신설.
-    tar.gz는 실제 `tar -xzf`로 풀어 검증, zip은 `git archive` 직접 실행 출력과 바이트 비교.
+- `GET /api/v1/repos/{repo}/archive/{ref}.{format}`, `GET /.../feed.atom` — archive streaming +
+  Atom feed (`handlers/archive.rs`, `handlers/feed.rs`, DECISIONS #12). Finalized design:
+  - archive uses `git archive` exec: after ref resolution, **only the full sha is passed to
+    exec** (blocking injection), stdout is streamed via `tokio-util`'s `ReaderStream`, and a reaper
+    task collects stderr + prevents zombies. `{ref}.{format}` parsing is suffix matching
+    (`.tar.gz` first, then `.zip`, else 400). The filename/`--prefix` uses
+    `{repo}-{safe_ref}`, replacing any character outside `[A-Za-z0-9._-]` with `-`.
+    Only full-sha requests get immutable Cache-Control (existing precedent).
+  - feed reuses `commits.rs::log` (HEAD, fixed at 20 entries); XML is generated by hand with an
+    escaping helper (quick-xml is a dev-dependency for verification only). The base URL is
+    reconstructed from `X-Forwarded-*`/`Host` headers; entry id is `urn:sha1:{sha}`. An empty
+    repository returns 200 with 0 entries.
+  - New test helper `tests/common::get_bytes_with_request_headers` (injects request headers).
+    tar.gz is verified by actually extracting with `tar -xzf`; zip is byte-compared against
+    `git archive`'s own output.
 
 - `GET /{repo}.git/info/refs?service=git-upload-pack`, `POST /{repo}.git/git-upload-pack` —
-  Smart HTTP upload-pack (`api/src/smart_http.rs`, DECISIONS #13). 확정된 설계:
-  - `git upload-pack --stateless-rpc` 직접 spawn (advertise 시 `--advertise-refs`,
-    http-backend CGI 아님) — archive의 exec/ReaderStream/reaper 패턴 재사용. exec에는
-    `open_named`가 해석한 git dir만 전달. receive-pack 403 배선은 기존 그대로.
-  - protocol v2는 `Git-Protocol` 헤더를 위생 검사 후 `GIT_PROTOCOL` env로 전달.
-    v2에서도 advertisement의 pkt-line 서비스 헤더는 동일하게 prepend.
-  - gzip 요청 body는 flate2 전체 버퍼링 해제 (압축 8 MiB / 해제 후 64 MiB 상한).
-    stdin 쓰기는 별도 task (데드락 방어). service 누락/미지원은 400 (dumb 미지원).
-  - 테스트: oneshot 프로토콜 검증 + 실제 리스너(`tests/common::serve`)로
-    `git clone`/`--depth 1`/`fetch`/push 거부 round-trip (multi_thread flavor 필수 —
-    git CLI가 테스트 스레드를 블로킹).
+  Smart HTTP upload-pack (`api/src/smart_http.rs`, DECISIONS #13). Finalized design:
+  - Spawns `git upload-pack --stateless-rpc` directly (`--advertise-refs` for advertise, not
+    http-backend CGI) — reuses archive's exec/ReaderStream/reaper pattern. Only the git dir
+    resolved by `open_named` is passed to exec. The existing receive-pack 403 wiring is unchanged.
+  - protocol v2 sanitizes the `Git-Protocol` header before passing it through as the `GIT_PROTOCOL`
+    env var. The advertisement's pkt-line service header is prepended the same way for v2.
+  - A gzip'd request body is fully buffered and decompressed with flate2 (compressed 8 MiB /
+    decompressed 64 MiB limits). Writing stdin runs in a separate task (deadlock prevention).
+  - Tests: oneshot protocol verification + round-tripping `git clone`/`--depth 1`/`fetch`/rejected
+    push against a real listener (`tests/common::serve`) (must use the multi_thread flavor — the
+    git CLI blocks the test thread).
 
-- **moka 응답 캐시 + ETag/Cache-Control 일괄 도입** (`api/src/cache.rs`, `handlers/mod.rs`,
-  DECISIONS #6). summary/refs 시점부터 유예해 온 부채를 해소. 확정된 설계:
-  - 검증자 `repo/meta.rs::Validator` = HEAD sha + agefile **raw `SystemTime`**. git2 open 후
-    `head().target()`으로 읽는다 (HEAD 파일 직접 파싱 아님). 검증자 조회도 spawn_blocking.
-  - **캐시 계층은 핸들러 공통 헬퍼 `handlers/mod.rs::cached_response`** (tower 미들웨어 아님).
-    `compute` 클로저가 `(immutable, 직렬화된 body)`를 반환하고, 미스 경로는 open 1회로
-    검증자와 본문을 같은 스냅샷에서 얻는다. 에러는 캐시하지 않고 기존 엔트리를 폐기.
-    기존 `sha_addressed_json`은 전 핸들러가 이 헬퍼로 옮겨가며 제거.
-  - immutable 엔트리는 `validator: None`으로 저장 → 히트 시 **저장소를 열지 않는다**
-    (유일한 zero-git2 경로). 그 외는 ETag(검증자 기반 strong) + `no-cache` + 304.
-  - 예외: repos 목록은 ScanCache 유지 + 본문 sha256 ETag, raw는 캐시 제외(ETag만),
-    archive는 스트리밍이라 캐시 불가 + weak ETag(일치 시 exec 생략), feed는 base URL을
-    캐시 키에 포함. Smart HTTP는 불변.
-  - moka 설정: 바이트 weigher + `AXGIT_CACHE_RESPONSE_MAX_BYTES`(32 MiB),
-    엔트리당 본문 1 MiB 상한, TTL(`AXGIT_CACHE_RESPONSE_TTL` 300s)은 out-of-band 변경 안전망.
-    `get_with`(요청 병합)는 검증자 흐름과 안 맞아 미사용.
-  - 테스트: `tests/cache_test.rs` 신설 (라우터 clone으로 상태 공유 — 히트/무효화/304/
-    immutable 엔트리 검증). Config 필드 추가 비용은 선행 커밋의
-    `tests/common::test_config`/`router_for` 중앙화로 흡수.
-  - 후속 검토: cursor·full-sha `ref`로 조회한 commits 페이지도 사실상 불변이므로 immutable
-    승격 여지가 있으나, "sha가 URL 경로에 포함"이라는 API.md 계약을 바꾸게 되어 보류.
+- **moka response cache + ETag/Cache-Control rolled out everywhere** (`api/src/cache.rs`,
+  `handlers/mod.rs`, DECISIONS #6). Resolved the debt deferred since summary/refs. Finalized
+  design:
+  - Validator `repo/meta.rs::Validator` = HEAD sha + agefile's **raw `SystemTime`**. Read via git2
+    open then `head().target()` (not by parsing the HEAD file directly). Validator lookup also runs
+    in spawn_blocking.
+  - **The caching layer is a shared handler helper `handlers/mod.rs::cached_response`** (not tower
+    middleware). The `compute` closure returns `(immutable, serialized body)`; on a miss, the
+    validator and body come from the same open/snapshot. Errors are never cached and evict any
+    existing entry. The old `sha_addressed_json` was removed as every handler moved to this
+    helper.
+  - Immutable entries store `validator: None` → on a hit, **the repository is never opened**
+    (the only zero-git2 path). Everything else gets an ETag (validator-based, strong) +
+    `no-cache` + 304.
+  - Exceptions: the repo list keeps `ScanCache` + a body-sha256 ETag; raw is excluded from the
+    cache (ETag only); archive can't be cached since it's streamed, so it gets a weak ETag (skips
+    exec on a match); feed's cache key includes the base URL.
+  - moka config: byte weigher + `AXGIT_CACHE_RESPONSE_MAX_BYTES` (32 MiB), 1 MiB per-entry body
+    cap, TTL (`AXGIT_CACHE_RESPONSE_TTL` 300s) as an out-of-band-change safety net. `get_with`
+    (request coalescing) isn't used — it doesn't fit the validator flow.
+  - Tests: new `tests/cache_test.rs` (shares state via a cloned router — covers hit/invalidation/
+    304/immutable entries). The cost of adding config fields is absorbed by centralizing
+    `tests/common::test_config`/`router_for` in an earlier commit.
+  - Follow-up: cursor- and full-sha-`ref`-addressed commit pages are effectively immutable too and
+    could be promoted, but doing so would change the API.md contract ("sha appears in the URL
+    path"), so it's deferred.
 
-- `GET /api/v1/repos/{repo}/blame/{ref}/{path...}` — 라인 범위별 attribution
-  (`repo/blame.rs`, `handlers/files.rs::get_blame`). v1 범위의 마지막 엔드포인트
-  (DECISIONS #9, #14). 확정된 설계:
-  - **git2 `Repository::blame_file`** 채택 (exec 아님) — 경로가 커맨드라인에 닿지 않고,
-    ARCHITECTURE.md가 이미 blame을 git2 담당으로 명시. 벤치 없이 채택; 대형 히스토리에서
-    병목이 확인되면 `git blame --line-porcelain` exec fallback을 후속 검토.
-  - `{ref}/{path...}` 분리는 기존 `repo/resolve.rs::resolve_ref_path` 재사용.
-  - 바이너리/1 MiB 초과는 `blob::classify`(blob 판정 로직을 `blob_at`/`classify`로 추출해 공유)로
-    걸러 `ranges: []` + `lines: 0`. 빈 파일도 동일 — libgit2가 반환하는 0-line 훙크를 걸러낸다.
-  - hunk마다 `final_commit_id()`로 커밋을 1회만 조회해 `summary`/`author`/`authored_at` 캐시
-    (`HashMap<Oid, _>`) — 같은 커밋이 여러 range에 등장해도 재조회하지 않는다. `CommitAuthor`에
-    `Clone` 추가, `commits.rs::signature_info`/`time_rfc3339` 공개해 재사용.
-  - 캐싱은 tree/blob과 동일하게 `cached_response`로 (sha-addressed면 immutable).
-  - 후속 검토: `git blame --follow`(rename 추적)는 도입하지 않음 — 필요해지면 exec fallback과
-    함께 재검토.
+- `GET /api/v1/repos/{repo}/blame/{ref}/{path...}` — per-line-range attribution
+  (`repo/blame.rs`, `handlers/files.rs::get_blame`). The last endpoint in v1 scope
+  (DECISIONS #9, #14). Finalized design:
+  - Adopted **git2 `Repository::blame_file`** (not exec) — the path never touches a command line,
+    and ARCHITECTURE.md already assigns blame to git2. Adopted without a benchmark; if it proves
+    slow on large histories, a `git blame --line-porcelain` exec fallback is a candidate for later
+    review.
+  - `{ref}/{path...}` splitting reuses the existing `repo/resolve.rs::resolve_ref_path`.
+  - Binary/over-1-MiB is filtered via `blob::classify` (blob detection logic extracted into
+    `blob_at`/`classify` and shared) into `ranges: []` + `lines: 0`. Same for empty files —
+    filters out the 0-line hunk libgit2 returns.
+  - Each hunk looks up its commit once via `final_commit_id()` and caches
+    `summary`/`author`/`authored_at` (`HashMap<Oid, _>`) — the same commit appearing in multiple
+    ranges isn't refetched. Added `Clone` to `CommitAuthor`, made
+    `commits.rs::signature_info`/`time_rfc3339` public for reuse.
+  - Caching follows tree/blob via `cached_response` (immutable when sha-addressed).
+  - Follow-up: `git blame --follow` (rename tracking) is not adopted — revisit alongside the exec
+    fallback if it's ever needed.
 
-- **OpenAPI 스펙 + Swagger UI + web 타입 생성** (`api/src/openapi.rs`, `docs/openapi.json`,
-  `web/src/lib/api/types.ts`, DECISIONS #15). web 구현 전에 계약을 기계 판독 가능하게 만들어
-  "types.ts 수동 정의" 부채를 없앴다. 확정된 설계:
-  - utoipa 5 + utoipa-swagger-ui 9(`vendored`). 스펙은 `/api/v1/openapi.json`, UI는 `/swagger-ui`.
-    `utoipa-axum` 자동 수집은 **미사용** — catch-all 라우트 때문에 경로를 `openapi.rs`에 손으로 적는다.
-  - `docs/openapi.json`을 커밋하고 `tests/openapi_test.rs`가 (1) 스냅샷 일치 (2) 라우팅된
-    오퍼레이션 = 스펙 오퍼레이션(16개) (3) 두 라우트의 스모크를 검증. 갱신은
+- **OpenAPI spec + Swagger UI + web type generation** (`api/src/openapi.rs`, `docs/openapi.json`,
+  `web/src/lib/api/types.ts`, DECISIONS #15). Made the contract machine-readable before the web
+  implementation, eliminating the "manually define types.ts" debt. Finalized design:
+  - utoipa 5 + utoipa-swagger-ui 9 (`vendored`). The spec is served at `/api/v1/openapi.json`, the
+    UI at `/swagger-ui`. `utoipa-axum` auto-collection is **not used** — because of the catch-all
+    route, paths are written by hand in `openapi.rs`.
+  - `docs/openapi.json` is committed, and `tests/openapi_test.rs` verifies (1) snapshot equality
+    (2) routed operations == spec operations (16) (3) a smoke test of both routes. Regenerate with
     `AXGIT_UPDATE_OPENAPI=1 cargo test --test openapi_test`.
-  - `&'static str`/`char` 필드를 enum으로 승격 (`DiffStatus`/`EntryKind`/`LineOrigin`/`ReadmeFormat`),
-    항상 직렬화되는 `Option`에는 `#[schema(required = true)]`. JSON 출력은 불변 — 기존 통합 테스트
-    129개가 그대로 통과하는 것이 그 증거다. 에러 body는 `ErrorResponse`/`ErrorBody` 구조체로 타입화.
-  - web은 `pnpm gen:types`(openapi-typescript + prettier)로 `types.ts` 생성. eslint 대상 제외.
-  - API.md 드리프트 2건 정정: 사라진 `501 not_implemented` 행, 실제와 다른 `charset=utf-8`.
+  - `&'static str`/`char` fields promoted to enums (`DiffStatus`/`EntryKind`/`LineOrigin`/
+    `ReadmeFormat`); always-serialized `Option`s get `#[schema(required = true)]`. JSON output is
+    unchanged — proven by the existing 129 integration tests still passing as-is. Error bodies are
+    now typed as `ErrorResponse`/`ErrorBody` structs.
+  - web generates `types.ts` via `pnpm gen:types` (openapi-typescript + prettier). Excluded from
+    eslint.
+  - Corrected 2 instances of API.md drift: a stale `501 not_implemented` row, and a mismatched
+    `charset=utf-8`.
 
-- **pnpm workspace를 리포 루트로 이관** (DECISIONS #7). `web/`이 자체 pnpm 프로젝트로 스캐폴딩된
-  탓에 CLAUDE.md/README.md가 문서화한 `pnpm install`(workspace root)과 `pnpm --filter web ...`이
-  실제로는 동작하지 않았다. 루트에 `package.json`/`pnpm-workspace.yaml`을 신설하고
-  `web/package.json`의 `name`을 `"web"`으로 바꿔 필터 매칭이 되게 했다. `web/pnpm-workspace.yaml`의
-  `allowBuilds`도 함께 루트로 옮김(pnpm이 루트에서만 읽음). `lefthook.yml`은 이미 `root: "web/"`
-  방식이라 변경 없이 그대로 동작.
+- **Moved the pnpm workspace to the repo root** (DECISIONS #7). Because `web/` had been scaffolded
+  as its own standalone pnpm project, the `pnpm install` (workspace root) and
+  `pnpm --filter web ...` documented in CLAUDE.md/README.md never actually worked. Added a root
+  `package.json`/`pnpm-workspace.yaml`, and renamed `web/package.json`'s `name` to `"web"` so the
+  filter matches. Also moved `web/pnpm-workspace.yaml`'s `allowBuilds` to the root (pnpm only reads
+  it there). `lefthook.yml` already used the `root: "web/"` style, so it needed no changes.
 
-- **web 앱 셸 + `/` 저장소 목록 페이지 + API 클라이언트** (DECISIONS #16). Astro 템플릿 잔재
-  (`Welcome.astro`, 데모 에셋)를 걷어내고 실제 첫 화면을 세웠다. 확정된 관례:
-  - `web/src/lib/api/schemas.ts` — 생성 파일 `types.ts`에서 쓰기 편한 타입 alias만 재수출.
-    `client.ts`가 `apiFetch<T>`/`ApiError`(에러 envelope 파싱, 비-JSON/네트워크 실패도 정규화)를
-    제공하고, 리소스별 얇은 래퍼(`repos.ts`)가 그 위에 얹힌다. 다음 페이지도 이 패턴을 따를 것.
-  - 컴포넌트 테스트는 **vitest browser mode** (`@vitest/browser-playwright` provider +
-    `vitest-browser-react`), 테스트는 `web/tests/`(`vitest.config.ts`의 `include`가 이 경로만
-    matching). e2e는 Playwright, `web/e2e/`. 둘 다 `page.route`/`vi.mock`으로 API를 목킹해
-    백엔드 없이 돈다.
-  - section별 그룹핑(`RepoList.tsx`): `section: null`은 항상 "기타" 그룹으로 맨 뒤, 그 외 그룹은
-    응답 순서(= repo name 정렬)상 최초 등장 순서를 유지.
-  - `web/src/lib/format/time.ts`(상대/절대 시각) — 커밋 로그·blame 페이지에서 재사용 예정.
-  - 저장소 하위 경로(`/{repo}/...`)는 이번 커밋에서 만들지 않음 — SPA fallback 배선과 함께
-    다음 커밋에서.
+- **web app shell + `/` repository list page + API client** (DECISIONS #16). Removed the leftover
+  Astro template scaffolding (`Welcome.astro`, demo assets) and stood up the actual first screen.
+  Finalized conventions:
+  - `web/src/lib/api/schemas.ts` — re-exports convenient type aliases from the generated
+    `types.ts`. `client.ts` provides `apiFetch<T>`/`ApiError` (parses the error envelope,
+    normalizes non-JSON/network failures too), and thin per-resource wrappers (`repos.ts`) sit on
+    top. Later pages should follow this pattern.
+  - Component tests use **vitest browser mode** (`@vitest/browser-playwright` provider +
+    `vitest-browser-react`), living in `web/tests/` (`vitest.config.ts`'s `include` only matches
+    that path). e2e is Playwright, in `web/e2e/`. Both mock the API via `page.route`/`vi.mock` so
+    they run without a backend.
+  - Section grouping (`RepoList.tsx`): `section: null` always groups as "Other," last. Other
+    groups preserve their first-appearance order in the response (= repo name sort order).
+  - `web/src/lib/format/time.ts` (relative/absolute time) — planned for reuse in the commit
+    log/blame pages.
+  - Per-repository subpaths (`/{repo}/...`) weren't built in this commit — they land in the next
+    commit, together with the SPA fallback wiring.
 
-- **SPA fallback 배선 + 저장소 summary/refs 페이지** (DECISIONS #16). `/{repo}/...`를 실제로
-  라우팅 가능하게 만든 커밋. 확정된 설계:
-  - api 쪽: `api/src/routes.rs` — `/api/v1` 라우터에 `.fallback(api_not_found)`을 달아 `NotFound`
-    (`error.rs`, `not_found` 코드)를 반환하고, 정적 파일 서빙은
-    `ServeDir::new(static_dir).fallback(ServeFile::new(index.html))`로 바꿔 실제 파일이 없는
-    모든 경로가 SPA 셸을 받게 했다. `nest`된 라우터가 바깥 `fallback_service`를 상속하는 axum의
-    동작 때문에 두 fallback을 분리 배선해야 했다 — 순서상 API fallback이 없으면
-    `/api/v1/bogus`도 HTML 셸을 받는다. `docs/API.md` 에러 코드 표와 `docs/openapi.json`도
-    같은 커밋에서 갱신(ErrorBody 설명 문구).
-  - `astro dev`는 이 fallback이 없으므로 `astro.config.mjs`에 vite 미들웨어
-    (`spaFallback`)를 추가해 dev/e2e에서도 `/{repo}/...` 내비게이션이 `/`로 리라이트되게 했다
-    (정적 빌드 자체는 건드리지 않음).
-  - web 쪽: **클라이언트 라우터는 히스토리 API 없이 `location.pathname` 1회 파싱**
-    (`lib/router.ts::parseRoute`) — 내비게이션은 전부 풀 페이지 로드라 라우트가 마운트 중
-    바뀔 일이 없다는 전제. `components/App.tsx`는 `client:only="react"`로 마운트(정적 빌드는
-    `/` 하나의 HTML만 가지므로 `client:load`의 빌드 타임 렌더가 다른 라우트와 어긋난다).
-    라우트는 지금은 `repos`/`repo`(summary)/`refs`/`not-found` 네 가지뿐 — log/tree/blob/
-    commit/blame은 다음 커밋에서 `parseRoute`에 추가.
-  - `RepoSummary.tsx`/`RefsView.tsx`는 `RepoList.tsx`와 동일한 loading/error/data 상태 패턴
-    (컴포넌트 테스트도 `RepoList.test.tsx`와 동일 구조로 추가), `RepoNav.tsx`는 상태 없는 탭
-    내비게이션(`<a>` — 풀 페이지 로드 전제와 동일한 이유로 `Tabs` 대신).
-  - `web/src/lib/api/path.ts::encodeSegment` 신설(저장소 이름을 URL 세그먼트로 이스케이프),
-    `repos.ts`에 `getRepo`/`getRefs` 추가.
-  - e2e(`web/e2e/repo.spec.ts`)는 summary → refs 탭 이동과 미지원 하위 경로의 not-found 표시를
-    커버.
+- **SPA fallback wiring + repository summary/refs pages** (DECISIONS #16). Made `/{repo}/...`
+  actually routable. Finalized design:
+  - api side: `api/src/routes.rs` — attached `.fallback(api_not_found)` to the `/api/v1` router to
+    return `NotFound` (`error.rs`, `not_found` code), and switched static file serving to
+    `ServeDir::new(static_dir).fallback(ServeFile::new(index.html))` so any path without a matching
+    file gets the SPA shell. Because axum's `nest`ed routers inherit the outer
+    `fallback_service`, the two fallbacks had to be wired separately — otherwise
+    `/api/v1/bogus` would get the HTML shell too, without the API fallback in place.
+    `docs/API.md`'s error code table and `docs/openapi.json` were updated in the same commit
+    (ErrorBody description text).
+  - `astro dev` doesn't have this fallback, so a vite middleware (`spaFallback`) was added to
+    `astro.config.mjs` so `/{repo}/...` navigation rewrites to `/` in dev/e2e too (the static build
+    itself is untouched).
+  - web side: **the client router parses `location.pathname` once, with no History API**
+    (`lib/router.ts::parseRoute`) — premised on every navigation being a full page load, so the
+    route never changes mid-mount. `components/App.tsx` mounts with `client:only="react"` (since
+    the static build only has one HTML file for `/`, `client:load`'s build-time render would
+    mismatch any other route). Only four routes exist so far —
+    `repos`/`repo` (summary)/`refs`/`not-found` — log/tree/blob/commit/blame will be added to
+    `parseRoute` in the next commit.
+  - `RepoSummary.tsx`/`RefsView.tsx` follow the same loading/error/data state pattern as
+    `RepoList.tsx` (component tests added with the same structure as `RepoList.test.tsx` too).
+    `RepoNav.tsx` is stateless tab navigation (`<a>` — plain anchors instead of shadcn `Tabs`, for
+    the same full-page-load reasons as above).
+  - New `web/src/lib/api/path.ts::encodeSegment` (escapes a repo name as a URL segment),
+    added `getRepo`/`getRefs` to `repos.ts`.
+  - e2e (`web/e2e/repo.spec.ts`) covers summary → refs tab navigation and the not-found display for
+    an unsupported subpath.
 
-## 다음 구현: 저장소별 나머지 페이지 (log, tree, blob, commit, blame)
+## Next up: remaining per-repository pages (log, tree, blob, commit, blame)
 
 ### Context
 
-`/{repo}/`(summary)와 `/{repo}/refs`가 붙었고, SPA fallback과 클라이언트 라우터(`lib/router.ts`)
-관례가 갖춰졌다. 이제 나머지 저장소 하위 페이지를 같은 관례로 붙인다.
+`/{repo}/` (summary) and `/{repo}/refs` are in place, and the SPA fallback + client router
+(`lib/router.ts`) conventions are established. Next: attach the remaining per-repository subpages
+using the same conventions.
 
-### 착수 시 검토할 것
+### Things to review before starting
 
-- 라우트: `/{repo}/log`, `/{repo}/tree/[...path]`, `/{repo}/blob/[...path]`,
-  `/{repo}/commit/{sha}`, `/{repo}/blame/[...path]`. ref 선택은 URL 쿼리 `?ref=`로 통일.
-  `lib/router.ts::parseRoute`/`Route`에 각 라우트를 추가하고 `App.tsx`의 switch에 매칭시킬 것.
-- tree/blob/blame은 API가 `{ref}/{path...}` catch-all 하나로 받는 것과 달리, 클라이언트 라우트는
-  `path` 세그먼트 수가 가변이라 `parseRoute`가 `ref`/`path` 경계를 정해야 한다 — API처럼
-  브랜치/태그 최장 매칭을 클라이언트에서 다시 구현할지, 아니면 `?ref=` 그대로 두고 나머지 전체를
-  path로 취급할지 결정 필요(후자가 API 계약과 더 어긋나지 않아 보임, 착수 시 재확인).
-  RepoNav.tsx의 TABS 배열에도 각 라우트를 추가.
-- 나머지는 기존 관례를 그대로 따른다: 생성 타입은 `schemas.ts`에 alias 추가, API 클라이언트는
-  `client.ts`의 `apiFetch` 재사용, shadcn 컴포넌트는 `web/src/components/ui/`, 테스트는
-  vitest browser mode(`web/tests/`) + Playwright(`web/e2e/`).
+- Routes: `/{repo}/log`, `/{repo}/tree/[...path]`, `/{repo}/blob/[...path]`,
+  `/{repo}/commit/{sha}`, `/{repo}/blame/[...path]`. ref selection is unified via the `?ref=` URL
+  query. Add each route to `lib/router.ts::parseRoute`/`Route` and match them in `App.tsx`'s
+  switch.
+- Unlike the API, where tree/blob/blame all use a single `{ref}/{path...}` catch-all, the client
+  route has a variable number of `path` segments, so `parseRoute` needs to decide the `ref`/`path`
+  boundary itself — decide whether to reimplement the API's branch/tag longest-match on the
+  client, or keep `?ref=` as-is and treat everything else as `path` (the latter seems to fit the
+  API contract better; confirm again when starting). Also add each route to `RepoNav.tsx`'s `TABS`
+  array.
+- Everything else follows existing conventions: generated types get an alias added in
+  `schemas.ts`, the API client reuses `client.ts`'s `apiFetch`, shadcn components go in
+  `web/src/components/ui/`, tests are vitest browser mode (`web/tests/`) + Playwright
+  (`web/e2e/`).

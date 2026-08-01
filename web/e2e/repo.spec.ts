@@ -33,7 +33,7 @@ test("shows the repository summary and links to refs", async ({ page }) => {
   await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
     await route.fulfill({ json: REFS });
   });
-  await page.getByRole("link", { name: "브랜치/태그" }).click();
+  await page.getByRole("link", { name: "Refs" }).click();
 
   await expect(page).toHaveURL("/git-compose/refs");
   await expect(page.getByText("v1.0.0")).toBeVisible();
@@ -42,7 +42,7 @@ test("shows the repository summary and links to refs", async ({ page }) => {
 test("shows a not-found page for unsupported sub-routes", async ({ page }) => {
   await page.goto("/git-compose/log");
 
-  await expect(page.getByRole("heading", { name: "페이지를 찾을 수 없습니다" })).toBeVisible();
-  await page.getByRole("link", { name: "저장소 목록으로 돌아가기" }).click();
+  await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  await page.getByRole("link", { name: "Back to repository list" }).click();
   await expect(page).toHaveURL("/");
 });

@@ -1,5 +1,5 @@
-const relativeFormatter = new Intl.RelativeTimeFormat("ko", { numeric: "auto" });
-const absoluteFormatter = new Intl.DateTimeFormat("ko", {
+const relativeFormatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+const absoluteFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "medium",
   timeStyle: "short",
 });

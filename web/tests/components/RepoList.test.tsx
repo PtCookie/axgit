@@ -29,7 +29,7 @@ describe("RepoList", () => {
 
     const headings = page.getByRole("heading", { level: 2 });
     await expect.element(headings.first()).toHaveTextContent("infra");
-    await expect.element(headings.last()).toHaveTextContent("기타");
+    await expect.element(headings.last()).toHaveTextContent("Other");
     await expect.element(page.getByText("git-compose")).toBeVisible();
   });
 
@@ -37,7 +37,7 @@ describe("RepoList", () => {
     mockedListRepos.mockResolvedValue({ repos: [] });
     render(<RepoList />);
 
-    await expect.element(page.getByText("등록된 저장소가 없습니다.")).toBeVisible();
+    await expect.element(page.getByText("No repositories found.")).toBeVisible();
   });
 
   it("shows an error message when the request fails", async () => {

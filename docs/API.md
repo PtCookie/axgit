@@ -1,63 +1,73 @@
-# Axgit API 명세 (v1)
+# Axgit API Spec (v1)
 
-web ↔ api 간 계약의 **규범 문서**. 엔드포인트를 추가/변경하는 커밋은 반드시 이 문서를 함께 갱신한다.
+The **normative document** for the web ↔ api contract. Any commit that adds or changes an
+endpoint must update this document too.
 
-기계 판독용 스펙은 `docs/openapi.json` (OpenAPI 3.1)이며 utoipa 어노테이션으로 **코드에서 생성**된다
-(DECISIONS.md #15). 서버 실행 중에는 `/swagger-ui`에서 탐색할 수 있고 원본은 `/api/v1/openapi.json`이다.
-스펙은 스키마·파라미터·상태코드를 담고, 이 문서는 스펙이 표현할 수 없는 **의미 규칙**(truncation 상한,
-refs 최장 매칭, merge simplification, 필드가 `null`이 되는 조건)을 담는다. **충돌하면 이 문서가 우선한다.**
+The machine-readable spec is `docs/openapi.json` (OpenAPI 3.1), **generated from code** via
+utoipa annotations (DECISIONS.md #15). While the server is running it can be explored at
+`/swagger-ui`, and the raw spec is at `/api/v1/openapi.json`. The spec covers schemas, parameters,
+and status codes; this document covers the **semantic rules** the spec can't express (truncation
+limits, refs longest-match, merge simplification, conditions under which a field is `null`).
+**When they conflict, this document wins.**
 
 - Base path: `/api/v1`
-- 모든 응답은 `application/json` (raw/archive/feed 제외)
-- 저장소 식별자 `{repo}`: `.git` 접미사를 제외한 저장소 이름 (예: `git-compose`)
-- ref 파라미터는 브랜치명, 태그명, 커밋 sha 모두 허용. 생략 시 HEAD.
-- 응답 객체의 필드는 값이 없어도 **키가 항상 존재**한다 (`null`로 직렬화, 생략이 아님).
+- All responses are `application/json` (except raw/archive/feed)
+- Repository identifier `{repo}`: the repository name with the `.git` suffix removed
+  (e.g. `git-compose`)
+- The ref parameter accepts branch names, tag names, and commit shas. Defaults to HEAD if omitted.
+- Fields in response objects are **always present as keys**, even when they have no value
+  (serialized as `null`, never omitted).
 
-## 공통
+## Common
 
-### 에러 형식
+### Error format
 
 ```json
 { "error": { "code": "repo_not_found", "message": "repository 'foo' not found" } }
 ```
 
-| HTTP | code                | 상황 |
+| HTTP | code                | Situation |
 | ---- | ------------------- | ---- |
-| 404  | `repo_not_found`    | 저장소 없음 |
-| 404  | `ref_not_found`     | ref/sha 해석 실패 |
-| 404  | `path_not_found`    | tree/blob 경로 없음 |
-| 400  | `invalid_param`     | 파라미터 형식 오류 |
-| 403  | `read_only`         | receive-pack 등 쓰기 시도 |
-| 404  | `not_found`         | `/api/v1/...` 아래 매칭되는 라우트가 없음 (DECISIONS.md #16) |
-| 500  | `internal`          | 서버 오류 (원인은 로그에만 남고 클라이언트는 일반 메시지만 받는다) |
+| 404  | `repo_not_found`    | Repository does not exist |
+| 404  | `ref_not_found`     | ref/sha resolution failed |
+| 404  | `path_not_found`    | tree/blob path does not exist |
+| 400  | `invalid_param`     | Malformed parameter |
+| 403  | `read_only`         | Write attempt (e.g. receive-pack) |
+| 404  | `not_found`         | No route matched under `/api/v1/...` (DECISIONS.md #16) |
+| 500  | `internal`          | Server error (cause is logged only; the client gets a generic message) |
 
-이 envelope를 쓰지 않는 예외는 하나뿐이다: upload-pack 요청 body가 8 MiB를 넘으면 axum의
-`DefaultBodyLimit`이 평문으로 `413`을 응답한다.
+There is exactly one exception to this envelope: if the upload-pack request body exceeds 8 MiB,
+axum's `DefaultBodyLimit` returns a plain-text `413`.
 
-### 캐싱 헤더
+### Caching headers
 
-- 커밋 sha가 URL에 포함된 응답(불변): `Cache-Control: public, max-age=31536000, immutable`.
-  `{sha}` 자리에는 브랜치/태그/축약 sha도 올 수 있으므로, **요청 경로의 값이 해석된 커밋의
-  full sha와 정확히 일치할 때만** 이 헤더가 붙는다. 이 응답에는 `ETag`가 없다.
-- 그 외: `ETag` + `Cache-Control: no-cache`. `If-None-Match`가 일치하면 **304**(본문 없음,
-  `ETag`/`Cache-Control` 동반). ETag 값은 **opaque**하며 형식은 계약이 아니다 — 서버는 해당
-  repo의 HEAD sha + agefile mtime에서 생성하므로 push 직후 값이 바뀐다.
-  비교는 RFC 9110의 weak comparison(`W/` 접두 무시).
-- 예외:
-  - `GET /api/v1/repos`(목록)는 특정 repo에 종속되지 않으므로 ETag가 **응답 본문 해시**다.
-  - `raw`는 서버 응답 캐시 대상이 아니지만 비-sha 요청에 ETag가 붙는다 (304로 전송량만 절약).
-  - `archive`는 **weak ETag**(`W/"..."`). 일치하면 `git archive` 실행 없이 304.
-  - Smart HTTP 엔드포인트는 항상 `no-cache`이며 ETag를 쓰지 않는다.
+- Responses whose URL includes a commit sha (immutable): `Cache-Control: public,
+  max-age=31536000, immutable`. Since `{sha}` may also be a branch, tag, or abbreviated sha, this
+  header is attached **only when the requested path value exactly matches the resolved commit's
+  full sha as a string**. These responses have no `ETag`.
+- Otherwise: `ETag` + `Cache-Control: no-cache`. A matching `If-None-Match` returns **304** (no
+  body, `ETag`/`Cache-Control` still attached). The ETag value is **opaque** and its format is not
+  part of the contract — the server derives it from the repo's HEAD sha + agefile mtime, so it
+  changes right after a push. Comparison uses RFC 9110 weak comparison (ignoring the `W/` prefix).
+- Exceptions:
+  - `GET /api/v1/repos` (the list) isn't tied to a specific repo, so its ETag is a **hash of the
+    response body**.
+  - `raw` isn't subject to the server response cache, but non-sha requests still get an ETag
+    (304 still saves transfer bytes).
+  - `archive` uses a **weak ETag** (`W/"..."`). On a match, returns 304 without running
+    `git archive`.
+  - Smart HTTP endpoints are always `no-cache` and never use an ETag.
 
-### 페이지네이션 (commit log)
+### Pagination (commit log)
 
-cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`로 전달. 기본 `limit=50`, 최대 100.
+Cursor-based. Pass the response's `next_cursor` (a commit sha) as the next request's `cursor`.
+Default `limit=50`, max 100.
 
-## 엔드포인트
+## Endpoints
 
 ### `GET /api/v1/repos`
 
-저장소 목록. cgit index에 해당.
+Repository list. Equivalent to cgit's index.
 
 ```json
 {
@@ -74,13 +84,15 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 }
 ```
 
-- `section`/`owner`/`description`: repo config `[axgit]` 우선, 없으면 `[cgit]` 섹션.
-- `last_modified`: agefile(`info/web/last-modified`), 없으면 HEAD authordate.
-- `default_branch`/`last_modified`: 빈 저장소(커밋 없음, agefile 없음)에서는 `null`.
+- `section`/`owner`/`description`: from the repo config's `[axgit]` section if present, else
+  `[cgit]`.
+- `last_modified`: from the agefile (`info/web/last-modified`), else HEAD authordate.
+- `default_branch`/`last_modified`: `null` for an empty repository (no commits, no agefile).
 
 ### `GET /api/v1/repos/{repo}`
 
-저장소 요약. cgit summary에 해당. 목록 항목 필드 + `head` sha, 브랜치/태그 개수, clone URL.
+Repository summary. Equivalent to cgit's summary. List item fields plus `head` sha,
+branch/tag counts, and the clone URL.
 
 ```json
 {
@@ -97,11 +109,11 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 }
 ```
 
-- `name`~`last_modified`: 목록 항목과 동일한 규칙.
-- `head`: HEAD 커밋 sha. 빈 저장소(unborn HEAD)는 `null` (404가 아니라 200으로 응답,
-  이때 `default_branch`/`last_modified`도 `null`, 카운트는 0).
-- `clone_url`: `{clone_url_base}/{repo}.git`. `--clone-url-base`(`AXGIT_CLONE_URL_BASE`)가
-  설정되지 않았으면 `null`.
+- `name` through `last_modified`: same rules as the list item.
+- `head`: HEAD commit sha. `null` for an empty repository (unborn HEAD) — this returns `200`, not
+  404, with `default_branch`/`last_modified` also `null` and counts at 0.
+- `clone_url`: `{clone_url_base}/{repo}.git`. `null` if `--clone-url-base`
+  (`AXGIT_CLONE_URL_BASE`) is not configured.
 
 ### `GET /api/v1/repos/{repo}/refs`
 
@@ -112,21 +124,23 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 }
 ```
 
-- `branches`/`tags` 모두 이름 오름차순. 빈 저장소는 둘 다 `[]`.
-- `branches[].target`: 브랜치 tip 커밋 sha. `committed_at`: tip 커밋 authordate (RFC 3339).
-- `tags[].target`: **peel된 커밋 sha** (annotated 태그도 태그 오브젝트가 아닌 대상 커밋).
-- `tags[].annotation`: 태그 메시지 첫 줄. `tagged_at`: tagger 시각.
-  **경량(lightweight) 태그는 둘 다 `null`.**
+- Both `branches`/`tags` are sorted by name ascending. Both are `[]` for an empty repository.
+- `branches[].target`: the branch tip commit sha. `committed_at`: the tip commit's authordate
+  (RFC 3339).
+- `tags[].target`: the **peeled commit sha** (for annotated tags, the target commit, not the tag
+  object itself).
+- `tags[].annotation`: the first line of the tag message. `tagged_at`: the tagger timestamp.
+  **Both are `null` for lightweight tags.**
 
 ### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=`
 
-커밋 로그. `path` 지정 시 해당 경로를 변경한 커밋만 (cgit log의 path filter).
+Commit log. When `path` is given, only commits that changed that path (cgit log's path filter).
 
 ```json
 {
   "commits": [
     {
-      "sha": "...", "summary": "...", "author": { "name": "...", "email_hash": "<sha256, 아바타 seed용>" },
+      "sha": "...", "summary": "...", "author": { "name": "...", "email_hash": "<sha256, avatar seed>" },
       "authored_at": "...", "parents": ["..."]
     }
   ],
@@ -134,26 +148,31 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 }
 ```
 
-이메일 원문은 노출하지 않고 해시만 제공한다. 프론트엔드가 이 해시를 seed로 로컬 생성 아바타(DiceBear)를 렌더링한다.
-`email_hash`는 trim + lowercase 정규화 후 sha256 (gravatar 방식).
+The raw email address is never exposed, only its hash. The frontend uses this hash as a seed to
+render a locally generated avatar (DiceBear). `email_hash` is sha256 of the trimmed, lowercased
+address (the gravatar approach).
 
-- `ref`: 브랜치/태그/sha, 생략 시 HEAD. 해석 실패 시 `404 ref_not_found`.
-- `limit`: 기본 50, 허용 범위 1–100. **0, 100 초과, 정수가 아닌 값은 `400 invalid_param`** (clamp하지 않음).
-- `cursor`: 이전 응답의 `next_cursor` 값을 그대로 전달. cursor가 주어지면 `ref`는 무시되고
-  해당 커밋부터(**포함**) 걷는다. 형식이 잘못되었거나 존재하지 않는 커밋이면 `400 invalid_param`
-  (opaque 토큰이므로 404가 아님).
-- `next_cursor`: 다음 페이지 첫 커밋의 sha (`path` 필터 적용 후 기준). 더 없으면 `null`.
-- `path`: 파일 또는 디렉터리 경로. 존재하지 않는 경로는 404가 아니라 빈 목록.
-  merge 커밋은 해당 경로가 **모든** 부모와 다를 때만 포함 (`git log -- <path>` 기본
-  simplification의 근사 — side branch의 커밋이 일부 더 보일 수 있음).
-- 빈 저장소(unborn HEAD): `ref` 생략 시 `200` + `{"commits": [], "next_cursor": null}`.
-  명시적 `ref`는 `404 ref_not_found`.
-- `summary`: 커밋 메시지 첫 줄. `summary`/`authored_at`은 non-utf8 메시지·손상된 타임스탬프일 때 `null`.
+- `ref`: branch/tag/sha, defaults to HEAD. `404 ref_not_found` on resolution failure.
+- `limit`: default 50, allowed range 1–100. **0, values over 100, or non-integers are
+  `400 invalid_param`** (not clamped).
+- `cursor`: pass the previous response's `next_cursor` value verbatim. When `cursor` is given,
+  `ref` is ignored and walking starts from that commit (**inclusive**). A malformed or
+  non-existent commit is `400 invalid_param` (it's an opaque token, not a 404).
+- `next_cursor`: the sha of the next page's first commit (after the `path` filter is applied).
+  `null` if there are no more.
+- `path`: a file or directory path. A path that doesn't exist returns an empty list, not a 404.
+  A merge commit is included only when the path differs from **all** parents (an approximation of
+  `git log -- <path>`'s default simplification — some side-branch commits may show up that
+  wouldn't with the real `git log`).
+- Empty repository (unborn HEAD): omitting `ref` returns `200` +
+  `{"commits": [], "next_cursor": null}`. An explicit `ref` returns `404 ref_not_found`.
+- `summary`: the commit message's first line. `summary`/`authored_at` are `null` for non-UTF-8
+  messages or corrupted timestamps.
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}`
 
-커밋 상세: 전체 메시지, author/committer, 부모, diffstat. 로그 항목의 상위집합
-(`sha`/`summary`/`author`/`authored_at`/`parents`는 동일 규약).
+Commit detail: full message, author/committer, parents, diffstat. A superset of the log entry
+(`sha`/`summary`/`author`/`authored_at`/`parents` follow the same rules).
 
 ```json
 {
@@ -175,22 +194,25 @@ cursor 방식. 응답의 `next_cursor`(커밋 sha)를 다음 요청의 `cursor`�
 }
 ```
 
-- `{sha}`: 브랜치/태그/sha (ref 파라미터와 동일 규약). 해석 실패 시 `404 ref_not_found`.
-- diff 기준은 **첫 부모**: merge 커밋도 첫 부모와의 diff만 보여준다. root 커밋은 empty tree와
-  비교하므로 전 파일 `added`.
-- `status`: `added` | `deleted` | `modified` | `renamed` | `copied` | `typechange`.
-  rename 감지는 libgit2 기본값(유사도 50%). `old_path`는 `renamed`/`copied`일 때만 non-null.
-- 바이너리 파일은 `binary: true`에 `additions`/`deletions`는 0.
-- `message`/`summary`는 non-utf8 메시지일 때 `null`. diffstat에는 파일 수 상한이 없다.
+- `{sha}`: branch/tag/sha (same rules as the ref parameter). `404 ref_not_found` on resolution
+  failure.
+- Diff is against the **first parent**: even for merge commits, only the diff against the first
+  parent is shown. A root commit is diffed against an empty tree, so every file shows as `added`.
+- `status`: `added` | `deleted` | `modified` | `renamed` | `copied` | `typechange`. Rename
+  detection uses libgit2's default (50% similarity). `old_path` is non-null only for
+  `renamed`/`copied`.
+- Binary files have `binary: true` and `additions`/`deletions` of 0.
+- `message`/`summary` are `null` for non-UTF-8 messages. The diffstat has no file count limit.
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}/diff?path=`
 
-unified diff를 구조화한 JSON (파일 → hunk → line). 파일 레벨 필드는 diffstat 항목과 동일 규약.
+A unified diff structured as JSON (file → hunk → line). File-level fields follow the same rules
+as diffstat entries.
 
 ```json
 {
   "sha": "<full sha>",
-  "parent": "<첫 부모 sha | null(root 커밋)>",
+  "parent": "<first parent sha | null (root commit)>",
   "truncated": false,
   "files": [
     {
@@ -212,23 +234,27 @@ unified diff를 구조화한 JSON (파일 → hunk → line). 파일 레벨 필�
 }
 ```
 
-- diff 기준(첫 부모, root는 empty tree), `status`/rename/`old_path` 규약은 커밋 상세와 동일.
-- `origin`: `"+"` | `"-"` | `" "`만. libgit2의 기타 origin(EOF 개행 마커 등)은 제외된다.
-  `content`는 후행 개행 제거, `old_lineno`/`new_lineno`는 해당 없는 쪽이 `null`.
-- **대형 diff 상한**: 파일당 렌더 라인 1000줄 — 초과 시 hunk 단위로 잘라내고 파일의
-  `truncated: true` (hunk를 중간에서 자르지 않으므로, 단일 hunk가 1000줄을 넘으면 `hunks`가
-  빌 수 있다). 파일 수는 300개 — 초과분은 생략하고 최상위 `truncated: true` (전체 파일 목록은
-  커밋 상세의 diffstat 참조). `additions`/`deletions`는 truncation과 무관하게 전체 값.
-- 바이너리 파일은 `binary: true` + `hunks: []`.
-- `path`: 단일 파일 경로로 diff 제한 (리터럴 매칭, glob 미지원). 존재하지 않거나 이 커밋에서
-  변경되지 않은 경로는 404가 아니라 `files: []`.
+- Diff basis (first parent, root against empty tree), `status`/rename/`old_path` rules are the
+  same as commit detail.
+- `origin`: only `"+"` | `"-"` | `" "`. Other libgit2 origins (e.g. EOF newline markers) are
+  excluded. `content` has any trailing newline stripped; whichever of `old_lineno`/`new_lineno`
+  doesn't apply is `null`.
+- **Large diff limits**: 1000 rendered lines per file — beyond that, hunks are cut off (never
+  mid-hunk) and the file gets `truncated: true` (since hunks aren't split mid-way, a single hunk
+  longer than 1000 lines can leave `hunks` empty). 300 files max — the rest are omitted and the
+  top-level `truncated: true` is set (see the commit detail's diffstat for the full file list).
+  `additions`/`deletions` are always the full totals regardless of truncation.
+- Binary files get `binary: true` + `hunks: []`.
+- `path`: restricts the diff to a single file path (literal match, no glob support). A path that
+  doesn't exist or wasn't changed in this commit returns `files: []`, not a 404.
 
 ### `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
 
-디렉토리 목록. `{ref}`는 `/`를 포함할 수 있으므로(브랜치/태그명) 경로와의 경계는
-**refs 최장 매칭**으로 해석한다: 선행 세그먼트 열이 기존 브랜치/태그명과 일치하는 가장 긴
-prefix가 ref (git ref 규칙상 `a`와 `a/b`는 공존 불가 → 유일), 일치가 없으면 첫 세그먼트를
-ref(커밋 sha 등)로 간주한다. blob/raw도 동일 규칙. `{path...}` 생략 시 루트 tree.
+Directory listing. Since `{ref}` may contain `/` (branch/tag names), the boundary with the path is
+resolved via **refs longest-match**: the longest sequence of leading segments that matches an
+existing branch/tag name is the ref (git ref rules guarantee `a` and `a/b` can't coexist, so this
+is unambiguous); if there's no match, the first segment is treated as the ref (e.g. a commit sha).
+blob/raw follow the same rule. Omitting `{path...}` means the root tree.
 
 ```json
 {
@@ -241,17 +267,18 @@ ref(커밋 sha 등)로 간주한다. blob/raw도 동일 규칙. `{path...}` 생�
 }
 ```
 
-- `type`: `tree` | `blob` | `symlink`(mode 120000) | `commit`(submodule gitlink).
-- `mode`: 6자리 8진수 문자열. `size`: blob만, 그 외 `null`.
-- 정렬: tree 우선, 이후 이름 오름차순.
-- 경로가 없거나 디렉토리가 아니면 `404 path_not_found`.
-  path의 `.`/`..`/빈 세그먼트는 `400 invalid_param`.
-- 요청의 `{ref}`가 해석된 full sha와 문자열 일치하면 immutable Cache-Control
-  (캐싱 헤더 절 참고 — blob/raw/readme도 동일).
+- `type`: `tree` | `blob` | `symlink` (mode 120000) | `commit` (submodule gitlink).
+- `mode`: a 6-digit octal string. `size`: blob only, otherwise `null`.
+- Sorting: trees first, then name ascending.
+- `404 path_not_found` if the path doesn't exist or isn't a directory. `.`/`..`/empty segments in
+  the path are `400 invalid_param`.
+- If the request's `{ref}` matches the resolved full sha as a string, an immutable
+  `Cache-Control` is attached (see the caching headers section — blob/raw/readme follow the same
+  rule).
 
 ### `GET /api/v1/repos/{repo}/blob/{ref}/{path...}`
 
-파일 메타 + 내용.
+File metadata + content.
 
 ```json
 {
@@ -265,35 +292,39 @@ ref(커밋 sha 등)로 간주한다. blob/raw도 동일 규칙. `{path...}` 생�
 }
 ```
 
-- `content`: UTF-8 텍스트. 바이너리(libgit2 NUL 휴리스틱 또는 비UTF-8)는
-  `binary: true` + `content: null` (raw로 유도).
-- **1 MiB 초과는 `too_large: true` + `content: null`** (`size`는 항상 전체 값).
-- symlink는 mode `120000`에 `content` = 링크 대상 경로.
-- 경로가 없거나 파일이 아니면(디렉토리·submodule) `404 path_not_found`.
+- `content`: UTF-8 text. Binary files (per libgit2's NUL heuristic, or non-UTF-8) get
+  `binary: true` + `content: null` (pointing the client to raw instead).
+- **Files over 1 MiB get `too_large: true` + `content: null`** (`size` is always the full value).
+- Symlinks have mode `120000` and `content` = the link target path.
+- `404 path_not_found` if the path doesn't exist or isn't a file (a directory or submodule).
 
 ### `GET /api/v1/repos/{repo}/raw/{ref}/{path...}`
 
-파일 원문 스트리밍. cgit plain view에 해당. 크기 상한 없음.
+Streams the raw file content. Equivalent to cgit's plain view. No size limit.
 
-- `Content-Type`: 확장자 기반 감지(mime_guess). 미감지 시 텍스트는
-  `text/plain; charset=utf-8`, 바이너리는 `application/octet-stream`.
-- 저장소 내용은 비신뢰 입력이므로 항상 `X-Content-Type-Options: nosniff`를 부착한다.
+- `Content-Type`: detected by extension (mime_guess). Falls back to
+  `text/plain; charset=utf-8` for text or `application/octet-stream` for binary if undetected.
+- Since repository content is untrusted input, `X-Content-Type-Options: nosniff` is always
+  attached.
 
 ### `GET /api/v1/repos/{repo}/readme?ref=`
 
-README 탐색 후 `{ "path": "...", "format": "markdown|rst|plain", "content": "..." }`.
-렌더링(HTML 변환)은 프론트엔드 책임. `markdown`만 렌더링하고 `rst`/`plain`은 평문 표시한다 (DECISIONS.md #11).
+Looks for a README and returns `{ "path": "...", "format": "markdown|rst|plain", "content": "..." }`.
+Rendering (HTML conversion) is the frontend's responsibility. Only `markdown` is rendered;
+`rst`/`plain` are shown as plain text (DECISIONS.md #11).
 
-- 루트 tree에서 `README.md` → `README.rst` → `README.txt` → `README` 순,
-  **대소문자 무시** 매칭. symlink·바이너리·1 MiB 초과 후보는 건너뛴다.
-- `path`는 tree상의 실제 파일명(대소문자 유지). 못 찾으면 `404 path_not_found`.
-- `ref` 생략 시 HEAD. 빈 저장소(unborn HEAD)·해석 실패는 `404 ref_not_found`.
-- `content`에는 blob의 1 MiB 상한이 동일하게 적용된다.
+- Searches the root tree in order `README.md` → `README.rst` → `README.txt` → `README`,
+  matching **case-insensitively**. Symlink, binary, or over-1-MiB candidates are skipped.
+- `path` is the actual filename as it appears in the tree (case preserved). `404 path_not_found`
+  if none is found.
+- Defaults to HEAD if `ref` is omitted. `404 ref_not_found` for an empty repository (unborn HEAD)
+  or resolution failure.
+- `content` is subject to the same 1 MiB limit as blob.
 
 ### `GET /api/v1/repos/{repo}/blame/{ref}/{path...}`
 
-라인 범위별 attribution. `{ref}/{path...}` 분리, 404/400 규약은 tree/blob/raw와 동일
-(refs 최장 매칭, `.`/`..`/빈 세그먼트는 400, 경로 없음/디렉토리는 404).
+Per-line-range attribution. `{ref}/{path...}` splitting and 404/400 rules are the same as
+tree/blob/raw (refs longest-match, `.`/`..`/empty segments are 400, missing path/directory is 404).
 
 ```json
 {
@@ -312,83 +343,99 @@ README 탐색 후 `{ "path": "...", "format": "markdown|rst|plain", "content": "
 }
 ```
 
-- `ranges`는 `start_line` 오름차순(1-based)이며 파일 전체를 빈틈없이 덮는다. `lines`는 그 총합.
-- 바이너리(libgit2 NUL 휴리스틱 또는 비UTF-8)는 `binary: true`, **1 MiB 초과는 `too_large: true`**
-  (blob의 `BLOB_CONTENT_LIMIT`과 동일 상한) — 두 경우 모두 `ranges: []` + `lines: 0`.
-  빈 파일도 `ranges: []` + `lines: 0`.
-- `summary`는 non-utf8 커밋 메시지일 때, `authored_at`은 표현 불가 시각일 때 `null`
-  (커밋 로그와 동일 규약). `author.email_hash`도 커밋 로그와 동일 규칙(sha256 of trimmed+lowercased email).
-- rename/copy 추적은 하지 않는다 — 파일 내에서 옮겨진 줄만 libgit2 기본값대로 원 커밋에 귀속.
-- 구현은 **git2 `Repository::blame_file`** (exec 아님) — 경로가 커맨드라인에 닿지 않고
-  ARCHITECTURE.md가 이미 blame을 git2 담당으로 명시. 대형 히스토리에서 느릴 경우
-  `git blame --line-porcelain` exec fallback은 후속 검토 대상 (도입 안 됨).
-- 캐싱은 tree/blob과 동일: `{ref}`가 해석된 full sha와 문자열 일치하면 immutable
-  Cache-Control, 그 외는 ETag(검증자 기반) + `no-cache` + 304.
+- `ranges` is sorted by `start_line` ascending (1-based) and covers the whole file with no gaps.
+  `lines` is their total.
+- Binary (per libgit2's NUL heuristic, or non-UTF-8) gets `binary: true`, **files over 1 MiB get
+  `too_large: true`** (the same limit as blob's `BLOB_CONTENT_LIMIT`) — both cases return
+  `ranges: []` + `lines: 0`. An empty file also gets `ranges: []` + `lines: 0`.
+- `summary` is `null` for non-UTF-8 commit messages, `authored_at` is `null` for
+  unrepresentable timestamps (same rules as the commit log). `author.email_hash` follows the same
+  rule as the commit log (sha256 of the trimmed, lowercased email).
+- No rename/copy tracking — only lines moved within the same file are attributed to their
+  original commit, per libgit2's default.
+- Implemented via **git2 `Repository::blame_file`** (not exec) — the path never touches a command
+  line, and ARCHITECTURE.md already lists blame as git2's responsibility. If it proves slow on
+  large histories, a `git blame --line-porcelain` exec fallback is a candidate for later (not
+  currently implemented).
+- Caching is the same as tree/blob: an immutable `Cache-Control` when `{ref}` matches the resolved
+  full sha as a string, otherwise ETag (validator-based) + `no-cache` + 304.
 
 ### `GET /api/v1/repos/{repo}/archive/{ref}.{format}`
 
-`format`: `tar.gz` | `zip`. `git archive` exec로 생성해 chunked 스트리밍 (Content-Length 없음).
-ref 해석 후 **exec에는 full sha만 전달**한다 (사용자 입력이 커맨드라인에 닿지 않음).
+`format`: `tar.gz` | `zip`. Generated via `git archive` exec and streamed chunked (no
+Content-Length). After ref resolution, **only the full sha is passed to exec** (user input never
+reaches the command line).
 
-- `Content-Type`: `application/gzip` | `application/zip`. 항상 `X-Content-Type-Options: nosniff`.
-- `Content-Disposition: attachment; filename="{repo}-{safe_ref}.{format}"`.
-  아카이브 내부 루트 디렉토리(`--prefix`)도 동일하게 `{repo}-{safe_ref}/`.
-  `safe_ref`는 ref의 `[A-Za-z0-9._-]` 외 문자를 전부 `-`로 치환한 값 (예: `feature/x` → `feature-x`).
-- `{ref}.{format}` 파싱은 접미사 매칭: `.tar.gz` 우선, 다음 `.zip` (ref 자체의 `.`/`/`와 충돌 없음.
-  `.zip`으로 끝나는 브랜치명은 zip 요청으로 해석된다). 그 외 접미사는 `400 invalid_param`.
-- 요청의 `{ref}`가 해석된 full sha와 문자열 일치하면 immutable Cache-Control, 그 외에는
-  weak ETag + `no-cache` (캐싱 헤더 절). `If-None-Match` 일치 시 git 프로세스를 띄우지 않고 304.
-- 스트리밍 개시 후 git 프로세스가 실패하면 상태코드를 바꿀 수 없으므로 응답이 중간에서
-  끊긴다 (클라이언트는 다운로드 실패로 인지, 서버는 stderr를 로그에 남김).
+- `Content-Type`: `application/gzip` | `application/zip`. Always
+  `X-Content-Type-Options: nosniff`.
+- `Content-Disposition: attachment; filename="{repo}-{safe_ref}.{format}"`. The archive's internal
+  root directory (`--prefix`) is likewise `{repo}-{safe_ref}/`. `safe_ref` replaces any character
+  outside `[A-Za-z0-9._-]` in the ref with `-` (e.g. `feature/x` → `feature-x`).
+- `{ref}.{format}` is parsed by suffix match: `.tar.gz` first, then `.zip` (no conflict with `.`/
+  `/` in the ref itself — a branch name ending in `.zip` is interpreted as a zip request). Any
+  other suffix is `400 invalid_param`.
+- If the request's `{ref}` matches the resolved full sha as a string, an immutable
+  `Cache-Control` is attached; otherwise a weak ETag + `no-cache` (see the caching headers
+  section). On a matching `If-None-Match`, returns 304 without spawning the git process.
+- If the git process fails after streaming has started, the status code can no longer change, so
+  the response is cut off mid-stream (the client sees a failed download; the server logs stderr).
 
 ### `GET /api/v1/repos/{repo}/feed.atom`
 
-기본 브랜치(HEAD) 최근 커밋 **20개**의 Atom 피드. `Content-Type: application/atom+xml; charset=utf-8`.
+An Atom feed of the default branch's (HEAD's) most recent **20 commits**.
+`Content-Type: application/atom+xml; charset=utf-8`.
 
-- feed: `<title>` = repo 이름, `<subtitle>` = description (있을 때만), `<id>`와 `rel="self"` link =
-  이 엔드포인트의 절대 URL, `<updated>` = 최신 커밋 authordate (커밋이 없으면 epoch).
-- entry: `<title>` = 커밋 summary (non-utf8이면 `(no message)`), `<id>` = **`urn:sha1:{full sha}`**
-  (host와 무관하게 안정 — 피드 리더의 중복 방지), `<updated>` = authordate,
-  `<author><name>`만 (이메일은 해시조차 미포함), `rel="alternate"` link = 커밋 상세 API URL
-  (**잠정** — web UI 커밋 페이지 라우트 확정 시 그쪽으로 교체).
-- 절대 URL의 base는 `X-Forwarded-Proto`(기본 `http`) + `X-Forwarded-Host` → `Host`(기본
-  `localhost`) 헤더에서 재구성한다 (별도 base URL 설정 없음, DECISIONS.md #12).
-- 빈 저장소(unborn HEAD)는 404가 아니라 entry 없는 피드로 `200`.
-- ETag + `Cache-Control: no-cache` (캐싱 헤더 절). 본문에 base URL이 들어가므로 서버 응답
-  캐시 키에도 base URL이 포함된다.
+- Feed: `<title>` = repo name, `<subtitle>` = description (only if present), `<id>` and the
+  `rel="self"` link = this endpoint's absolute URL, `<updated>` = the latest commit's authordate
+  (epoch if there are no commits).
+- Entry: `<title>` = commit summary (`(no message)` if non-UTF-8), `<id>` =
+  **`urn:sha1:{full sha}`** (stable regardless of host — avoids duplicate entries in feed
+  readers), `<updated>` = authordate, `<author><name>` only (not even a hashed email), the
+  `rel="alternate"` link = the commit detail API URL (**provisional** — will be swapped for the
+  web UI's commit page route once that's finalized).
+- The absolute URL base is reconstructed from `X-Forwarded-Proto` (default `http`) +
+  `X-Forwarded-Host` → `Host` (default `localhost`) headers (no separate base URL config,
+  DECISIONS.md #12).
+- An empty repository (unborn HEAD) returns `200` with an entry-less feed, not a 404.
+- ETag + `Cache-Control: no-cache` (see the caching headers section). Since the body embeds the
+  base URL, the server response cache key includes the base URL too.
 
-## Smart HTTP (clone/fetch 전용)
+## Smart HTTP (clone/fetch only)
 
-API prefix 밖, 저장소 경로 직접 매핑. `git upload-pack --stateless-rpc` spawn으로 처리한다
-(advertise 시 `--advertise-refs`, DECISIONS.md #13). smart 프로토콜 전용 — dumb 프로토콜
-(`service` 파라미터 없는 info/refs)은 지원하지 않는다.
+Outside the API prefix, mapped directly to repository paths. Handled by spawning
+`git upload-pack --stateless-rpc` (`--advertise-refs` for the advertise step, DECISIONS.md #13).
+Smart protocol only — the dumb protocol (info/refs without a `service` parameter) isn't supported.
 
 ### `GET /{repo}.git/info/refs?service=git-upload-pack`
 
-- `200` 응답: `Content-Type: application/x-git-upload-pack-advertisement`,
-  `Cache-Control: no-cache`. body는 pkt-line 서비스 헤더
-  `001e# service=git-upload-pack\n0000` 뒤에 upload-pack의 ref advertisement.
-- 클라이언트의 `Git-Protocol` 요청 헤더(`version=2` 등)는 `GIT_PROTOCOL` env로 upload-pack에
-  전달된다 — protocol v2 협상 지원. v2에서도 서비스 헤더 pkt-line은 동일하게 붙는다.
+- `200` response: `Content-Type: application/x-git-upload-pack-advertisement`,
+  `Cache-Control: no-cache`. The body is a pkt-line service header
+  `001e# service=git-upload-pack\n0000` followed by upload-pack's ref advertisement.
+- The client's `Git-Protocol` request header (e.g. `version=2`) is passed to upload-pack via the
+  `GIT_PROTOCOL` env var — supporting protocol v2 negotiation. The service header pkt-line is
+  attached the same way in v2.
 
 ### `POST /{repo}.git/git-upload-pack`
 
-- 요청 body는 upload-pack negotiation 데이터 (`application/x-git-upload-pack-request` —
-  Content-Type은 검증하지 않음). `Content-Encoding: gzip`이면 서버가 해제한다.
-  body 상한: 압축 상태 8 MiB (`413`), 해제 후 64 MiB (`400`).
-- `200` 응답: `Content-Type: application/x-git-upload-pack-result`,
-  `Cache-Control: no-cache`, pack 데이터 chunked 스트리밍. 스트리밍 시작 후 upload-pack이
-  비정상 종료하면 상태코드 변경 없이 스트림이 짧게 끊긴다 (클라이언트는 early EOF).
+- The request body is upload-pack negotiation data
+  (`application/x-git-upload-pack-request` — Content-Type isn't validated). A
+  `Content-Encoding: gzip` body is decompressed by the server. Body limits: 8 MiB compressed
+  (`413`), 64 MiB decompressed (`400`).
+- `200` response: `Content-Type: application/x-git-upload-pack-result`,
+  `Cache-Control: no-cache`, pack data streamed chunked. If upload-pack exits abnormally after
+  streaming has started, the status code can't change and the stream ends early (the client sees
+  an early EOF).
 
-### 상태코드
+### Status codes
 
-| 상황 | 상태 | code |
+| Situation | Status | code |
 | --- | --- | --- |
-| 정상 | `200` | — |
-| `service` 누락/미지원, gzip 해제 실패, 해제 후 상한 초과 | `400` | `invalid_param` |
-| `git-receive-pack` 관련 요청 일체 (info/refs의 service 포함) | `403` | `read_only` |
-| 저장소 없음, `.git` 접미사 없는 경로 | `404` | `repo_not_found` |
-| 압축 body 상한 초과 | `413` | — (axum 기본 응답) |
-| upload-pack spawn/advertise 실패 | `500` | `internal` |
+| Success | `200` | — |
+| Missing/unsupported `service`, gzip decompression failure, decompressed size over the limit | `400` | `invalid_param` |
+| Any `git-receive-pack`-related request (including info/refs' service param) | `403` | `read_only` |
+| Repository not found, path missing the `.git` suffix | `404` | `repo_not_found` |
+| Compressed body over the limit | `413` | — (axum's default response) |
+| upload-pack spawn/advertise failure | `500` | `internal` |
 
-에러 body는 다른 엔드포인트와 같은 JSON 형식이다 (git 클라이언트는 무시하고 상태코드만 표시).
+Error bodies use the same JSON format as other endpoints (git clients ignore the body and only
+look at the status code).

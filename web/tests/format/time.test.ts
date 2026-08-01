@@ -12,11 +12,11 @@ describe("formatRelativeTime", () => {
   });
 
   it("formats a time in the recent past", () => {
-    expect(formatRelativeTime("2026-07-30T23:59:00Z")).toContain("분");
+    expect(formatRelativeTime("2026-07-30T23:59:00Z")).toContain("minute");
   });
 
   it("formats a time further in the past using a coarser unit", () => {
-    expect(formatRelativeTime("2026-03-31T00:00:00Z")).toContain("개월");
+    expect(formatRelativeTime("2026-03-31T00:00:00Z")).toContain("month");
   });
 });
 

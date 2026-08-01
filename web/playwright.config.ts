@@ -39,7 +39,7 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
 
-    // firefox/webkit은 lefthook 훅에서 돌지 않으므로 비활성화. 필요해지면 CI에서 되살린다.
+    // firefox/webkit are disabled since they don't run in the lefthook hook. Re-enable in CI if needed.
     // {
     //   name: "firefox",
     //   use: { ...devices["Desktop Firefox"] },

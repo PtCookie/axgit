@@ -4,43 +4,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-**Axgit**는 self-hosted Git 서버([git-compose](https://git.ptcookie.net/git-compose.git) 스택)의
-Cgit을 대체하는 웹 프론트엔드입니다. 모노레포로 두 컴포넌트를 관리합니다:
+**Axgit** is a web frontend that replaces Cgit in a self-hosted Git server (the
+[git-compose](https://git.ptcookie.net/git-compose.git) stack). It's a monorepo managing two components:
 
-- **api/** — Rust 백엔드 (axum + git2/libgit2). bare 저장소를 읽어 JSON API 제공,
-  Smart HTTP clone(`git-upload-pack`) 서빙, Astro 정적 빌드 결과물 서빙까지 담당.
-- **web/** — Astro + React + shadcn/ui 프론트엔드. 정적(static) 빌드 후 API를 client-side fetch.
+- **api/** — Rust backend (axum + git2/libgit2). Reads bare repositories to serve a JSON API,
+  serves Smart HTTP clone (`git-upload-pack`), and also serves the Astro static build output.
+- **web/** — Astro + React + shadcn/ui frontend. Static build, fetches the API client-side.
 
-**배포는 단일 컨테이너**: 멀티스테이지 Dockerfile에서 web 빌드 → api 빌드 → 런타임 이미지 하나.
-기존 git-compose 스택의 `git-web` 서비스를 이 이미지로 교체하며, nginx/fcgiwrap/CGI는 사용하지 않는다.
+**Deployment is a single container**: a multi-stage Dockerfile builds web → builds api → produces
+one runtime image. It replaces the existing git-compose stack's `git-web` service with this image;
+nginx/fcgiwrap/CGI are not used.
 
-**세션 간 이어가기**: 지금까지 어떤 작업을 완료했고 다음에 무엇을 구현할지는 `docs/ROADMAP.md`가
-단일 출처다. 새 세션을 시작하거나 "다음에 뭘 하면 되지?"류 질문을 받으면 이 파일부터 읽을 것.
-작업을 완료하면 같은 커밋에서 "완료됨" 절을 갱신하고 "다음 구현" 절을 다음 대상으로 교체한다.
+**Continuing across sessions**: `docs/ROADMAP.md` is the single source of truth for what's been
+completed so far and what to implement next. When starting a new session, or when asked something
+like "what should I do next?", read this file first. When finishing a piece of work, update the
+"Done" section and replace the "Next up" section with the next target, in the same commit.
 
-## 핵심 제약 (Invariants)
+## Core invariants
 
-- **웹은 철저히 읽기 전용.** 쓰기(push, 저장소 생성)는 git-server 컨테이너의 SSH로만 이루어진다.
-  API에 mutation 엔드포인트를 추가하지 말 것. 인증/권한 로직도 없다.
-- **저장소는 `/srv/git`의 bare repo**이며 컨테이너에 read-only 마운트된다 (`AXGIT_REPO_ROOT`로 설정).
-- **저장소 메타데이터는 각 repo의 `config` 파일 `[cgit]` 섹션** (`section`, `name`, `owner`, `desc`)에서 읽는다.
-  git-server의 `git-init` 스크립트가 이 형식으로 쓰기 때문에 **호환성을 깨지 말 것**. `[axgit]` 섹션이 있으면 우선한다.
-- **최근 활동 시각은 agefile** (`info/web/last-modified`)에서 읽는다. git-server의 post-receive 훅이 갱신한다.
-  agefile이 없으면 HEAD 커밋의 authordate로 fallback.
-- Smart HTTP는 **upload-pack(fetch/clone)만** 지원. `git-receive-pack` 요청은 403으로 거부한다.
+- **The web app is strictly read-only.** Writes (push, repository creation) happen only via SSH
+  to the git-server container. Do not add mutation endpoints to the API. There is no auth/authz
+  logic either.
+- **Repositories are bare repos under `/srv/git`**, mounted read-only into the container
+  (configured via `AXGIT_REPO_ROOT`).
+- **Repository metadata is read from each repo's `config` file, `[cgit]` section**
+  (`section`, `name`, `owner`, `desc`). The git-server's `git-init` script writes this format, so
+  **do not break compatibility**. An `[axgit]` section, if present, takes precedence.
+- **Last-activity timestamps come from the agefile** (`info/web/last-modified`), updated by
+  git-server's post-receive hook. Falls back to the HEAD commit's authordate if the agefile is
+  missing.
+- Smart HTTP supports **upload-pack (fetch/clone) only**. `git-receive-pack` requests are rejected
+  with 403.
 
 ## Commands
 
 ```sh
-# 최초 설정 (workspace root에서)
-pnpm install                # 전체 JS 의존성 (루트 pnpm-workspace.yaml이 web을 패키지로 묶는다)
-lefthook install            # git hooks 등록
+# Initial setup (from the workspace root)
+pnpm install                # all JS dependencies (root pnpm-workspace.yaml bundles web as a package)
+lefthook install            # register git hooks
 
-# Frontend (web/) — 루트에서 --filter web으로 실행
-pnpm --filter web dev       # Astro dev 서버 (API는 AXGIT_API_URL proxy)
-pnpm --filter web build     # 정적 빌드 → web/dist/
+# Frontend (web/) — run from root with --filter web
+pnpm --filter web dev       # Astro dev server (API proxied via AXGIT_API_URL)
+pnpm --filter web build     # static build → web/dist/
 pnpm --filter web test      # vitest
-pnpm --filter web check     # eslint + prettier check (개별 실행은 lint / format)
+pnpm --filter web check     # eslint + prettier check (individually: lint / format)
 
 # Backend (api/)
 cargo build --manifest-path api/Cargo.toml
@@ -48,68 +55,80 @@ cargo test --manifest-path api/Cargo.toml
 cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path api/Cargo.toml
 
-# OpenAPI 스펙 재생성 (docs/openapi.json) — API를 바꾼 커밋에서 반드시 실행
+# Regenerate the OpenAPI spec (docs/openapi.json) — run in any commit that changes the API
 AXGIT_UPDATE_OPENAPI=1 cargo test --manifest-path api/Cargo.toml --test openapi_test
-pnpm --filter web gen:types # 이어서 web 타입 재생성 (openapi-typescript)
+pnpm --filter web gen:types # then regenerate web types (openapi-typescript)
 
-# fixture 저장소 생성 (bare repo 4종, 고정 날짜로 재현 가능)
+# Generate fixture repositories (4 bare repos, fixed dates for reproducibility)
 ./scripts/make-fixtures.sh
 
-# 로컬 통합 실행 (api가 web/dist를 서빙)
+# Local integrated run (api serves web/dist)
 cargo run --manifest-path api/Cargo.toml -- --repo-root ./fixtures/repos --static-dir ./web/dist
 
-# 컨테이너 빌드
+# Container build
 docker build --tag axgit:latest .
 ```
 
 ## Architecture
 
-상세 설계는 `docs/ARCHITECTURE.md`, API 계약은 `docs/API.md`, 결정 이력은 `docs/DECISIONS.md`,
-구현 순서/진행 상황은 `docs/ROADMAP.md` 참고.
+See `docs/ARCHITECTURE.md` for detailed design, `docs/API.md` for the API contract,
+`docs/DECISIONS.md` for the decision history, and `docs/ROADMAP.md` for implementation order and
+progress.
 
-**API를 변경할 때는 같은 커밋에서 셋을 모두 갱신할 것**:
+**When changing the API, update all three of the following in the same commit**:
 
-1. `docs/API.md` — 계약의 **규범 문서**. 스펙이 표현할 수 없는 의미 규칙(상한, ref 매칭, `null` 조건)이 여기 있다.
-2. `docs/openapi.json` — utoipa 어노테이션에서 **생성**되는 스펙 (직접 편집 금지, 위 재생성 명령 사용).
-   엔드포인트를 추가하면 `#[utoipa::path]`와 `api/src/openapi.rs`의 `paths(...)`,
-   `tests/openapi_test.rs`의 `EXPECTED_OPERATIONS`까지 함께 손봐야 테스트가 통과한다.
-3. `web/src/lib/api/types.ts` — openapi.json에서 **생성**되는 TS 타입 (직접 편집 금지).
+1. `docs/API.md` — the **normative document** for the contract. Semantic rules the spec can't
+   express (limits, ref matching, `null` conditions) live here.
+2. `docs/openapi.json` — the spec **generated** from utoipa annotations (do not edit directly, use
+   the regeneration command above). Adding an endpoint means updating `#[utoipa::path]`,
+   `paths(...)` in `api/src/openapi.rs`, and `EXPECTED_OPERATIONS` in `tests/openapi_test.rs` for
+   the tests to pass.
+3. `web/src/lib/api/types.ts` — TS types **generated** from openapi.json (do not edit directly).
 
-### 백엔드 요점
+### Backend notes
 
-- git2의 `Repository`는 `Sync`가 아니므로 **요청마다 open**한다 (open 비용은 낮음). 전역 캐시에 Repository를 넣지 말 것.
-- `Repository::config()`에서 문자열 값을 읽으려면 먼저 `.snapshot()`을 떠야 한다 (live config는 값 조회가 제한적).
-- `api/`는 `lib.rs` + thin `main.rs` 구조: 통합 테스트(`api/tests/`)가 `build_router`를 직접 import해
-  `tower::ServiceExt::oneshot`으로 포트 바인딩 없이 라우터를 테스트한다.
-- 무거운 연산은 git 바이너리 exec로 처리한다: 아카이브는 `git archive`,
-  Smart HTTP는 `git http-backend`(CGI 방식 spawn) 또는 `git upload-pack --stateless-rpc`.
-  libgit2로 전부 구현하려 하지 말 것 (Gitea도 같은 하이브리드 패턴).
-- **캐싱은 cgit 스타일 + 개선**: 응답 캐시를 (repo, endpoint, params) 키로 TTL 저장하되,
-  단순 TTL이 아니라 repo의 HEAD/agefile mtime을 검증자로 사용해 push 후 즉시 무효화한다.
-  클라이언트 캐시는 ETag(커밋 sha 기반)로 처리. 상세는 `docs/ARCHITECTURE.md#caching`.
+- git2's `Repository` isn't `Sync`, so **open it per request** (open cost is low). Don't put a
+  `Repository` in a global cache.
+- To read string values from `Repository::config()`, take a `.snapshot()` first (live config has
+  limited value lookup).
+- `api/` follows a `lib.rs` + thin `main.rs` structure: integration tests (`api/tests/`) import
+  `build_router` directly and test the router via `tower::ServiceExt::oneshot`, without binding a
+  port.
+- Heavy operations are handled via git binary exec: archives use `git archive`, Smart HTTP uses
+  `git http-backend` (CGI-style spawn) or `git upload-pack --stateless-rpc`. Don't try to
+  reimplement everything with libgit2 (Gitea uses the same hybrid pattern).
+- **Caching follows a cgit-style approach, improved**: response cache keyed by
+  (repo, endpoint, params) with TTL, but instead of a plain TTL, the repo's HEAD/agefile mtime is
+  used as a validator so changes are invalidated immediately after a push. Client-side caching
+  uses ETag (based on commit sha). Details in `docs/ARCHITECTURE.md#caching`.
 
-### 프론트엔드 요점
+### Frontend notes
 
-- Astro는 **static 모드** 고정. SSR adapter를 추가하지 말 것 (배포 형태가 바뀌는 결정이므로 논의 필요).
-- 동적 데이터는 React island에서 API fetch. 라우팅은 Astro 페이지 + URL 쿼리/경로 파라미터.
-- 코드 하이라이팅은 Shiki를 client-side에서 lazy-load (언어별 동적 import).
-  README는 react-markdown + rehype-sanitize, 아바타는 DiceBear 로컬 생성 (외부 요청 금지, DECISIONS.md #11).
-- UI 컴포넌트는 shadcn/ui 사용, `web/src/components/ui/`에 생성. 생성된 파일은 수정 가능(vendored 방식).
+- Astro is pinned to **static mode**. Don't add an SSR adapter (that's a deployment-shape change
+  that needs discussion first).
+- Dynamic data is fetched from React islands. Routing is via Astro pages + URL query/path
+  parameters.
+- Code highlighting uses Shiki, lazy-loaded client-side (dynamic import per language).
+  READMEs use react-markdown + rehype-sanitize; avatars are generated locally with DiceBear
+  (no external requests, DECISIONS.md #11).
+- UI components use shadcn/ui, generated into `web/src/components/ui/`. Generated files may be
+  modified (vendored approach).
 
 ## Conventions
 
-- **커밋 메시지**: Conventional Commits 영어 (`feat:`, `fix:`, `build:`, `docs:`, `refactor:`, `test:`).
-  scope는 필요 시 `feat(api):`, `fix(web):` 형태.
-- **Rust**: edition 2024, `cargo fmt` 기본 설정, clippy 경고 0 유지 (`-D warnings`).
-  에러는 `thiserror`(라이브러리 코드) + `anyhow`(bin 진입부).
-- **TypeScript**: strict 모드. API 응답 타입은 `web/src/lib/api/types.ts`를 쓴다 —
-  `docs/openapi.json`에서 `pnpm gen:types`로 생성되는 파일이므로 직접 수정하지 않는다.
-- **테스트**: api는 tempdir에 git CLI로 fixture repo를 만들어 통합 테스트 (`api/tests/`).
-  git CLI 호출은 `GIT_CONFIG_GLOBAL=/dev/null` `GIT_CONFIG_SYSTEM=/dev/null`로 호스트 설정을 차단하고
-  `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`를 고정해 결정적으로 만든다.
-  web은 vitest browser mode(`@vitest/browser-playwright` + `vitest-browser-react`, `web/tests/`)
-  + Playwright e2e(`web/e2e/`). 커밋 전 훅은 lefthook이 담당 (`lefthook.yml`).
-- 사용자와의 대화는 한국어, 코드/커밋/문서 식별자는 영어.
+- **Commit messages**: Conventional Commits in English (`feat:`, `fix:`, `build:`, `docs:`,
+  `refactor:`, `test:`). Use a scope when useful, e.g. `feat(api):`, `fix(web):`.
+- **Rust**: edition 2024, default `cargo fmt` settings, zero clippy warnings (`-D warnings`).
+  Errors use `thiserror` (library code) + `anyhow` (bin entry points).
+- **TypeScript**: strict mode. API response types come from `web/src/lib/api/types.ts` —
+  generated by `pnpm gen:types` from `docs/openapi.json`, so don't edit it directly.
+- **Testing**: api builds fixture repos with the git CLI in a tempdir for integration tests
+  (`api/tests/`). git CLI invocations block host config with `GIT_CONFIG_GLOBAL=/dev/null`
+  `GIT_CONFIG_SYSTEM=/dev/null` and pin `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` for determinism.
+  web uses vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`,
+  `web/tests/`) + Playwright e2e (`web/e2e/`). Pre-commit hooks are handled by lefthook
+  (`lefthook.yml`).
+- Docs, code comments, commit messages, and user-facing UI strings are written in English.
 
 ## Repository layout
 
@@ -117,25 +136,25 @@ docker build --tag axgit:latest .
 axgit/
   api/                # Rust crate (axum + git2)
     src/
-      main.rs         # 진입점 (thin), lib.rs가 모듈 선언
-      routes.rs       # 라우터 구성 + Swagger UI 마운트
-      repo/           # 저장소 스캔, 메타데이터, git2 읽기 (응답 구조체도 여기)
-      handlers/       # HTTP 핸들러 (API.md와 1:1, #[utoipa::path] 어노테이션)
-      openapi.rs      # #[derive(OpenApi)] — 스펙의 경로/태그 목록
-      cache.rs        # 응답 캐시
-      smart_http.rs   # git-upload-pack 프록시
-    tests/            # fixture repo 기반 통합 테스트 (+ openapi_test.rs 스냅샷)
-  web/                # Astro + React + shadcn/ui (pnpm workspace 패키지, name: web)
+      main.rs         # entry point (thin), lib.rs declares modules
+      routes.rs       # router setup + Swagger UI mount
+      repo/           # repository scanning, metadata, git2 reads (response structs live here too)
+      handlers/        # HTTP handlers (1:1 with API.md, #[utoipa::path] annotations)
+      openapi.rs      # #[derive(OpenApi)] — the spec's path/tag listing
+      cache.rs        # response cache
+      smart_http.rs   # git-upload-pack proxy
+    tests/            # fixture-repo-based integration tests (+ openapi_test.rs snapshot)
+  web/                # Astro + React + shadcn/ui (pnpm workspace package, name: web)
     src/
-      pages/          # Astro 라우트
-      layouts/        # 공용 레이아웃
+      pages/          # Astro routes
+      layouts/        # shared layouts
       components/     # React islands, ui/ (shadcn)
       lib/
-        api/          # fetch 클라이언트 + types.ts (생성 파일)
-        format/       # 날짜 등 표시 포맷 유틸
+        api/          # fetch client + types.ts (generated file)
+        format/       # display formatting utils (dates, etc.)
     tests/            # vitest (browser mode)
     e2e/              # Playwright
   docs/               # ARCHITECTURE.md, API.md, DECISIONS.md, ROADMAP.md, openapi.json
   lefthook.yml
-  Dockerfile          # web build → api build → runtime (단일 이미지)
+  Dockerfile          # web build → api build → runtime (single image)
 ```

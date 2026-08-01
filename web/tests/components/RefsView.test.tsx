@@ -42,8 +42,8 @@ describe("RefsView", () => {
     mockedGetRefs.mockResolvedValue({ branches: [], tags: [] });
     render(<RefsView repo="scratch" />);
 
-    await expect.element(page.getByText("브랜치가 없습니다.")).toBeVisible();
-    await expect.element(page.getByText("태그가 없습니다.")).toBeVisible();
+    await expect.element(page.getByText("No branches.")).toBeVisible();
+    await expect.element(page.getByText("No tags.")).toBeVisible();
   });
 
   it("shows an error message when the request fails", async () => {

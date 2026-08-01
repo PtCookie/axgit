@@ -7,7 +7,7 @@ import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-const UNSECTIONED_LABEL = "기타";
+const UNSECTIONED_LABEL = "Other";
 
 interface RepoGroup {
   section: string | null;
@@ -26,7 +26,8 @@ function groupBySection(repos: RepoInfo[]): RepoGroup[] {
     }
   }
 
-  // section: null("기타")은 항상 맨 뒤. 나머지는 최초 등장 순서(= repos 정렬 순서)를 유지한다.
+  // section: null ("Other") always sorts last. Other groups keep their first-appearance order
+  // (= the repos list's sort order).
   groups.sort((a, b) => (a.section === null ? 1 : b.section === null ? -1 : 0));
   return groups;
 }
@@ -73,13 +74,13 @@ export default function RepoList() {
   if (state.status === "error") {
     return (
       <p role="alert" className="text-destructive text-sm">
-        저장소 목록을 불러오지 못했습니다: {state.error.message}
+        Failed to load repositories: {state.error.message}
       </p>
     );
   }
 
   if (state.repos.length === 0) {
-    return <p className="text-muted-foreground text-sm">등록된 저장소가 없습니다.</p>;
+    return <p className="text-muted-foreground text-sm">No repositories found.</p>;
   }
 
   return (
@@ -90,10 +91,10 @@ export default function RepoList() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>이름</TableHead>
-                <TableHead>설명</TableHead>
-                <TableHead>소유자</TableHead>
-                <TableHead>최근 활동</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Owner</TableHead>
+                <TableHead>Last activity</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

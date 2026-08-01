@@ -53,8 +53,8 @@ function titleFor(route: Route): string {
     case "repo":
       return `${route.repo} — Axgit`;
     case "refs":
-      return `${route.repo} 브랜치/태그 — Axgit`;
+      return `${route.repo} refs — Axgit`;
     case "not-found":
-      return "페이지를 찾을 수 없습니다 — Axgit";
+      return "Page not found — Axgit";
   }
 }

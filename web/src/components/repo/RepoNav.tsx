@@ -2,8 +2,8 @@ import { cn } from "@/lib/utils";
 import { repoUrl } from "@/lib/router";
 
 const TABS = [
-  { sub: undefined, label: "요약" },
-  { sub: "refs", label: "브랜치/태그" },
+  { sub: undefined, label: "Summary" },
+  { sub: "refs", label: "Refs" },
 ] as const;
 
 interface RepoNavProps {

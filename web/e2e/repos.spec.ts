@@ -11,5 +11,5 @@ test("shows repositories grouped by section", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "infra", level: 2 })).toBeVisible();
   await expect(page.getByText("git-compose")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "기타", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Other", level: 2 })).toBeVisible();
 });

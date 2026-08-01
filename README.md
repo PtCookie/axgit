@@ -1,18 +1,19 @@
 # Axgit
 
-Self-hosted Git 서버(git-compose 스택)를 위한 웹 프론트엔드. Cgit + Nginx + fcgiwrap 구성을 대체한다.
+Web frontend for a self-hosted Git server (git-compose stack). Replaces the Cgit + Nginx +
+fcgiwrap setup.
 
-- **api/** — Rust (axum + libgit2). 읽기 전용 JSON API, Smart HTTP clone, 정적 파일 서빙.
-- **web/** — Astro + React + shadcn/ui. 정적 빌드.
+- **api/** — Rust (axum + libgit2). Read-only JSON API, Smart HTTP clone, static file serving.
+- **web/** — Astro + React + shadcn/ui. Static build.
 
-단일 컨테이너로 배포하며, push는 기존 git-server(SSH)가 담당한다.
+Deployed as a single container; push is handled by the existing git-server (SSH).
 
-문서: [아키텍처](docs/ARCHITECTURE.md) · [API 명세](docs/API.md) · [결정 이력](docs/DECISIONS.md)
+Docs: [Architecture](docs/ARCHITECTURE.md) · [API spec](docs/API.md) · [Decision history](docs/DECISIONS.md)
 
-## 개발
+## Development
 
 ```sh
 pnpm install && lefthook install
-pnpm --filter web dev                        # frontend dev 서버
+pnpm --filter web dev                        # frontend dev server
 cargo run --manifest-path api/Cargo.toml     # backend
 ```

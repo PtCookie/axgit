@@ -12,7 +12,7 @@
             "name": "axgit",
             "section": "infra",
             "owner": "PtCookie",
-            "description": "Cgit 대체 웹 프론트엔드",
+            "description": "Web frontend replacing Cgit",
             "default_branch": "main",
             "last_modified": "2026-07-30T09:00:00+09:00"
         },
@@ -28,7 +28,7 @@
             "name": "scratch",
             "section": null,
             "owner": null,
-            "description": "임시 저장소",
+            "description": "Scratch repository",
             "default_branch": null,
             "last_modified": null
         }

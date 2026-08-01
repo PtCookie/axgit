@@ -50,10 +50,10 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
   }
 
   if (state.status === "error") {
-    const message = state.error.status === 404 ? "저장소를 찾을 수 없습니다." : state.error.message;
+    const message = state.error.status === 404 ? "Repository not found." : state.error.message;
     return (
       <p role="alert" className="text-destructive text-sm">
-        저장소 정보를 불러오지 못했습니다: {message}
+        Failed to load repository: {message}
       </p>
     );
   }
@@ -67,19 +67,19 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         {summary.section && (
           <>
-            <dt className="text-muted-foreground">구분</dt>
+            <dt className="text-muted-foreground">Section</dt>
             <dd>{summary.section}</dd>
           </>
         )}
         {summary.owner && (
           <>
-            <dt className="text-muted-foreground">소유자</dt>
+            <dt className="text-muted-foreground">Owner</dt>
             <dd>{summary.owner}</dd>
           </>
         )}
-        <dt className="text-muted-foreground">기본 브랜치</dt>
+        <dt className="text-muted-foreground">Default branch</dt>
         <dd>{summary.default_branch ?? "—"}</dd>
-        <dt className="text-muted-foreground">최근 활동</dt>
+        <dt className="text-muted-foreground">Last activity</dt>
         <dd>
           {summary.last_modified ? (
             <span title={formatAbsoluteTime(summary.last_modified)}>{formatRelativeTime(summary.last_modified)}</span>
@@ -89,9 +89,9 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
         </dd>
         <dt className="text-muted-foreground">HEAD</dt>
         <dd className="font-mono">{summary.head ?? "—"}</dd>
-        <dt className="text-muted-foreground">브랜치</dt>
+        <dt className="text-muted-foreground">Branches</dt>
         <dd>{summary.branch_count}</dd>
-        <dt className="text-muted-foreground">태그</dt>
+        <dt className="text-muted-foreground">Tags</dt>
         <dd>{summary.tag_count}</dd>
         {summary.clone_url && (
           <>
@@ -101,7 +101,7 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
         )}
       </dl>
 
-      {summary.head === null && <p className="text-muted-foreground text-sm">커밋이 없습니다.</p>}
+      {summary.head === null && <p className="text-muted-foreground text-sm">No commits yet.</p>}
     </div>
   );
 }

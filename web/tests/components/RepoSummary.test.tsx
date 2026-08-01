@@ -48,7 +48,7 @@ describe("RepoSummary", () => {
     mockedGetRepo.mockResolvedValue({ ...SUMMARY, head: null, default_branch: null });
     render(<RepoSummary repo="scratch" />);
 
-    await expect.element(page.getByText("커밋이 없습니다.")).toBeVisible();
+    await expect.element(page.getByText("No commits yet.")).toBeVisible();
   });
 
   it("shows an error message when the request fails", async () => {
