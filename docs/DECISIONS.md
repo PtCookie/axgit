@@ -380,3 +380,53 @@ endpoints with no web UI pointing at them at all.
 - No new page/route, no `shellFor`/`shell_for` change. No API contract change — `docs/API.md`/
   `docs/openapi.json` untouched; `schemas.ts` gained `ReadmeInfo`/`ReadmeFormat` aliases,
   `lib/api/repos.ts` gained `getReadme`/`archiveUrl`/`feedUrl`.
+
+## #22 `Dockerfile`: 3-stage alpine/musl build, `safe.directory = *`, pinned base images
+
+Closes the deployment gap DECISIONS.md #4/#10 and ARCHITECTURE.md#Build/deploy described but never
+implemented.
+
+- **alpine/musl over debian-slim**: `git2` is `default-features = false` (no ssh/https transports),
+  so there's no openssl-sys/libssh2-sys to fight with on musl. `libgit2-sys`'s build.rs finds no
+  system libgit2 via pkg-config on alpine and falls back to building the vendored libgit2 source
+  with `cc` — the only added builder package is `musl-dev`. The result is a fully static binary
+  (musl targets default to `crt-static`), so the runtime stage needs no libgit2/zlib shared
+  libraries at all. `utoipa-swagger-ui`'s `vendored` feature means its build.rs also never hits its
+  download-a-zip code path — the whole build is network-free past `cargo fetch`/`pnpm install`.
+  Confirmed with `ldd` on the built binary ("not a valid dynamic program").
+- **Runtime packages are `git` + `ca-certificates` only** — no `tzdata`: `repo/meta.rs` only ever
+  builds `Zoned` values from `TimeZone::UTC` or `TimeZone::fixed(offset)` (the offset recorded in
+  the git commit itself), so jiff never consults the system tzdb.
+- **`/etc/gitconfig` gets `[safe] directory = *`, plus a dedicated non-root user (uid 10001)**.
+  `/srv/git` is a read-only bind mount owned by the git-server container's uid, which trips both
+  `git`'s and libgit2's ownership check (both read the system gitconfig, so one file covers the
+  `git archive`/`upload-pack` exec paths and the git2 `Repository::open` paths at once). Rejected
+  alternatives: running as root (defeats the read-only, no-write-access posture CLAUDE.md's `Core
+  invariants` asks for, and would still need *some* ownership handling once dropped to a real
+  user); calling `git2::opts::set_verify_owner_validation(false)` in `main.rs` (only covers
+  libgit2, not the two `git` exec call sites, so it wouldn't actually remove the gitconfig need —
+  just add a second mechanism next to it). Trusting every directory is scoped to this
+  single-purpose, read-only container, so the usual "arbitrary directory trust" risk this setting
+  exists to prevent doesn't apply here.
+  - Verified end-to-end against `fixtures/repos` bind-mounted `:ro` into the container (uid 10001)
+    — clone/`--depth 1`/fetch, push rejection (403), archive download, and every web route all
+    worked. The specific *negative* control (removing `/etc/gitconfig` and confirming a dubious-
+    ownership failure) couldn't be reproduced on macOS Docker Desktop — its virtiofs bind mount
+    reports files as already owned by the accessing container's uid, so the ownership mismatch
+    this setting exists for never actually occurs locally. On a real Linux docker host (the actual
+    git-compose deployment target), a `:ro` bind mount preserves the host's numeric uid, so the
+    mismatch — and the need for this setting — is real there.
+- **BuildKit cache mounts** (`--mount=type=cache`) for `pnpm`'s store and cargo's registry +
+  `api/target`, keyed by the default cache id (mount target path) so repeat builds skip
+  re-fetching/re-compiling unchanged dependencies. Cache mount contents don't persist into the
+  image layer, so the api stage's release binary is `cp`'d out to `/axgit` inside the same `RUN`
+  that builds it, before the cache mount unmounts.
+- **Base images pinned to a minor version** (`node:24.11-alpine3.22`, `rust:1.97-alpine3.22`,
+  `alpine:3.22`), collected into `ARG`s at the top of the file — a floating tag like `node:24-alpine`
+  would let the image quietly drift on every rebuild. Verified all three tags actually resolve via
+  `docker manifest inspect` before use. `apk` packages aren't individually pinned (alpine's
+  per-minor-version repository only receives patches, so the `alpine:3.22` pin already bounds
+  them); pnpm is pinned exactly by the root `package.json`'s `packageManager` field, and Rust
+  crates by `api/Cargo.lock` + `--locked`. Digest-pinning (`@sha256:...`) would be stricter still
+  but is deferred — bumping the minor tags is expected to be a deliberate, separate commit either
+  way.

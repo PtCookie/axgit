@@ -1,0 +1,46 @@
+# Illustrative example of how the `axgit` image slots into the git-compose stack
+# (https://git.ptcookie.net/git-compose.git) as a replacement for its `git-web` service
+# (Cgit + Nginx + fcgiwrap). This file is NOT wired into any deploy process here — it exists to
+# show the shape of the change. The actual git-compose.git service definition is tracked and
+# changed in that separate repository.
+#
+# Assumes a `git-repository` named volume already populated by the git-server container (the
+# same volume `git-web` used to mount) and an external reverse proxy handling TLS termination
+# (docs/DECISIONS.md #10) that forwards to this service's 8080.
+
+services:
+  git-web:
+    image: axgit:latest
+    # build: https://git.ptcookie.net/axgit.git for a from-source build instead of a
+    # pre-built image; see README.md#deployment for the equivalent `docker build` invocation.
+    restart: unless-stopped
+    read_only: true
+    volumes:
+      # Read-only: axgit never writes to a repository (CLAUDE.md's core invariant). Push is
+      # SSH-only, handled entirely by the git-server container.
+      - git-repository:/srv/git:ro
+    environment:
+      AXGIT_REPO_ROOT: /srv/git
+      # Base URL shown for `git clone` in the repository summary page.
+      AXGIT_CLONE_URL_BASE: https://git.example.com
+      # Defaults shown for reference — uncomment to override:
+      # AXGIT_LISTEN: 0.0.0.0:8080
+      # AXGIT_CACHE_SCAN_TTL: "60"
+      # AXGIT_CACHE_RESPONSE_TTL: "300"
+      # AXGIT_CACHE_RESPONSE_MAX_BYTES: "33554432"
+    expose:
+      - "8080"
+    healthcheck:
+      # Also declared in the image itself (Dockerfile); repeated here only if the compose
+      # file's own health-based `depends_on` ordering is needed elsewhere in the stack.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/v1/repos"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    logging:
+      # Matches ARCHITECTURE.md's "logs go to stdout/stderr as JSON, collected by fluentd" note.
+      driver: fluentd
+
+volumes:
+  git-repository:
+    external: true

@@ -1,0 +1,28 @@
+# Version control
+.git
+
+# Node
+**/node_modules
+
+# Rust build output
+api/target
+
+# Astro build output + generated cache (rebuilt inside the image)
+web/dist
+web/.astro
+
+# Test artifacts
+web/test-results
+web/playwright-report
+web/blob-report
+web/__screenshots__
+web/.vitest-attachments
+
+# Fixture repos (generated locally, not needed to build the image)
+fixtures/repos
+
+# Editor/agent tooling directories
+.idea
+.claude
+.agents
+.junie

@@ -350,39 +350,67 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - No new page/route, no `shellFor`/`shell_for` change. No API contract change — `schemas.ts`
     gained `ReadmeInfo`/`ReadmeFormat` aliases.
 
-## Next up: Dockerfile / single-container build
+- **Dockerfile / single-container build** (DECISIONS.md #22). Closed the last gap between the
+  current state and actually replacing cgit in a live git-compose deployment. Finalized design:
+  - 3-stage `Dockerfile`: `node:24.11-alpine3.22` builds `web/dist` (`pnpm install
+    --frozen-lockfile` → `pnpm --filter web build`), `rust:1.97-alpine3.22` builds the `axgit`
+    release binary (`musl-dev` added so `libgit2-sys` builds vendored libgit2 with `cc` — alpine
+    has no system libgit2 for pkg-config to find), and `alpine:3.22` is the runtime (`git` +
+    `ca-certificates` only, no `tzdata` — jiff never touches the system tzdb). All three base
+    images are pinned to a minor version via top-of-file `ARG`s, not floating tags.
+  - Because `git2` is `default-features = false` (no ssh/https transports) and
+    `utoipa-swagger-ui`'s `vendored` feature is on, the whole build is network-free past dependency
+    fetch — no openssl/libssh2 wrangling, no swagger-ui zip download. The musl binary ends up
+    fully static (confirmed via `ldd`), so the runtime stage needs no libgit2/zlib shared libs.
+  - **`/etc/gitconfig` gets `[safe] directory = *`** (plus a dedicated non-root uid 10001 user) —
+    `/srv/git` is a read-only bind mount owned by the git-server container's uid, which trips both
+    `git` exec's and libgit2's ownership check; one gitconfig file covers both since both read the
+    system config. Verified end-to-end (clone/`--depth 1`/fetch/push-403/archive/every web route)
+    against `fixtures/repos` mounted `:ro` as a foreign uid.
+  - BuildKit cache mounts for pnpm's store and cargo's registry + `api/target`; the release binary
+    is `cp`'d out to a plain path in the same `RUN` (cache mount contents don't persist into the
+    image layer).
+  - New `.dockerignore` (`.git`, `node_modules`, `api/target`, `web/dist`, test artifacts,
+    `fixtures/repos`) — `api/target` alone was 9G, which would otherwise bloat the build context.
+  - `docs/compose.example.yaml` (new) — an illustrative `git-web`-replacement service definition;
+    actual git-compose.git changes are tracked in that separate repo. `README.md` gained a
+    Deployment section (build/run examples, the env var table from `config.rs`, an arm64/amd64
+    `--platform` note).
+  - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`
+    untouched. No `api/src` changes were needed at all; `config.rs`'s existing env-driven `Config`
+    already covered every setting the image needs.
+
+## Next up: Dark mode toggle
 
 ### Context
 
-Every v1-scope page is implemented and every implemented API endpoint now has a web UI path to it.
-What's left is deployment: CLAUDE.md and DECISIONS.md #4 both describe "a multi-stage Dockerfile
-builds web → builds api → produces one runtime image," replacing the git-compose stack's `git-web`
-service — but no `Dockerfile` exists in the repo yet. This is the last thing standing between the
-current state and actually replacing cgit in a live git-compose deployment.
+`web/src/styles/global.css` already carries `.dark` overrides (added for Shiki's dual-theme token
+styling, see the tree/blob DECISIONS.md entry) but nothing in the app ever applies a `dark` class —
+the styling is inert. Every other v1-scope page/endpoint and the deployment image are now done, so
+this is the next visible gap versus a typical modern web app (cgit itself has no dark mode, but
+there's no reason not to have one now that half the CSS already exists).
 
 ### Things to review before starting
 
-- Multi-stage: a web build stage (`pnpm install --filter web`, `pnpm --filter web build` →
-  `web/dist/`), an api build stage (`cargo build --release --manifest-path api/Cargo.toml`, needs
-  libgit2's build deps — check what `git2`'s `vendored` feature (if enabled) requires, or whether
-  system `libgit2`/`libssh2`/openssl dev packages need to be installed in the builder image), and a
-  slim runtime stage that copies just the `axgit` binary + `web/dist/` and runs
-  `axgit --repo-root /srv/git --static-dir ./dist` (see the `Commands` section of CLAUDE.md for the
-  equivalent local-run invocation).
-- Runtime image needs the `git` binary on `PATH` — archive/raw/smart_http all exec it
-  (ARCHITECTURE.md's hybrid libgit2+exec policy, DECISIONS.md #2/#12/#13). A minimal base (e.g.
-  `debian:*-slim` or `alpine`) needs `git` installed explicitly; confirm libgit2's runtime shared
-  libs are present too if not statically/vendored-linked.
-- `/srv/git` (`AXGIT_REPO_ROOT`) is a read-only mount from the git-server container — no write
-  access needed or wanted in the image (`Core invariants` in CLAUDE.md: strictly read-only, no
-  auth/authz).
-- Config surface to wire through as env vars/CLI flags (grep `api/src` for `std::env::var`/clap
-  args to enumerate the full set): repo root, static dir, listen address, cache TTL/size
-  (`AXGIT_CACHE_RESPONSE_*`), clone URL base (used by `RepoSummary`'s `clone_url`).
-- This replaces git-compose's `git-web` service definition — check whether git-compose.git (a
-  separate repo, referenced in CLAUDE.md's Overview) needs a corresponding compose-file change
-  documented here, or whether that's tracked entirely on that repo's side.
-- Verification: `docker build --tag axgit:latest .` (already documented in CLAUDE.md), then run the
-  image against `./fixtures/repos` (bind-mounted read-only) and confirm the same manual checks used
-  for prior sessions (repo list, summary, clone/fetch over the Smart HTTP endpoints) work through
-  the container.
+- Find every place `.dark` is currently referenced (`grep -rn "\.dark" web/src`) to see the full
+  extent of what's already styled vs. what still needs a dark-mode rule added.
+- Decide the toggle mechanism given the "no client-side router, mostly static-shell" architecture
+  (DECISIONS.md #16/#17): an `is:inline` script in `Layout.astro` (matching the pattern
+  `RepoLayout.astro` already uses for filling in repo name/tabs before first paint) that reads
+  `localStorage`/`prefers-color-scheme` and sets a `data-theme`/`class` attribute on `<html>`
+  before hydration, avoiding a flash of the wrong theme.
+  - the toggle control itself only needs to run client-side (a small island, or plain inline
+    script + a `<button>` with no React needed at all — consider whether pulling in a React
+    island is justified just for this).
+- Persisting the choice: `localStorage`, read synchronously by the inline script (blocking script
+  in `<head>`, not a deferred/module script — same "flash of empty content" lesson DECISIONS.md
+  #17 already hit with `RepoNav.astro`'s fill-in script).
+- Shiki tokens: `lib/format/highlight.ts` already emits both `color` and `--shiki-dark` inline
+  styles per DECISIONS.md's tree/blob entry — confirm the `.dark .shiki-code span` CSS rule
+  actually picks up `--shiki-dark` correctly once `.dark` can actually be applied (this is the
+  first time it'll be exercised for real).
+- shadcn/ui components (`web/src/components/ui/`) — check whether they already have dark-mode
+  Tailwind classes baked in (typical for shadcn's generated output) or need adjustment.
+- Verification: manual toggle in the browser (light → dark → light, reload persists the choice,
+  first paint has no flash) across at least one page from each major view (list, summary+readme,
+  log, commit diff, tree, blob with Shiki, blame).

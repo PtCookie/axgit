@@ -122,13 +122,19 @@ is opened within request scope.
 
 ## Build/deploy
 
-- Multi-stage Dockerfile: ① `pnpm --filter web build` in node:alpine → ② `cargo build --release`
-  in rust:alpine → ③ alpine runtime: git binary + api binary + web/dist.
-  Stage ① COPYs the root `package.json`/`pnpm-workspace.yaml`/`pnpm-lock.yaml` +
-  `web/package.json` first so `pnpm install --frozen-lockfile` lands in its own cached layer,
-  before copying the rest of the source.
+- Multi-stage `Dockerfile` (repo root): ① `pnpm --filter web build` in `node:24.11-alpine3.22` →
+  ② `cargo build --release` in `rust:1.97-alpine3.22` (`musl-dev` added; `libgit2-sys` builds
+  vendored libgit2 statically since alpine has no system libgit2) → ③ `alpine:3.22` runtime: git
+  binary + api binary + web/dist. Base image tags are pinned to a minor version (`ARG`s at the top
+  of the file), not floating — see docs/DECISIONS.md #22. Stage ① COPYs the root
+  `package.json`/`pnpm-workspace.yaml`/`pnpm-lock.yaml` + `web/package.json` first so `pnpm install
+  --frozen-lockfile` lands in its own cached layer, before copying the rest of the source.
 - Runtime image packages needed: `git` (for exec), `ca-certificates`. cgit filter dependencies
-  like Python/pygments/groff aren't needed at all.
+  like Python/pygments/groff aren't needed at all — `tzdata` isn't needed either (jiff only uses
+  UTC/fixed offsets read from git commits, never the system tzdb).
+- The container runs as a dedicated non-root user; `/etc/gitconfig` sets `[safe] directory = *`
+  since the read-only `/srv/git` mount is owned by the git-server container's uid, which would
+  otherwise trip git's/libgit2's ownership check (docs/DECISIONS.md #22).
 - Configuration is via environment variables: `AXGIT_REPO_ROOT`, `AXGIT_STATIC_DIR`,
   `AXGIT_LISTEN` (default `0.0.0.0:8080`), `AXGIT_CLONE_URL_BASE` (for displaying clone URLs),
   `AXGIT_CACHE_SCAN_TTL` (repo scan TTL, default 60s), `AXGIT_CACHE_RESPONSE_TTL` (response cache
