@@ -1,0 +1,19 @@
+---
+import RepoLayout from "../../layouts/RepoLayout.astro";
+import SearchView, { SearchViewSkeleton } from "../../components/repo/SearchView";
+import { REPO_SHELL_PARAM } from "../../lib/shell";
+
+/**
+ * One shell per route shape, not per repository — see `[repo]/index.astro`
+ * (`api/src/shell.rs`, docs/DECISIONS.md #17).
+ */
+export function getStaticPaths() {
+  return [{ params: { repo: REPO_SHELL_PARAM } }];
+}
+---
+
+<RepoLayout active="search" title="Search — Axgit">
+  <SearchView client:only="react">
+    <div slot="fallback"><SearchViewSkeleton /></div>
+  </SearchView>
+</RepoLayout>

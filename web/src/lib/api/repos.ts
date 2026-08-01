@@ -10,6 +10,8 @@ import type {
   RefsInfo,
   ReposResponse,
   RepoSummary,
+  SearchKind,
+  SearchResults,
   TreeListing,
 } from "./schemas";
 
@@ -108,4 +110,16 @@ export function archiveUrl(name: string, ref: string | undefined, format: Archiv
 /** Link-only — an Atom feed URL for the repository's default branch. */
 export function feedUrl(name: string): string {
   return apiUrl(`/repos/${encodeSegment(name)}/feed.atom`);
+}
+
+export interface SearchParams {
+  q: string;
+  type?: SearchKind;
+  ref?: string;
+  limit?: number;
+}
+
+export function searchRepo(name: string, params: SearchParams): Promise<SearchResults> {
+  const query = buildQuery(params);
+  return apiFetch<SearchResults>(`/repos/${encodeSegment(name)}/search${query}`);
 }

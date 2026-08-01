@@ -656,3 +656,35 @@ searching *inside* a repository: file content, file paths, and commit messages. 
   `repo/commits.rs`'s private `commit_info` was promoted to `pub(crate)` so `type=message` results
   reuse the exact log-entry shape (`CommitInfo`) rather than a parallel struct.
 - The `/{repo}/search` web page is deferred to a follow-up commit (ROADMAP.md).
+
+## #27 `/{repo}/search` page
+
+The web UI for #26's search endpoint, closing out repository search (#9/#25/#26).
+
+- **Route** `web/src/pages/[repo]/search.astro` follows `log.astro`'s shape exactly — no path
+  segments, all state in the query string (`?q=&type=&ref=`) — needing only a two-segment match in
+  `shellFor`/`shell_for` (`[_repo, "search"]`), unlike tree/blob/blame's unbounded-depth matching
+  (#19/#20). `RepoNav.astro` gained a "Search" tab; `RepoLayout.astro`'s `Active` union/
+  `TITLE_SUFFIXES`/`NAV_ACTIVE` grew a `search` case (it's its own tab, not a drill-down like
+  commit/blob/blame).
+- **Plain `<form method="get">`, no controlled inputs, no client-side state.** Reading Astro
+  7.1.6's `ClientRouter.astro` source directly (the same verification standard #24 used) confirmed
+  it registers a `submit` listener that intercepts same-origin GET forms exactly like it does
+  anchor clicks, converting the submission into a client-side navigation to
+  `?q=...&type=...&ref=...` — so the form needed no `onSubmit` handler, and degrades to an
+  ordinary full-page GET if JS is unavailable. `q`/`type` are read via `defaultValue` (uncontrolled)
+  and `paramFromSearch`, matching every other page's "props override, `location` is the default
+  source" pattern (`CommitLog`, `TreeView`).
+- **`SearchView`'s loading state is lazily derived from the initial query**, not reset inside the
+  fetch effect — mirrors `CommitLog`'s existing rationale (a live-instance prop change only happens
+  in tests; production always remounts fresh on a new URL) and avoids
+  `@eslint-react/set-state-in-effect` warnings from a synchronous `setState` at the top of the
+  effect.
+- Result rendering branches on the response's `type`: `content`/`path` group by file
+  (`repo-href.ts`'s new `blobLineHref` appends `#L{n}`, reusing `CodeBlock.tsx`'s existing anchor
+  scheme from #19 — no new anchor mechanism needed) `message` reuses `CommitLog`'s row shape
+  (avatar, summary link, short sha, relative time). A `truncated: true` response renders a visible
+  banner — otherwise a capped result would look identical to a complete one.
+- `web/src/lib/api/repos.ts` gained `searchRepo`/`SearchParams` (reusing the existing `buildQuery`
+  helper); `repo-href.ts` gained `blobLineHref`/`searchHref`; `schemas.ts` gained
+  `SearchResults`/`SearchKind`/`FileMatch`/`LineMatch` aliases. No API contract change.

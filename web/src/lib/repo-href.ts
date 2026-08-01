@@ -24,3 +24,23 @@ export function blobHref(repo: string, path: string, ref: string | undefined): s
 export function blameHref(repo: string, path: string, ref: string | undefined): string {
   return `/${encodeSegment(repo)}/blame/${encodePath(path)}${refQuery(ref)}`;
 }
+
+/** Builds a `/{repo}/blob/{path}` href pointing at one matched line
+ *  (`#L{n}`, `CodeBlock.tsx`'s existing line-anchor scheme) — used by
+ *  `SearchView`'s content-match rows. */
+export function blobLineHref(repo: string, path: string, ref: string | undefined, line: number): string {
+  return `${blobHref(repo, path, ref)}#L${line}`;
+}
+
+/** Builds a `/{repo}/search` href from the given params, omitting any left
+ *  unset. Mirrors `lib/api/repos.ts::searchRepo`'s param shape (`q`/`type`/
+ *  `ref`), but stays a plain query-string builder so `SearchView`'s
+ *  `<form method="get">` and its "clear filter"-style links can share it. */
+export function searchHref(repo: string, params: { q?: string; type?: string; ref?: string } = {}): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const query = search.toString();
+  return `/${encodeSegment(repo)}/search${query ? `?${query}` : ""}`;
+}

@@ -44,6 +44,12 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
             Path::new(REPO_SHELL_PARAM).join("log").join("index.html"),
             StatusCode::OK,
         ),
+        [_repo, "search"] => (
+            Path::new(REPO_SHELL_PARAM)
+                .join("search")
+                .join("index.html"),
+            StatusCode::OK,
+        ),
         [_repo, "commit", _sha] => (
             Path::new(REPO_SHELL_PARAM)
                 .join("commit")
@@ -148,6 +154,22 @@ mod tests {
                 shell_for(path),
                 (
                     Path::new(REPO_SHELL_PARAM).join("log").join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn repo_search_paths_map_to_the_search_shell() {
+        for path in ["/git-compose/search", "/git-compose/search/"] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM)
+                        .join("search")
+                        .join("index.html"),
                     StatusCode::OK
                 ),
                 "path {path}"

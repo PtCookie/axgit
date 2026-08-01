@@ -479,25 +479,43 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` all updated (new endpoint);
     `schemas.ts` gained `SearchResults`/`SearchKind`/`FileMatch`/`LineMatch` aliases.
 
-## Next up: `/{repo}/search` page
+- **`/{repo}/search` page** (DECISIONS.md #27). The web UI for the endpoint above — closes out
+  repository search (#9/#25/#26). Finalized design:
+  - Route `web/src/pages/[repo]/search.astro` follows `log.astro`'s shape (no path segments, all
+    state in `?q=&type=&ref=`) — one new two-segment case in `shellFor`/`shell_for`.
+    `RepoNav.astro` gained a "Search" tab; `RepoLayout.astro`'s `Active`/`TITLE_SUFFIXES`/
+    `NAV_ACTIVE` grew a `search` case (its own tab, not a drill-down).
+  - **Plain `<form method="get">`, no controlled inputs.** Astro's `<ClientRouter />` (#24)
+    intercepts same-origin GET form submits the same way it does link clicks (confirmed by reading
+    7.1.6's source directly), so no `onSubmit` handler was needed and a no-JS fallback still works.
+  - `SearchView.tsx` (+ `SearchViewSkeleton`) follows the `CommitLog`/`TreeView` state-machine
+    pattern; `content`/`path` results link into the blob view via new `repo-href.ts::blobLineHref`
+    (`#L{n}`, reusing `CodeBlock.tsx`'s existing anchor scheme — no new mechanism needed);
+    `message` results reuse `CommitLog`'s row shape. A `truncated: true` response renders a visible
+    banner.
+  - `lib/api/repos.ts` gained `searchRepo`/`SearchParams`; `repo-href.ts` gained
+    `blobLineHref`/`searchHref`; `schemas.ts` gained the search type aliases. No API contract
+    change.
+
+## Next up: commit-statistics graphs (`stats`)
 
 ### Context
 
-The API landed above; there is no web UI for it yet. Together with commit-statistics graphs
-(`stats`, #9's other exclusion), it's the last remaining gap versus cgit.
+The last gap versus cgit — DECISIONS.md #9's other v1 exclusion (repository search, the first
+exclusion, is now done per #26/#27 above). cgit's `stats` page shows commit-activity graphs
+(commits per author/week/month) for a repository.
 
 ### Things to review before starting
 
-- New route shape `/{repo}/search`, needed in three places together (CLAUDE.md's "adding a route"
-  rule): `web/src/pages/[repo]/search.astro`, `web/src/lib/shell.ts::shellFor`,
-  `api/src/shell.rs::shell_for` — follow `log.astro`'s shape (no path segments, just `?q=` etc. in
-  the query string). `RepoNav.astro`/`RepoLayout.astro` need a "Search" tab.
-- The search form should be a plain `<form method="get">` so it works with and without
-  `<ClientRouter />` (#24) intercepting the submit — consistent with #18's "no client-side router
-  state" premise; every other page reads params from `location` at mount.
-- `type=content` results should link into the blob view at the matching line
-  (`repo-href.ts::blobHref` + `CodeBlock.tsx`'s existing `id="L{n}"` anchors); `type=message`
-  results can reuse `CommitLog`'s row layout (`AuthorAvatar` + summary link + short sha + relative
-  time).
-- Show a visible notice when the response's `truncated` is `true` — the API endpoint itself has no
-  way to signal "there may be more" otherwise.
+- Needs a new API endpoint — no existing endpoint aggregates commit counts by author or time
+  bucket. `commits.rs::log`'s revwalk is the natural starting point, but the full-history walk this
+  needs (not a paginated window) should get its own size/time bound up front, consistent with
+  search's scan budget (docs/DECISIONS.md #26) and archive/diff/blob's existing caps.
+- Decide the aggregation shape (by author, by week/month, or both) and whether it's computed
+  on-request or benefits from the response cache more than other endpoints do, given a full-history
+  walk is more expensive than a single page of commits.
+- New route shape likely `/{repo}/stats`, needed in `web/src/pages/[repo]/stats.astro`,
+  `web/src/lib/shell.ts::shellFor`, and `api/src/shell.rs::shell_for` together (CLAUDE.md's "adding
+  a route" rule) — `unmatched_shapes_map_to_the_404_shell`'s existing `/git-compose/stats` test
+  case will need to move.
+- Decide on a charting approach for the web side — no chart library is a dependency yet.

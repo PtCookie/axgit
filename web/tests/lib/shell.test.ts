@@ -28,6 +28,12 @@ describe("shellFor", () => {
     }
   });
 
+  it("maps repo search paths to the placeholder search shell", () => {
+    for (const path of ["/git-compose/search", "/git-compose/search/"]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/search`);
+    }
+  });
+
   it("maps repo commit paths to the placeholder commit shell", () => {
     for (const path of ["/git-compose/commit/abc123", "/git-compose/commit/abc123/"]) {
       expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/commit`);
