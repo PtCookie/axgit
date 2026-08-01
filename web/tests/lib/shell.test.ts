@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { REPO_SHELL_PARAM, shellFor } from "@/lib/shell";
-import { repoFromPathname } from "@/lib/repo-param";
+import { commitShaFromPathname, repoFromPathname } from "@/lib/repo-param";
 
 // Same case table as `api/src/shell.rs`'s unit tests — the two must change
 // together (see the doc comment on `shellFor`).
@@ -22,8 +22,26 @@ describe("shellFor", () => {
     }
   });
 
+  it("maps repo log paths to the placeholder log shell", () => {
+    for (const path of ["/git-compose/log", "/git-compose/log/"]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/log`);
+    }
+  });
+
+  it("maps repo commit paths to the placeholder commit shell", () => {
+    for (const path of ["/git-compose/commit/abc123", "/git-compose/commit/abc123/"]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/commit`);
+    }
+  });
+
   it("maps unmatched shapes to /404", () => {
-    for (const path of ["/git-compose/log", "/git-compose/tree/src", "/a/b/c"]) {
+    for (const path of [
+      "/git-compose/tree/src",
+      "/git-compose/commit",
+      "/git-compose/commit/abc123/extra",
+      "/git-compose/stats",
+      "/a/b/c",
+    ]) {
       expect(shellFor(path)).toBe("/404");
     }
   });
@@ -42,5 +60,21 @@ describe("repoFromPathname", () => {
 
   it("falls back to the raw segment for a malformed escape", () => {
     expect(repoFromPathname("/%zz")).toBe("%zz");
+  });
+});
+
+describe("commitShaFromPathname", () => {
+  it("returns an empty string when there is no sha segment", () => {
+    expect(commitShaFromPathname("/")).toBe("");
+    expect(commitShaFromPathname("/git-compose")).toBe("");
+    expect(commitShaFromPathname("/git-compose/commit")).toBe("");
+  });
+
+  it("returns the decoded third segment", () => {
+    expect(commitShaFromPathname("/git-compose/commit/abc123")).toBe("abc123");
+  });
+
+  it("falls back to the raw segment for a malformed escape", () => {
+    expect(commitShaFromPathname("/git-compose/commit/%zz")).toBe("%zz");
   });
 });

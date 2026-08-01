@@ -30,7 +30,9 @@ describe("RepoList", () => {
     const headings = page.getByRole("heading", { level: 2 });
     await expect.element(headings.first()).toHaveTextContent("infra");
     await expect.element(headings.last()).toHaveTextContent("Other");
-    await expect.element(page.getByText("git-compose")).toBeVisible();
+    const link = page.getByRole("link", { name: "git-compose" });
+    await expect.element(link).toBeVisible();
+    await expect.element(link).toHaveAttribute("href", "/git-compose");
   });
 
   it("shows an empty-state message when there are no repositories", async () => {

@@ -241,3 +241,29 @@ Superseded by #17.
   directly rather than through the mapping. Benign today (they are the same files it would have
   been mapped to) and documented rather than defended in code; it only becomes a real collision if
   a future route shape lacks a corresponding shell file.
+
+## #18 Web `?ref=`-only ref selection, anchor-based log pagination, DiceBear identicons
+
+Resolves the item ROADMAP had deferred as "confirm again when starting" for the log/commit pages,
+plus two smaller choices made alongside them.
+
+- **Ref selection on the web is `?ref=` only** — path segments after `/tree`, `/blob`, `/log`,
+  etc. are always the file/commit path, never a candidate ref. The alternative (reimplementing the
+  API's branch/tag longest-match, `repo/resolve.rs::resolve_ref_path`, in the client so URLs could
+  look like `/{repo}/blob/main/src/main.rs`) was rejected: it would require fetching the refs list
+  before rendering any file/log page just to resolve the URL, doubling a request that today only
+  the API needs, and ARCHITECTURE.md already commits to "ref selection is unified via the `?ref=`
+  URL query." `shellFor`/`shell_for` (#17) therefore only ever need to know a request's *shape*,
+  never resolve a ref boundary — keeping them pure segment-count matches.
+- **Log pagination is a plain anchor (`Older →`), not client state.** Consistent with #17: there is
+  no client-side router, so "loading the next page" is a full page load to
+  `/{repo}/log?cursor=...`. Only a forward link is rendered — the commit cursor is one-directional
+  (docs/API.md), and a "Newer" link would need the frontend to remember cursor history itself; the
+  browser back button already covers that case, matching cgit's own log pager UX.
+- **Avatars: `@dicebear/collection`'s `identicon` style**, seeded from `email_hash` and rendered as
+  a `toDataUri()` `<img>` — finalizes what #11 had only named ("DiceBear recommended"). `@dicebear/core`
+  is pinned to `^9.4.3` rather than the newest major (`^10`): `@dicebear/collection` only declares a
+  peer range of `^9.0.0`, and several of its style packages (transitively bundled, not just
+  `identicon`) import an `escape` helper that v10's `@dicebear/core` no longer exports — installing
+  the two majors together breaks Vite's dependency pre-bundling. Revisit the pin once
+  `@dicebear/collection` publishes a v10-compatible release.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
+import { encodeSegment } from "@/lib/api/path";
 import { listRepos } from "@/lib/api/repos";
 import type { RepoInfo } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
@@ -106,7 +107,11 @@ export default function RepoList() {
             <TableBody>
               {repos.map((repo) => (
                 <TableRow key={repo.name}>
-                  <TableCell className="font-medium">{repo.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <a className="hover:underline" href={`/${encodeSegment(repo.name)}`}>
+                      {repo.name}
+                    </a>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{repo.description ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">{repo.owner ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">

@@ -19,5 +19,7 @@ export function shellFor(pathname: string): string {
   if (segments.length === 0) return "/";
   if (segments.length === 1) return `/${REPO_SHELL_PARAM}`;
   if (segments.length === 2 && segments[1] === "refs") return `/${REPO_SHELL_PARAM}/refs`;
+  if (segments.length === 2 && segments[1] === "log") return `/${REPO_SHELL_PARAM}/log`;
+  if (segments.length === 3 && segments[1] === "commit") return `/${REPO_SHELL_PARAM}/commit`;
   return "/404";
 }

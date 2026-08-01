@@ -100,9 +100,8 @@ is opened within request scope.
   React islands (`client:only="react"`, with a static `slot="fallback"` skeleton).
 - Route layout — each is a real file under `web/src/pages/` (✅ implemented, others planned):
   - ✅ `/` repository list (grouped by section, equivalent to cgit's index)
-  - ✅ `/{repo}/` summary · ✅ `/{repo}/refs`
-  - planned: `/{repo}/log` · `/{repo}/tree/[...path]` · `/{repo}/blob/[...path]` ·
-    `/{repo}/commit/{sha}` · `/{repo}/blame/[...path]`
+  - ✅ `/{repo}/` summary · ✅ `/{repo}/refs` · ✅ `/{repo}/log` · ✅ `/{repo}/commit/{sha}`
+  - planned: `/{repo}/tree/[...path]` · `/{repo}/blob/[...path]` · `/{repo}/blame/[...path]`
   - ref selection is unified via the `?ref=` URL query
 - Per-repository pages can't be enumerated at build time (the repo list is per-deployment), so
   `src/pages/[repo]/*.astro` is prerendered once under a reserved placeholder param and the server

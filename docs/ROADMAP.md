@@ -241,28 +241,69 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     needed no changes (they assert visible content and URLs, not HTTP status).
   - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` untouched.
 
-## Next up: remaining per-repository pages (log, tree, blob, commit, blame)
+- **`/{repo}/log` + `/{repo}/commit/{sha}` pages**. The first vertical slice through the
+  commit-centric endpoints (log list → commit detail), and the pair the roadmap had flagged as
+  needing a decision before starting. Finalized design:
+  - **Ref selection stays `?ref=` only** — path segments are never treated as a ref. This was the
+    open question from the previous entry; reimplementing the API's branch/tag longest-match
+    client-side was rejected as unnecessary complexity, and `?ref=`-only matches
+    ARCHITECTURE.md's existing "ref selection is unified via the `?ref=` URL query" line.
+    `shellFor`/`shell_for` therefore still don't need to know about refs at all.
+  - Routing (DECISIONS #17's three-places-at-once cost): `web/src/pages/[repo]/log.astro` and
+    `[repo]/commit/[...sha].astro` (the rest param is built with `sha: undefined`, producing one
+    `commit/index.html` — the real sha is read from `location` at runtime, same as the repo name
+    elsewhere). `shellFor`/`shell_for` each gained two shapes; `shell_for`'s match grew a 4th
+    lookahead segment so `/{repo}/commit/{sha}/extra` still 404s. `RepoNav.astro` gained a "Log"
+    tab; commit detail isn't its own tab and maps back to "Log" for the active-tab highlight
+    (`RepoLayout.astro`).
+  - **Pagination is a plain anchor** (`Older →`, carries `cursor`/`ref`/`path`), consistent with
+    #17's "no client-side router" premise — there's no "Newer" link, the browser back button
+    covers it (cgit's own UX).
+  - New `web/src/components/repo/CommitLog.tsx`/`CommitView.tsx` follow the established
+    `RefsView`/`RepoSummary` state-machine pattern (`loading | error | data`, `cancelled` flag,
+    optional `repo?`/`sha?` props defaulting to `location`-derived values for `client:only`).
+    `CommitView` fetches detail + diff in parallel (`Promise.all`). Diff rendering has no size
+    virtualization — acceptable given the API's own 1000-line/300-file caps.
+  - **Avatars**: `web/src/components/repo/AuthorAvatar.tsx` adopts DECISIONS #11's plan —
+    `@dicebear/collection`'s `identicon` style seeded from `email_hash`, rendered as a
+    `toDataUri()` `<img>` (no external request). Pulled in `@dicebear/core`/`@dicebear/collection`
+    as new deps; pinned `@dicebear/core` to `^9.4.3` (not the newest v10) since `@dicebear/collection`
+    only declares a `^9.0.0` peer range — the two majors don't interop (v10 dropped the `escape`
+    export several style packages still import).
+  - **Commit message linkification**: `web/src/lib/format/linkify.tsx` — regex-based (URL / bare
+    7–40-char hex sha), returns React nodes rather than using `dangerouslySetInnerHTML` since
+    commit messages are untrusted repo content.
+  - `RepoList.tsx` repository names became links to `/{repo}` (previously dead-ended — no path led
+    from the list into a repository at all).
+  - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`
+    untouched; `schemas.ts` gained re-exported aliases for the commit/diff schema types.
+
+## Next up: tree + blob pages
 
 ### Context
 
-`/{repo}/` (summary) and `/{repo}/refs` are in place as prerendered Astro page shells (DECISIONS
-#17); there is no client-side router. Next: attach the remaining per-repository subpages using the
-same conventions.
+`/{repo}/log` and `/{repo}/commit/{sha}` are now in place alongside summary/refs. Remaining:
+`/{repo}/tree/[...path]` and `/{repo}/blob/[...path]` (blame stays last, per the original v1
+ordering).
 
 ### Things to review before starting
 
-- Routes: `/{repo}/log`, `/{repo}/tree/[...path]`, `/{repo}/blob/[...path]`,
-  `/{repo}/commit/{sha}`, `/{repo}/blame/[...path]`. ref selection is unified via the `?ref=` URL
-  query. For each: add `src/pages/[repo]/{route}.astro` (`getStaticPaths` returning
-  `REPO_SHELL_PARAM`, same shape as `[repo]/refs.astro`), add the matching shape to **both**
-  `web/src/lib/shell.ts::shellFor` and `api/src/shell.rs::shell_for` (they must change together —
-  each has its own test with the same case table), and add the tab to `RepoNav.astro`'s `TABS`
-  array.
-- Unlike the API, where tree/blob/blame all use a single `{ref}/{path...}` catch-all, the client
-  route has a variable number of `path` segments, so `shellFor`/`shell_for` need to decide the
-  `ref`/`path` boundary themselves — decide whether to reimplement the API's branch/tag
-  longest-match on the client, or keep `?ref=` as-is and treat everything else as `path` (the
-  latter seems to fit the API contract better; confirm again when starting).
+- **`web/astro.config.mjs`'s `shellFallback` middleware must be fixed before these routes work in
+  dev.** It only rewrites requests where `path.extname(pathname) === ""`
+  (`isAppRoute` check) — fine for log/commit (no dots in a sha), but a blob path like
+  `/{repo}/blob/src/main.rs` has an extension and would currently skip the rewrite and 404 in
+  `astro dev`/Playwright, even though production (`api/src/shell.rs`) has no such restriction. The
+  fix likely needs `shellFor`'s own shape-matching to decide app-route-ness instead of an extname
+  heuristic.
+- Add `src/pages/[repo]/tree/[...path].astro` and `[repo]/blob/[...path].astro`
+  (`getStaticPaths` with `path: undefined`, same pattern as this commit's `commit/[...sha].astro`),
+  update `shellFor`/`shell_for` (two more shapes, same "change both together" discipline), add a
+  "Tree" tab to `RepoNav.astro`'s `TABS` (blob likely maps back to "Tree" the same way commit maps
+  to "Log").
+- ref stays `?ref=`-only (settled in the previous entry) — `path` is the entire route path after
+  `/tree/`/`/blob/`, no ref/path boundary logic needed client-side.
+- Code highlighting: Shiki client-side, lazy-loaded per language grammar (ARCHITECTURE.md), skipped
+  above a size threshold — not yet started anywhere in the frontend.
 - Everything else follows existing conventions: generated types get an alias added in
   `schemas.ts`, the API client reuses `client.ts`'s `apiFetch`, shadcn components go in
   `web/src/components/ui/`, tests are vitest browser mode (`web/tests/`) + Playwright

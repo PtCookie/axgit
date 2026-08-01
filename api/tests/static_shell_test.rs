@@ -21,12 +21,15 @@ use common::{get_bytes_with_headers, router_for, router_with_static};
 const INDEX_HTML: &str = "<!doctype html><html><body>INDEX</body></html>";
 const REPO_HTML: &str = "<!doctype html><html><body>REPO SUMMARY</body></html>";
 const REFS_HTML: &str = "<!doctype html><html><body>REPO REFS</body></html>";
+const LOG_HTML: &str = "<!doctype html><html><body>REPO LOG</body></html>";
+const COMMIT_HTML: &str = "<!doctype html><html><body>REPO COMMIT</body></html>";
 const NOT_FOUND_HTML: &str = "<!doctype html><html><body>NOT FOUND</body></html>";
 const ASSET_JS: &str = "console.log('app');";
 
-/// A repo root with one repository, and a static dir with the four page
+/// A repo root with one repository, and a static dir with the six page
 /// shells (`index.html`, `__repo__/index.html`, `__repo__/refs/index.html`,
-/// `404.html`) plus a real asset under `_astro/`.
+/// `__repo__/log/index.html`, `__repo__/commit/index.html`, `404.html`) plus
+/// a real asset under `_astro/`.
 fn setup_fixtures() -> (TempDir, TempDir) {
     let repo_root = tempfile::tempdir().expect("failed to create repo root");
     common::create_bare_repo(repo_root.path(), "git-compose.git");
@@ -35,10 +38,18 @@ fn setup_fixtures() -> (TempDir, TempDir) {
     std::fs::write(static_dir.path().join("index.html"), INDEX_HTML).unwrap();
     std::fs::write(static_dir.path().join("404.html"), NOT_FOUND_HTML).unwrap();
     std::fs::create_dir_all(static_dir.path().join("__repo__/refs")).unwrap();
+    std::fs::create_dir_all(static_dir.path().join("__repo__/log")).unwrap();
+    std::fs::create_dir_all(static_dir.path().join("__repo__/commit")).unwrap();
     std::fs::write(static_dir.path().join("__repo__/index.html"), REPO_HTML).unwrap();
     std::fs::write(
         static_dir.path().join("__repo__/refs/index.html"),
         REFS_HTML,
+    )
+    .unwrap();
+    std::fs::write(static_dir.path().join("__repo__/log/index.html"), LOG_HTML).unwrap();
+    std::fs::write(
+        static_dir.path().join("__repo__/commit/index.html"),
+        COMMIT_HTML,
     )
     .unwrap();
     std::fs::create_dir_all(static_dir.path().join("_astro")).unwrap();
@@ -95,10 +106,36 @@ async fn repo_refs_paths_should_serve_the_refs_shell() {
 }
 
 #[tokio::test]
+async fn repo_log_paths_should_serve_the_log_shell() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/git-compose/log", "/git-compose/log/"] {
+        let router = router_with_static(repo_root.path(), static_dir.path());
+        assert_html_shell(router, uri, StatusCode::OK, LOG_HTML).await;
+    }
+}
+
+#[tokio::test]
+async fn repo_commit_paths_should_serve_the_commit_shell() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/git-compose/commit/abc123", "/git-compose/commit/abc123/"] {
+        let router = router_with_static(repo_root.path(), static_dir.path());
+        assert_html_shell(router, uri, StatusCode::OK, COMMIT_HTML).await;
+    }
+}
+
+#[tokio::test]
 async fn unknown_paths_should_serve_the_404_shell_with_a_404_status() {
     let (repo_root, static_dir) = setup_fixtures();
 
-    for uri in ["/git-compose/log", "/git-compose/tree/src", "/a/b/c"] {
+    for uri in [
+        "/git-compose/tree/src",
+        "/git-compose/commit",
+        "/git-compose/commit/abc123/extra",
+        "/git-compose/stats",
+        "/a/b/c",
+    ] {
         let router = router_with_static(repo_root.path(), static_dir.path());
         assert_html_shell(router, uri, StatusCode::NOT_FOUND, NOT_FOUND_HTML).await;
     }

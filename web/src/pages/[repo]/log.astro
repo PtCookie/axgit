@@ -1,0 +1,19 @@
+---
+import RepoLayout from "../../layouts/RepoLayout.astro";
+import CommitLog, { CommitLogSkeleton } from "../../components/repo/CommitLog";
+import { REPO_SHELL_PARAM } from "../../lib/shell";
+
+/**
+ * One shell per route shape, not per repository — see `[repo]/index.astro`
+ * (`api/src/shell.rs`, docs/DECISIONS.md #17).
+ */
+export function getStaticPaths() {
+  return [{ params: { repo: REPO_SHELL_PARAM } }];
+}
+---
+
+<RepoLayout active="log" title="Log — Axgit">
+  <CommitLog client:only="react">
+    <div slot="fallback"><CommitLogSkeleton /></div>
+  </CommitLog>
+</RepoLayout>

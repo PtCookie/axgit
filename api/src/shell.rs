@@ -27,14 +27,29 @@ pub const REPO_SHELL_PARAM: &str = "__repo__";
 fn shell_for(path: &str) -> (PathBuf, StatusCode) {
     let mut segments = path.split('/').filter(|segment| !segment.is_empty());
 
-    match (segments.next(), segments.next(), segments.next()) {
-        (None, _, _) => (PathBuf::from("index.html"), StatusCode::OK),
-        (Some(_), None, _) => (
+    match (
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+    ) {
+        (None, _, _, _) => (PathBuf::from("index.html"), StatusCode::OK),
+        (Some(_), None, _, _) => (
             Path::new(REPO_SHELL_PARAM).join("index.html"),
             StatusCode::OK,
         ),
-        (Some(_), Some("refs"), None) => (
+        (Some(_), Some("refs"), None, _) => (
             Path::new(REPO_SHELL_PARAM).join("refs").join("index.html"),
+            StatusCode::OK,
+        ),
+        (Some(_), Some("log"), None, _) => (
+            Path::new(REPO_SHELL_PARAM).join("log").join("index.html"),
+            StatusCode::OK,
+        ),
+        (Some(_), Some("commit"), Some(_), None) => (
+            Path::new(REPO_SHELL_PARAM)
+                .join("commit")
+                .join("index.html"),
             StatusCode::OK,
         ),
         _ => (PathBuf::from("404.html"), StatusCode::NOT_FOUND),
@@ -112,8 +127,44 @@ mod tests {
     }
 
     #[test]
+    fn repo_log_paths_map_to_the_log_shell() {
+        for path in ["/git-compose/log", "/git-compose/log/"] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM).join("log").join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn repo_commit_paths_map_to_the_commit_shell() {
+        for path in ["/git-compose/commit/abc123", "/git-compose/commit/abc123/"] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM)
+                        .join("commit")
+                        .join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
     fn unmatched_shapes_map_to_the_404_shell() {
-        for path in ["/git-compose/log", "/git-compose/tree/src", "/a/b/c"] {
+        for path in [
+            "/git-compose/tree/src",
+            "/git-compose/commit",
+            "/git-compose/commit/abc123/extra",
+            "/git-compose/stats",
+            "/a/b/c",
+        ] {
             assert_eq!(
                 shell_for(path),
                 (PathBuf::from("404.html"), StatusCode::NOT_FOUND),

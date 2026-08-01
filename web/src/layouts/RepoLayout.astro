@@ -2,19 +2,32 @@
 import Layout from "./Layout.astro";
 import RepoNav from "../components/repo/RepoNav.astro";
 
+type Active = "summary" | "refs" | "log" | "commit";
+
 interface Props {
   /** Which tab renders as current; also selects the document title shape. */
-  active: "summary" | "refs";
+  active: Active;
   /** Static <title>, shown until the inline script substitutes the repo name. */
   title?: string;
 }
 
 const { active, title } = Astro.props;
-const titleSuffix = active === "refs" ? " refs — Axgit" : " — Axgit";
+
+const TITLE_SUFFIXES: Record<Active, string> = {
+  summary: " — Axgit",
+  refs: " refs — Axgit",
+  log: " log — Axgit",
+  commit: " commit — Axgit",
+};
+const titleSuffix = TITLE_SUFFIXES[active];
+
+// Commit detail isn't its own tab — it's a drill-down from the log — so the
+// nav bar highlights "Log" while the page is showing a commit.
+const navActive = active === "commit" ? "log" : active;
 ---
 
 <Layout title={title}>
-  <RepoNav active={active} />
+  <RepoNav active={navActive} />
   {
     /*
       Everything on a repository page is static except the repository *name*:
