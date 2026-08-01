@@ -26,5 +26,7 @@ export function shellFor(pathname: string): string {
   // blob: at least one path segment is required — there's nothing to show
   // for `/{repo}/blob` itself.
   if (segments.length >= 3 && segments[1] === "blob") return `/${REPO_SHELL_PARAM}/blob`;
+  // blame: same "at least one path segment" rule as blob.
+  if (segments.length >= 3 && segments[1] === "blame") return `/${REPO_SHELL_PARAM}/blame`;
   return "/404";
 }

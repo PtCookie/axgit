@@ -154,6 +154,24 @@ const BLOB_MAIN = {
   content: 'fn main() {\n    println!("hi");\n}\n',
 };
 
+const BLAME_MAIN = {
+  sha: COMMIT_SHA,
+  path: "src/main.rs",
+  binary: false,
+  too_large: false,
+  lines: 3,
+  ranges: [
+    {
+      start_line: 1,
+      line_count: 3,
+      sha: COMMIT_SHA,
+      summary: "fix: update the readme",
+      author: { name: "Ada Lovelace", email_hash: "deadbeef" },
+      authored_at: "2026-07-24T13:06:00+09:00",
+    },
+  ],
+};
+
 test("navigates from the tree into a subdirectory and a file", async ({ page }) => {
   await page.route("**/api/v1/repos/git-compose", async (route) => {
     await route.fulfill({ json: SUMMARY });
@@ -183,6 +201,15 @@ test("navigates from the tree into a subdirectory and a file", async ({ page }) 
 
   await expect(page).toHaveURL("/git-compose/blob/src/main.rs");
   await expect(page.getByText('println!("hi");')).toBeVisible();
+
+  await page.route("**/api/v1/repos/git-compose/blame/HEAD/src/main.rs", async (route) => {
+    await route.fulfill({ json: BLAME_MAIN });
+  });
+  await page.getByRole("link", { name: "Blame" }).click();
+
+  await expect(page).toHaveURL("/git-compose/blame/src/main.rs");
+  await expect(page.getByText('println!("hi");')).toBeVisible();
+  await expect(page.getByText("Ada Lovelace")).toBeVisible();
 });
 
 test("shows a not-found page for unsupported sub-routes", async ({ page }) => {

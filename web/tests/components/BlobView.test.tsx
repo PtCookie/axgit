@@ -43,13 +43,16 @@ describe("BlobView", () => {
     expect(mockedGetBlob).toHaveBeenCalledWith("git-compose", undefined, "README.md");
   });
 
-  it("links to the raw endpoint and the path-filtered log", async () => {
+  it("links to the raw endpoint, blame, and the path-filtered log", async () => {
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);
     render(<BlobView repo="git-compose" path="README.md" />);
 
     await expect
       .element(page.getByRole("link", { name: "Raw" }))
       .toHaveAttribute("href", "/api/v1/repos/git-compose/raw/HEAD/README.md");
+    await expect
+      .element(page.getByRole("link", { name: "Blame" }))
+      .toHaveAttribute("href", "/git-compose/blame/README.md");
     await expect
       .element(page.getByRole("link", { name: "History" }))
       .toHaveAttribute("href", "/git-compose/log?path=README.md");

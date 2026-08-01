@@ -1,17 +1,10 @@
-import { encodePath, encodeSegment } from "@/lib/api/path";
+import { treeHref } from "@/lib/repo-href";
 
 interface PathBreadcrumbsProps {
   repo: string;
   /** `/`-joined path, empty for the tree root. */
   path: string;
   ref?: string;
-}
-
-/** Builds a `/{repo}/tree/{path}` href, shared with `TreeView` (the parent-
- *  directory row uses the same link shape as a breadcrumb ancestor). */
-export function treeHref(repo: string, path: string, ref: string | undefined) {
-  const query = ref ? `?ref=${encodeSegment(ref)}` : "";
-  return `/${encodeSegment(repo)}/tree${path ? `/${encodePath(path)}` : ""}${query}`;
 }
 
 /**

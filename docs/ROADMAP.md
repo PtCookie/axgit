@@ -311,28 +311,46 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - No API contract change — `docs/API.md`/`docs/openapi.json` untouched; `schemas.ts` gained
     `TreeListing`/`TreeEntryInfo`/`EntryKind`/`BlobInfo` aliases.
 
-## Next up: blame page
+- **`/{repo}/blame/[...path]` page** (DECISIONS.md #20). The last v1-scope web page — closed the
+  final gap versus cgit. Finalized design:
+  - `BlameView` fetches `getBlame`/`getBlob` in parallel (the blame response has no file content)
+    and renders `blob.content` with the ranges laid over it.
+  - `CodeBlock.tsx` gained an optional `gutter` prop (`(GutterCell | null)[]`, `rowSpan`-merged
+    per range) instead of a separate blame code viewer; omitted by every existing caller, so
+    tree/blob rendering is unaffected.
+  - Gutter is compact cgit-style: short sha link + relative time + author name, summary as a
+    tooltip only.
+  - Entry is blob-only — a "Blame" link on `BlobView`, no dedicated nav tab (`RepoLayout.astro`
+    treats `blame` like `blob` for the active-tab highlight). Routing/shell wiring
+    (`web/src/pages/[repo]/blame/[...path].astro`, `shellFor`/`shell_for`) follows blob's pattern.
+  - `treeHref` moved out of `PathBreadcrumbs.tsx` into new `web/src/lib/repo-href.ts`, joined by
+    `blobHref`/`blameHref` — three components now need repo-page hrefs.
+  - No API contract change — `docs/API.md`/`docs/openapi.json` untouched; `schemas.ts` gained
+    `BlameInfo`/`BlameRange`, `lib/api/repos.ts` gained `getBlame`.
+
+## Next up: README rendering + archive/feed links
 
 ### Context
 
-`/{repo}/tree` and `/{repo}/blob` are now in place alongside summary/refs/log/commit. The one
-remaining v1-scope page is `/{repo}/blame/[...path]`, backed by the existing
-`GET /api/v1/repos/{repo}/blame/{ref}/{path...}` endpoint.
+Every v1-scope page (summary/refs/log/commit/tree/blob/blame) is now implemented. Two endpoints
+remain fully unused by the web app: `GET /api/v1/repos/{repo}/readme` (implemented, DECISIONS.md
+#11 already planned its rendering approach) and the `archive`/`feed.atom` endpoints (no web links
+point at them at all, even though they're directly downloadable/subscribable URLs).
 
 ### Things to review before starting
 
-- Routing follows the exact tree/blob pattern from the previous entry: a new
-  `src/pages/[repo]/blame/[...path].astro` shell (`getStaticPaths` with `path: undefined`), one
-  more `shellFor`/`shell_for` shape (`[repo, "blame", ..]`, requiring at least one path segment
-  like blob), and a nav tab — likely mapping back to "Tree" for the active-tab highlight, same as
-  blob.
-- The response shape (`BlameInfo`/`BlameRange`) is per-line-range, not per-line — check
-  `docs/API.md`'s blame section for the exact `ranges`/`lines` fields before designing the
-  component. `AuthorAvatar`/`formatRelativeTime`/`formatAbsoluteTime` are all reusable as-is.
-- `CodeBlock.tsx` (from the previous entry) renders line-numbered code with Shiki highlighting
-  already — blame likely wants a variant or a wrapping component that adds a per-range author
-  gutter alongside it rather than duplicating the line-numbering/highlighting logic.
-- ref stays `?ref=`-only; `path` is the whole route path after `/blame/`, same as tree/blob.
-- Everything else follows existing conventions: generated types get an alias added in
-  `schemas.ts`, the API client reuses `client.ts`'s `apiFetch`, tests are vitest browser mode
-  (`web/tests/`) + Playwright (`web/e2e/`).
+- README: render on the summary page (`RepoSummary.tsx`), below the existing metadata — react-
+  markdown + rehype-sanitize per DECISIONS.md #11 (repository content is untrusted, same rule
+  `linkify.tsx`/Shiki tokens already follow — never `dangerouslySetInnerHTML`). The endpoint
+  returns 404 when no readme candidate is found; treat that as "no readme section", not an error
+  state. Check `docs/API.md`'s readme section for the exact response shape (format enum, content).
+- Archive/feed: these are plain links, not fetched data — `getBlob`-style API calls aren't needed.
+  Add `archiveUrl(repo, ref, format)`/`feedUrl(repo)` alongside `rawUrl` in `lib/api/repos.ts`
+  (`apiUrl` is already exported from `client.ts` for exactly this "link-only" case, see `rawUrl`).
+  Likely surfaced from `RepoSummary.tsx` (e.g. "Download: tar.gz / zip" + an Atom feed link) —
+  `refs.branches`/`refs.tags` already give the ref names for an archive-per-ref UI if wanted, or
+  start with just HEAD.
+- No new page/route needed for either — no `shellFor`/`shell_for` change, no DECISIONS.md
+  "three-places-at-once" routing cost this time.
+- Everything else follows existing conventions: generated types get aliases added in
+  `schemas.ts` if needed, tests are vitest browser mode (`web/tests/`) + Playwright (`web/e2e/`).

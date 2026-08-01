@@ -24,3 +24,5 @@ export type TreeListing = components["schemas"]["TreeListing"];
 export type TreeEntryInfo = components["schemas"]["TreeEntryInfo"];
 export type EntryKind = components["schemas"]["EntryKind"];
 export type BlobInfo = components["schemas"]["BlobInfo"];
+export type BlameInfo = components["schemas"]["BlameInfo"];
+export type BlameRange = components["schemas"]["BlameRange"];

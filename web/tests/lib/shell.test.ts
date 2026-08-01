@@ -55,10 +55,22 @@ describe("shellFor", () => {
     }
   });
 
+  it("maps repo blame paths to the placeholder blame shell", () => {
+    for (const path of [
+      "/git-compose/blame/src/main.rs",
+      "/git-compose/blame/src/main.rs/",
+      "/git-compose/blame/README.md",
+    ]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/blame`);
+    }
+  });
+
   it("maps unmatched shapes to /404", () => {
     for (const path of [
       "/git-compose/blob",
       "/git-compose/blob/",
+      "/git-compose/blame",
+      "/git-compose/blame/",
       "/git-compose/commit",
       "/git-compose/commit/abc123/extra",
       "/git-compose/stats",

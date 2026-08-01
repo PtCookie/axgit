@@ -1,6 +1,7 @@
 import { apiFetch, apiUrl } from "./client";
 import { encodePath, encodeSegment } from "./path";
 import type {
+  BlameInfo,
   BlobInfo,
   CommitDetail,
   CommitDiff,
@@ -77,6 +78,10 @@ export function getTree(name: string, ref: string | undefined, path: string): Pr
 
 export function getBlob(name: string, ref: string | undefined, path: string): Promise<BlobInfo> {
   return apiFetch<BlobInfo>(`/repos/${encodeSegment(name)}/blob/${refPathSegment(ref, path)}`);
+}
+
+export function getBlame(name: string, ref: string | undefined, path: string): Promise<BlameInfo> {
+  return apiFetch<BlameInfo>(`/repos/${encodeSegment(name)}/blame/${refPathSegment(ref, path)}`);
 }
 
 /** Link-only (never `fetch`ed by the client) — the raw content is streamed

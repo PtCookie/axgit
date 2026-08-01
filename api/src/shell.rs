@@ -61,6 +61,12 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
             Path::new(REPO_SHELL_PARAM).join("blob").join("index.html"),
             StatusCode::OK,
         ),
+        // Same "at least one path segment" rule as blob — there's nothing to
+        // blame without a file.
+        [_repo, "blame", _first, ..] => (
+            Path::new(REPO_SHELL_PARAM).join("blame").join("index.html"),
+            StatusCode::OK,
+        ),
         _ => (PathBuf::from("404.html"), StatusCode::NOT_FOUND),
     }
 }
@@ -203,10 +209,30 @@ mod tests {
     }
 
     #[test]
+    fn repo_blame_paths_map_to_the_blame_shell() {
+        for path in [
+            "/git-compose/blame/src/main.rs",
+            "/git-compose/blame/src/main.rs/",
+            "/git-compose/blame/README.md",
+        ] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM).join("blame").join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
     fn unmatched_shapes_map_to_the_404_shell() {
         for path in [
             "/git-compose/blob",
             "/git-compose/blob/",
+            "/git-compose/blame",
+            "/git-compose/blame/",
             "/git-compose/commit",
             "/git-compose/commit/abc123/extra",
             "/git-compose/stats",

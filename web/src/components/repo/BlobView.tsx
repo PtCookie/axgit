@@ -6,6 +6,7 @@ import { getBlob, rawUrl } from "@/lib/api/repos";
 import type { BlobInfo } from "@/lib/api/schemas";
 import { formatSize } from "@/lib/format/size";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
+import { blameHref } from "@/lib/repo-href";
 import CodeBlock from "@/components/repo/CodeBlock";
 import PathBreadcrumbs from "@/components/repo/PathBreadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -98,6 +99,9 @@ export default function BlobView({ repo, path, ref: refParam }: BlobViewProps) {
         <span>{formatSize(blob.size)}</span>
         <a className="hover:text-foreground hover:underline" href={raw}>
           Raw
+        </a>
+        <a className="hover:text-foreground hover:underline" href={blameHref(resolvedRepo, resolvedPath, resolvedRef)}>
+          Blame
         </a>
         <a className="hover:text-foreground hover:underline" href={logHref}>
           History

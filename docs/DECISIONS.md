@@ -302,3 +302,33 @@ plus two smaller choices made alongside them.
   `getTree`/`getBlob`/`rawUrl` to `lib/api/repos.ts`, reusing `apiFetch`. `ref` continues to be
   `?ref=`-only (#18); when absent, the literal string `HEAD` is passed as the API path's `{ref}`
   segment rather than fetching the refs list to resolve a default.
+
+## #20 `/{repo}/blame` page
+
+The final v1-scope web page — `/{repo}/tree`/`/{repo}/blob` (#19) covered browsing, this closes the
+last gap versus cgit.
+
+- **The blame response carries no file content** (docs/API.md) — `BlameView` fetches
+  `getBlame`/`getBlob` in parallel (`Promise.all`, same shape as `CommitView`'s detail + diff) and
+  renders `blob.content` with the blame ranges laid over it.
+- **`CodeBlock.tsx` gained an optional `gutter` prop** rather than a parallel blame-specific code
+  viewer — a `(GutterCell | null)[]` indexed like the content's lines, where `GutterCell.rowSpan`
+  merges one `<td>` down over a whole blame range (the table already has one `<tr>` per line, so
+  this only needed one more column). `gutter` omitted (every existing caller) renders identically
+  to before the prop existed. `BlameView`'s `buildGutter` fills the array from `BlameRange[]` and
+  pads any trailing display-only lines (e.g. the empty element `content.split("\n")` produces after
+  a final newline) with a blank one-row cell so the column stays aligned.
+- **Gutter content is compact, cgit-style**: short (7-char) sha linking to `/{repo}/commit/{sha}`,
+  relative time, author name — the commit summary is a `title` tooltip only, no avatar, to keep the
+  code column wide.
+- **Entry is blob-only, no dedicated nav tab** — `BlobView` gained a "Blame" link next to
+  Raw/History; `RepoNav.astro`'s four tabs are unchanged, and `RepoLayout.astro`'s active-tab
+  mapping treats `blame` like `blob` (highlights "Tree"). Routing otherwise follows blob's pattern
+  exactly: `web/src/pages/[repo]/blame/[...path].astro`, one more `shellFor`/`shell_for` segment-
+  slice arm requiring at least one path segment (`api/src/shell.rs`, `web/src/lib/shell.ts`).
+- **`treeHref` moved out of `PathBreadcrumbs.tsx`** into a new `web/src/lib/repo-href.ts`, alongside
+  new `blobHref`/`blameHref` siblings — three call sites (`TreeView`, `BlobView`, `BlameView`) all
+  need repo-page hrefs now, so centralizing avoided a fourth ad hoc `` `/${encodeSegment(repo)}/...` ``
+  construction.
+- No API contract change — `docs/API.md`/`docs/openapi.json` untouched; `schemas.ts` gained
+  `BlameInfo`/`BlameRange` aliases, `lib/api/repos.ts` gained `getBlame`.

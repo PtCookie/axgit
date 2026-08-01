@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { encodePath, encodeSegment } from "@/lib/api/path";
 import { getTree } from "@/lib/api/repos";
 import type { EntryKind, TreeListing } from "@/lib/api/schemas";
 import { formatSize } from "@/lib/format/size";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
-import PathBreadcrumbs, { treeHref } from "@/components/repo/PathBreadcrumbs";
+import { blobHref, treeHref } from "@/lib/repo-href";
+import PathBreadcrumbs from "@/components/repo/PathBreadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -39,13 +39,12 @@ export function TreeViewSkeleton() {
 }
 
 function entryHref(kind: EntryKind, repo: string, path: string, ref: string | undefined): string | undefined {
-  const query = ref ? `?ref=${encodeSegment(ref)}` : "";
   switch (kind) {
     case "tree":
       return treeHref(repo, path, ref);
     case "blob":
     case "symlink":
-      return `/${encodeSegment(repo)}/blob/${encodePath(path)}${query}`;
+      return blobHref(repo, path, ref);
     case "commit":
       // A submodule gitlink has no content in this repository to link to.
       return undefined;
