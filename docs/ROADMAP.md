@@ -380,37 +380,65 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     untouched. No `api/src` changes were needed at all; `config.rs`'s existing env-driven `Config`
     already covered every setting the image needs.
 
-## Next up: Dark mode toggle
+- **3-way theme selector, System / Light / Dark** (DECISIONS.md #23). Activated the `.dark` token
+  block `global.css` has carried since #19 without anything ever applying the class. Finalized
+  design:
+  - `Layout.astro`'s `<head>` gained an `is:inline` script that reads `localStorage["axgit:theme"]`
+    (try/catch — storage throws outright when disabled) falling back to `prefers-color-scheme`, and
+    sets both the preference (`<html data-theme>`) and the resolved value (the `dark` class) before
+    the document has a body — the same "flash of empty content" lesson #17 recorded for
+    `RepoLayout.astro`'s fill-in script.
+  - The control is `components/ThemeToggle.tsx`, a `client:only="react"` island (`RepoList`'s
+    pattern) using shadcn's `dropdown-menu` (Base UI `Menu`, already a dependency via
+    `ui/button.tsx`) with a `RadioGroup`/`RadioItem` for the three options. Its trigger renders all
+    three System/Light/Dark Phosphor icons unconditionally; a `global.css` rule reveals only the one
+    matching `<html data-theme>`, so the prerendered static fallback already shows the right icon
+    before the island hydrates. `components.json`'s `iconLibrary: "phosphor"` was declared but
+    unused until now.
+  - `global.css`: `color-scheme` on `:root`/`.dark`, `@custom-variant dark` widened to
+    `&:is(.dark, .dark *)` (the class lands on `<html>` itself, which shadcn's descendant-only form
+    excludes), and the icon-visibility rule above. `.dark --primary` was raised from
+    `oklch(0.432 …)` to `oklch(0.72 0.13 166)` — shadcn's generated value was *darker* than light
+    mode's, invisible until `.dark` went live, and put every `text-primary` link and the active-tab
+    underline under ~3:1 contrast.
+  - Only one place in the app needed a dark variant added — `CommitView.tsx`'s
+    `bg-green-500/10`/`bg-red-500/10` diff-line backgrounds; everything else was already on
+    semantic tokens. Shiki's dual-theme output (#19) needed no change and works as designed; this
+    is the first time `.dark .shiki-code span` has ever been exercised.
+  - `web/e2e/theme.spec.ts` (new) covers default-from-OS resolution, explicit override, reload
+    persistence, live OS-change tracking while set to `system`, and that the served shell bakes in
+    no theme of its own. Untestable at the vitest-browser-mode layer by construction (no Astro
+    layout is rendered there), same as `RepoLayout.astro`'s script.
+  - No new page/route, so no `shellFor`/`shell_for` change. No API contract change.
+
+## Next up: Repository search
 
 ### Context
 
-`web/src/styles/global.css` already carries `.dark` overrides (added for Shiki's dual-theme token
-styling, see the tree/blob DECISIONS.md entry) but nothing in the app ever applies a `dark` class —
-the styling is inert. Every other v1-scope page/endpoint and the deployment image are now done, so
-this is the next visible gap versus a typical modern web app (cgit itself has no dark mode, but
-there's no reason not to have one now that half the CSS already exists).
+DECISIONS.md #9 explicitly excluded search from v1 scope ("Excluded (for later): stats, repository
+search, HTTP push"). Every v1 page and dark mode are now done, making this and commit-statistics
+graphs (`stats`, the other #9 exclusion) the remaining gaps versus cgit. Search is the more useful
+of the two for a self-hosted server with a growing number of repositories.
 
 ### Things to review before starting
 
-- Find every place `.dark` is currently referenced (`grep -rn "\.dark" web/src`) to see the full
-  extent of what's already styled vs. what still needs a dark-mode rule added.
-- Decide the toggle mechanism given the "no client-side router, mostly static-shell" architecture
-  (DECISIONS.md #16/#17): an `is:inline` script in `Layout.astro` (matching the pattern
-  `RepoLayout.astro` already uses for filling in repo name/tabs before first paint) that reads
-  `localStorage`/`prefers-color-scheme` and sets a `data-theme`/`class` attribute on `<html>`
-  before hydration, avoiding a flash of the wrong theme.
-  - the toggle control itself only needs to run client-side (a small island, or plain inline
-    script + a `<button>` with no React needed at all — consider whether pulling in a React
-    island is justified just for this).
-- Persisting the choice: `localStorage`, read synchronously by the inline script (blocking script
-  in `<head>`, not a deferred/module script — same "flash of empty content" lesson DECISIONS.md
-  #17 already hit with `RepoNav.astro`'s fill-in script).
-- Shiki tokens: `lib/format/highlight.ts` already emits both `color` and `--shiki-dark` inline
-  styles per DECISIONS.md's tree/blob entry — confirm the `.dark .shiki-code span` CSS rule
-  actually picks up `--shiki-dark` correctly once `.dark` can actually be applied (this is the
-  first time it'll be exercised for real).
-- shadcn/ui components (`web/src/components/ui/`) — check whether they already have dark-mode
-  Tailwind classes baked in (typical for shadcn's generated output) or need adjustment.
-- Verification: manual toggle in the browser (light → dark → light, reload persists the choice,
-  first paint has no flash) across at least one page from each major view (list, summary+readme,
-  log, commit diff, tree, blob with Shiki, blame).
+- Scope the first cut: filtering the existing repo list client-side (name/description/owner —
+  data already fetched by `RepoList.tsx`, zero API change) is the cheap, obviously-in-bounds
+  version. Searching *inside* file contents or commit messages is a much bigger step (needs a new
+  API endpoint, and likely an index — bare repos have no full-text search built in) and should be
+  scoped as a separate follow-up rather than bundled in here.
+- If a content-search API endpoint is added later: decide whether it shells out to `git grep`
+  per-request (simple, matches the existing "exec for heavy operations" pattern in
+  `smart_http.rs`/archive handling, but scans the whole tree every call) or needs a real index —
+  and if so, where it lives given the container is otherwise stateless and `/srv/git` is
+  read-only (CLAUDE.md's core invariants: no writes outside SSH-to-git-server, repos are read-only
+  bare repos). An index would be the first piece of mutable, persistent state this app has ever
+  needed.
+- Keep the read-only invariant in view: search is inherently a read operation, but a naive
+  `git grep`-per-request implementation over many/large repos could become a resource-exhaustion
+  vector — worth at least a size/timeout bound before shipping, consistent with the existing
+  archive/diff/blob caps (1000 lines/file, 300 files/diff, 1 MiB blob, etc. — see docs/API.md).
+- Decide where the UI lives: a search box on the repo list (matches the client-side-filter scope
+  above) vs. a per-repository search page (`/{repo}/search`, which would need a new route shape in
+  both `web/src/lib/shell.ts::shellFor` and `api/src/shell.rs::shell_for`, per the "adding a route"
+  rule in CLAUDE.md).

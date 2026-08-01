@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import ThemeToggle, { ThemeToggleFallback } from "../components/ThemeToggle";
 
 interface Props {
   title?: string;
@@ -18,11 +19,60 @@ const { title = "Axgit" } = Astro.props;
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content="Self-hosted Git repository web viewer" />
     <title>{title}</title>
+    {
+      /*
+        Resolves the theme onto <html> before the document has a body, so no
+        paint ever happens with the wrong one. `is:inline` keeps this a
+        synchronous classic script — a bundled `<script>` becomes a deferred
+        `type="module"` and would flash the light theme on every load for
+        anyone on dark, the same lesson RepoLayout.astro's fill-in script
+        records. `data-theme-init` is both the e2e test hook and, per Astro's
+        rules, what makes `is:inline` structural: any non-`src` attribute
+        already implies it.
+
+        `data-theme` on <html> is the stored *preference*
+        (system|light|dark); the `dark` class is the *resolved* value, which
+        is what global.css's `@custom-variant dark` and `.dark {}` token
+        block key off. The preference is deliberately never rendered
+        server-side: the page shells are prerendered once per route shape
+        and served with `Cache-Control: no-cache` to every visitor
+        (docs/DECISIONS.md #17), so nothing user-specific may be baked into
+        the HTML — the mechanism has to be client-side.
+
+        The counterpart that wires the toggle itself lives in
+        `components/ThemeToggle.tsx`.
+      */
+    }
+    <script is:inline data-theme-init>
+      {
+        let pref = "system";
+        try {
+          const stored = localStorage.getItem("axgit:theme");
+          if (stored === "system" || stored === "light" || stored === "dark") {
+            pref = stored;
+          }
+        } catch {
+          // localStorage access throws outright when storage is disabled or
+          // partitioned (private mode, some embedded webviews) — fall
+          // through to the OS preference rather than aborting the script and
+          // leaving the page unthemed.
+        }
+
+        document.documentElement.dataset.theme = pref;
+        document.documentElement.classList.toggle(
+          "dark",
+          pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches),
+        );
+      }
+    </script>
   </head>
   <body class="min-h-screen">
     <header class="border-border border-b">
-      <div class="mx-auto flex max-w-5xl items-center px-4 py-3">
+      <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
         <a href="/" class="font-heading text-lg font-medium">Axgit</a>
+        <ThemeToggle client:only="react">
+          <div slot="fallback"><ThemeToggleFallback /></div>
+        </ThemeToggle>
       </div>
     </header>
     <main class="mx-auto max-w-5xl px-4 py-6">

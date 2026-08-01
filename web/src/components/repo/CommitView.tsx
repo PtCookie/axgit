@@ -78,7 +78,12 @@ function AuthorLine({ label, author, at }: { label: string; author: CommitAuthor
 }
 
 function DiffLineRow({ line }: { line: Line }) {
-  const background = line.origin === "+" ? "bg-green-500/10" : line.origin === "-" ? "bg-red-500/10" : undefined;
+  const background =
+    line.origin === "+"
+      ? "bg-green-500/10 dark:bg-green-500/20"
+      : line.origin === "-"
+        ? "bg-red-500/10 dark:bg-red-500/20"
+        : undefined;
   return (
     <tr className={background}>
       <td className="text-muted-foreground w-10 shrink-0 px-2 text-right font-mono select-none">

@@ -4,9 +4,19 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
-@custom-variant dark (&:is(.dark *));
+/* The `dark` class is set on <html> itself (`Layout.astro`'s theme script),
+ * so the variant has to match the element carrying the class as well as its
+ * descendants — shadcn's stock `.dark *` would silently no-op any `dark:`
+ * utility used on <html> (and `@layer base` already has an `html { … }`
+ * rule). Both branches have the same specificity, so `:is()` doesn't change
+ * how these utilities rank against anything else. */
+@custom-variant dark (&:is(.dark, .dark *));
 
 :root {
+    /* Renders scrollbars, form controls and the canvas in the matching
+     * scheme. Keyed to the resolved theme class rather than
+     * `prefers-color-scheme`, so a manual override reaches native UI too. */
+    color-scheme: light;
     --background: oklch(1 0 0);
     --foreground: oklch(0.148 0.004 228.8);
     --card: oklch(1 0 0);
@@ -42,13 +52,21 @@
 }
 
 .dark {
+    color-scheme: dark;
     --background: oklch(0.148 0.004 228.8);
     --foreground: oklch(0.987 0.002 197.1);
     --card: oklch(0.218 0.008 223.9);
     --card-foreground: oklch(0.987 0.002 197.1);
     --popover: oklch(0.218 0.008 223.9);
     --popover-foreground: oklch(0.987 0.002 197.1);
-    --primary: oklch(0.432 0.095 166.913);
+    /* shadcn's generated value here (oklch(0.432 0.095 166.913)) was
+     * *darker* than the light theme's --primary — backwards for a dark
+     * theme, and invisible until now because this block was inert (nothing
+     * ever applied `.dark`). At the original value every `text-primary`
+     * link and the active-tab underline sat under ~3:1 against
+     * --background. Raised to line up with --sidebar-primary below, which
+     * was already correct (see DECISIONS.md #23). */
+    --primary: oklch(0.72 0.13 166);
     --primary-foreground: oklch(0.979 0.021 166.113);
     --secondary: oklch(0.274 0.006 286.033);
     --secondary-foreground: oklch(0.985 0 0);
@@ -145,4 +163,20 @@
  */
 .dark .shiki-code span {
     color: var(--shiki-dark) !important;
+}
+
+/*
+ * The theme trigger (`components/ThemeToggle.tsx`) renders all three
+ * System/Light/Dark icons; this reveals only the one matching the stored
+ * preference. That means the trigger already shows the right icon at first
+ * paint — before the island hydrates and while only the static fallback
+ * exists — with no client-side branching needed to pick it.
+ */
+[data-theme-icon] {
+    display: none;
+}
+html[data-theme="system"] [data-theme-icon="system"],
+html[data-theme="light"] [data-theme-icon="light"],
+html[data-theme="dark"] [data-theme-icon="dark"] {
+    display: block;
 }

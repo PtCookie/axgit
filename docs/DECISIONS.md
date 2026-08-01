@@ -430,3 +430,80 @@ implemented.
   crates by `api/Cargo.lock` + `--locked`. Digest-pinning (`@sha256:...`) would be stricter still
   but is deferred — bumping the minor tags is expected to be a deliberate, separate commit either
   way.
+
+## #23 3-way theme selector (System / Light / Dark)
+
+Made the `.dark` token block live: it has been in `global.css` since #19, added for Shiki's
+dual-theme tokens, with nothing in the app ever applying the class.
+
+- **Two `is:inline` scripts, no client-only React logic for the resolve itself.** The pre-paint
+  half must be a synchronous classic script in `<head>` (`Layout.astro`) — a bundled `<script>` is
+  deferred (`type="module"`) and flashes the light theme on every load, the same lesson #17
+  recorded for `RepoNav.astro`'s fill-in script. `<html data-theme>` carries the stored
+  *preference* (`system`/`light`/`dark`); the `dark` class carries the *resolved* value, which is
+  what `@custom-variant dark` and the `.dark {}` token block key off. Neither is ever rendered
+  server-side: the shells are prerendered once per route shape and served to every visitor with
+  `Cache-Control: no-cache` (#17), so a cookie-driven, server-rendered theme is structurally
+  unavailable here — the mechanism has to be client-side.
+- **The toggle control is a `ThemeToggle` React island (`client:only="react"`, with a static
+  `slot="fallback"`)**, following the existing `RepoList` pattern rather than more inline script.
+  Its trigger renders all three System/Light/Dark icons unconditionally; `global.css` reveals only
+  the one matching `<html data-theme>`, so the correct icon already shows in the prerendered
+  fallback, before the island hydrates. The icons are Phosphor React components — `iconLibrary:
+  "phosphor"` in `components.json` had been declared but unused until now.
+- **shadcn's `dropdown-menu` (Base UI `Menu`) with a `RadioGroup`/`RadioItem` for the three
+  options**, generated via `shadcn add dropdown-menu` and reformatted with `prettier` to match the
+  repo's style (no new runtime dependency — `@base-ui/react` was already installed for
+  `ui/button.tsx`). `MenuRadioItem` renders `role="menuitemradio"` with `aria-checked` natively, so
+  no custom ARIA wiring was needed. Selecting an item does not close the menu (Base UI's/Radix's
+  documented default for radio items), which doubles as a quick way to preview each theme.
+- **`global.css`**: `color-scheme: light`/`dark` on `:root`/`.dark` (scrollbars, native form
+  controls, the canvas) keyed to the resolved class rather than `prefers-color-scheme`, so a manual
+  override reaches native UI too; `@custom-variant dark` widened from shadcn's `&:is(.dark *)` to
+  `&:is(.dark, .dark *)` — the class lands on `<html>` itself, which the descendant-only form
+  excludes, and `@layer base` already styles `html`; and a small rule that shows only the
+  `data-theme-icon` matching `<html data-theme>`, so the trigger's icon is correct at first paint
+  with no client-side branching. No transition-suppression rule was added: the only
+  `transition-colors` on a rendered element is `ui/table.tsx`'s row, whose background is
+  transparent outside `:hover`, so nothing visibly animates on a switch.
+- **`.dark --primary` was raised from `oklch(0.432 0.095 166.913)` to `oklch(0.72 0.13 166)`.**
+  shadcn's generated dark primary was *darker* than its light one — backwards for a dark theme, and
+  invisible until now because `.dark` was inert. At the original value every `text-primary` link
+  (`RepoSummary`, `ReadmeView`, `404.astro`), `RepoNav`'s `border-primary` active-tab underline and
+  `CodeBlock`'s `target:bg-primary/10` line highlight sat under ~3:1 against `--background`. The
+  block was already internally inconsistent about this: `--sidebar-primary` in dark is
+  `oklch(0.696 0.17 162.48)`, in the same range as the new value. Verified visually across the
+  repo list, summary, log, commit diff, tree, blob (Shiki), and blame views.
+- **`CommitView.tsx`'s `bg-green-500/10`/`bg-red-500/10` diff-line backgrounds were the only place
+  in the app needing a dark variant** (now `dark:bg-green-500/20`/`dark:bg-red-500/20`) —
+  everything else was already on semantic tokens and flips for free. Shiki (#19) needed no change
+  at all; this is the first time `.dark .shiki-code span { color: var(--shiki-dark) !important }`
+  has ever been exercised, and it renders correctly.
+- **Testing**: `web/e2e/theme.spec.ts` covers default-from-`colorScheme` emulation (both light and
+  dark OS), an explicit choice overriding the OS preference, persistence across reload, live
+  OS-change tracking while the preference is `system`, and the invariant that the served HTML's
+  `<html>` tag carries no theme of its own. `web/tests/` (vitest browser mode) gained nothing: it
+  renders bare React components with no Astro layout, and the theme-resolve logic can't be
+  extracted into an importable module without bundling it into a deferred script — the exact flash
+  the design exists to prevent — so the head script is only reachable from e2e, same as
+  `RepoLayout.astro`'s fill-in script.
+  - Two Playwright/CDP quirks surfaced and were worked around in the test file, not the app:
+    `colorScheme` emulation updates `matchMedia(...).matches` but does not reliably dispatch the
+    MediaQueryList `"change"` event, and each `matchMedia()` call mints a distinct object, so an
+    externally-dispatched event doesn't reach a listener attached to a different instance. The
+    OS-tracking test pins the query to one shared object via `addInitScript` before the app's own
+    (unmodified) `matchMedia()` calls run, then dispatches on that object — exercising the same
+    listener a real OS-level toggle would notify.
+  - A screenshot-based no-flash assertion was rejected: there is no API that observes "the class
+    was set before first paint" (anything queryable via `page.evaluate` already runs after it), and
+    Playwright drives `astro dev`, where Vite injects the compiled stylesheet as an inline
+    `<style>` block and produces a FOUC the static build doesn't have — a screenshot would measure
+    a dev-server artifact. The structural equivalent is asserted instead: the theme script is a
+    synchronous, non-deferred, `src`-less script in `<head>`.
+- **Known limitation**: README images are arbitrary repository content, so a transparent PNG with
+  dark artwork can be invisible in dark mode. The usual fix (authored `prefers-color-scheme`
+  `<picture>` sources) is unavailable because `rehype-sanitize` with no `rehype-raw` strips it
+  (#21).
+- No new page/route, so no `shellFor`/`shell_for` change. No API contract change — `docs/API.md`,
+  `docs/openapi.json`, and `web/src/lib/api/types.ts` are untouched, and `api/src` is not touched
+  at all.
