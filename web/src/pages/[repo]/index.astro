@@ -1,6 +1,7 @@
 ---
 import RepoLayout from "../../layouts/RepoLayout.astro";
 import RepoSummary, { RepoSummarySkeleton } from "../../components/repo/RepoSummary";
+import ReadmeView, { ReadmeViewSkeleton } from "../../components/repo/ReadmeView";
 import { REPO_SHELL_PARAM } from "../../lib/shell";
 
 /**
@@ -15,7 +16,12 @@ export function getStaticPaths() {
 ---
 
 <RepoLayout active="summary">
-  <RepoSummary client:only="react">
-    <div slot="fallback"><RepoSummarySkeleton /></div>
-  </RepoSummary>
+  <div class="space-y-8">
+    <RepoSummary client:only="react">
+      <div slot="fallback"><RepoSummarySkeleton /></div>
+    </RepoSummary>
+    <ReadmeView client:only="react">
+      <div slot="fallback"><ReadmeViewSkeleton /></div>
+    </ReadmeView>
+  </div>
 </RepoLayout>

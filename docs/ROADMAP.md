@@ -328,29 +328,61 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - No API contract change — `docs/API.md`/`docs/openapi.json` untouched; `schemas.ts` gained
     `BlameInfo`/`BlameRange`, `lib/api/repos.ts` gained `getBlame`.
 
-## Next up: README rendering + archive/feed links
+- **README rendering + archive/feed links** (DECISIONS.md #21). Closed the last "implemented but
+  unused by the web app" gap. Finalized design:
+  - `web/src/components/repo/ReadmeView.tsx` — new island, mounted on `/{repo}` below
+    `RepoSummary` (`pages/[repo]/index.astro`). react-markdown + remark-gfm + rehype-sanitize (no
+    `rehype-raw`) for `format: "markdown"`; `rst`/`plain` render as `<pre>` (#11's plan, as-is).
+    A 404 (`path_not_found`/`ref_not_found`) renders nothing, not an error — kept as its own fetch/
+    island specifically so that doesn't touch `RepoSummary`'s error state.
+  - `web/src/lib/markdown-url.ts` (new, unit-tested) rewrites README-relative links/images to
+    `treeHref`/`blobHref`/`rawUrl` — otherwise every relative reference 404s against the page URL.
+  - `lib/format/highlight.ts` split its tokenizing tail into a private `tokenize`, adding
+    `highlightFence`/`languageForFence` alongside the existing `highlightCode`/`languageForPath` —
+    README code fences get Shiki highlighting too, via `ReadmeView`'s `pre` override + local
+    `MarkdownFence`. Hit a real bug here (see DECISIONS.md #21): react-markdown substitutes a
+    `code` override as the element's `type` itself, not the string `"code"`, so the fence-detection
+    check must compare identity against the component reference; the fix is now covered by a
+    component test that asserts on the actual highlighted DOM, not just fence text.
+  - `RepoSummary.tsx` gained two `dl` rows — `archiveUrl`/`feedUrl` (new, link-only, same pattern
+    as `rawUrl`) for HEAD-only tar.gz/zip download + an Atom feed link, hidden for an empty
+    repository alongside the existing "No commits yet." branch.
+  - No new page/route, no `shellFor`/`shell_for` change. No API contract change — `schemas.ts`
+    gained `ReadmeInfo`/`ReadmeFormat` aliases.
+
+## Next up: Dockerfile / single-container build
 
 ### Context
 
-Every v1-scope page (summary/refs/log/commit/tree/blob/blame) is now implemented. Two endpoints
-remain fully unused by the web app: `GET /api/v1/repos/{repo}/readme` (implemented, DECISIONS.md
-#11 already planned its rendering approach) and the `archive`/`feed.atom` endpoints (no web links
-point at them at all, even though they're directly downloadable/subscribable URLs).
+Every v1-scope page is implemented and every implemented API endpoint now has a web UI path to it.
+What's left is deployment: CLAUDE.md and DECISIONS.md #4 both describe "a multi-stage Dockerfile
+builds web → builds api → produces one runtime image," replacing the git-compose stack's `git-web`
+service — but no `Dockerfile` exists in the repo yet. This is the last thing standing between the
+current state and actually replacing cgit in a live git-compose deployment.
 
 ### Things to review before starting
 
-- README: render on the summary page (`RepoSummary.tsx`), below the existing metadata — react-
-  markdown + rehype-sanitize per DECISIONS.md #11 (repository content is untrusted, same rule
-  `linkify.tsx`/Shiki tokens already follow — never `dangerouslySetInnerHTML`). The endpoint
-  returns 404 when no readme candidate is found; treat that as "no readme section", not an error
-  state. Check `docs/API.md`'s readme section for the exact response shape (format enum, content).
-- Archive/feed: these are plain links, not fetched data — `getBlob`-style API calls aren't needed.
-  Add `archiveUrl(repo, ref, format)`/`feedUrl(repo)` alongside `rawUrl` in `lib/api/repos.ts`
-  (`apiUrl` is already exported from `client.ts` for exactly this "link-only" case, see `rawUrl`).
-  Likely surfaced from `RepoSummary.tsx` (e.g. "Download: tar.gz / zip" + an Atom feed link) —
-  `refs.branches`/`refs.tags` already give the ref names for an archive-per-ref UI if wanted, or
-  start with just HEAD.
-- No new page/route needed for either — no `shellFor`/`shell_for` change, no DECISIONS.md
-  "three-places-at-once" routing cost this time.
-- Everything else follows existing conventions: generated types get aliases added in
-  `schemas.ts` if needed, tests are vitest browser mode (`web/tests/`) + Playwright (`web/e2e/`).
+- Multi-stage: a web build stage (`pnpm install --filter web`, `pnpm --filter web build` →
+  `web/dist/`), an api build stage (`cargo build --release --manifest-path api/Cargo.toml`, needs
+  libgit2's build deps — check what `git2`'s `vendored` feature (if enabled) requires, or whether
+  system `libgit2`/`libssh2`/openssl dev packages need to be installed in the builder image), and a
+  slim runtime stage that copies just the `axgit` binary + `web/dist/` and runs
+  `axgit --repo-root /srv/git --static-dir ./dist` (see the `Commands` section of CLAUDE.md for the
+  equivalent local-run invocation).
+- Runtime image needs the `git` binary on `PATH` — archive/raw/smart_http all exec it
+  (ARCHITECTURE.md's hybrid libgit2+exec policy, DECISIONS.md #2/#12/#13). A minimal base (e.g.
+  `debian:*-slim` or `alpine`) needs `git` installed explicitly; confirm libgit2's runtime shared
+  libs are present too if not statically/vendored-linked.
+- `/srv/git` (`AXGIT_REPO_ROOT`) is a read-only mount from the git-server container — no write
+  access needed or wanted in the image (`Core invariants` in CLAUDE.md: strictly read-only, no
+  auth/authz).
+- Config surface to wire through as env vars/CLI flags (grep `api/src` for `std::env::var`/clap
+  args to enumerate the full set): repo root, static dir, listen address, cache TTL/size
+  (`AXGIT_CACHE_RESPONSE_*`), clone URL base (used by `RepoSummary`'s `clone_url`).
+- This replaces git-compose's `git-web` service definition — check whether git-compose.git (a
+  separate repo, referenced in CLAUDE.md's Overview) needs a corresponding compose-file change
+  documented here, or whether that's tracked entirely on that repo's side.
+- Verification: `docker build --tag axgit:latest .` (already documented in CLAUDE.md), then run the
+  image against `./fixtures/repos` (bind-mounted read-only) and confirm the same manual checks used
+  for prior sessions (repo list, summary, clone/fetch over the Smart HTTP endpoints) work through
+  the container.

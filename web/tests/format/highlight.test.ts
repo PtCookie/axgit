@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { highlightCode, languageForPath } from "@/lib/format/highlight";
+import { highlightCode, languageForFence, languageForPath } from "@/lib/format/highlight";
 
 describe("languageForPath", () => {
   it("maps known extensions to a Shiki language id", () => {
@@ -18,6 +18,29 @@ describe("languageForPath", () => {
     expect(languageForPath("data.bin")).toBeUndefined();
     expect(languageForPath("Makefile")).toBeUndefined();
     expect(languageForPath("noextension")).toBeUndefined();
+  });
+});
+
+describe("languageForFence", () => {
+  it("accepts a canonical Shiki language id", () => {
+    expect(languageForFence("rust")).toBe("rust");
+    expect(languageForFence("typescript")).toBe("typescript");
+  });
+
+  it("accepts an extension alias, same table as languageForPath", () => {
+    expect(languageForFence("rs")).toBe("rust");
+    expect(languageForFence("ts")).toBe("typescript");
+    expect(languageForFence("sh")).toBe("bash");
+  });
+
+  it("is case-insensitive and takes only the first whitespace-separated token", () => {
+    expect(languageForFence("JS title=example.js")).toBe("javascript");
+  });
+
+  it("returns undefined for an unmapped or empty info string", () => {
+    expect(languageForFence("brainfuck")).toBeUndefined();
+    expect(languageForFence("")).toBeUndefined();
+    expect(languageForFence("   ")).toBeUndefined();
   });
 });
 

@@ -13,6 +13,17 @@ const SUMMARY = {
   clone_url: "git@git.ptcookie.net:git-compose.git",
 };
 
+const README = {
+  path: "README.md",
+  format: "markdown",
+  // The heading text deliberately differs from the repo name ("git-compose")
+  // — that text is already used by the page's own `<h1>` (`RepoNav.astro`),
+  // and re-using it here would make `getByRole("heading")` ambiguous.
+  content: "# Getting started\n\nSee the [docs](./docs/setup.md) for setup.\n\n```sh\necho hello\n```\n",
+};
+
+const NO_README = { error: { code: "path_not_found", message: "no readme found" } };
+
 const REFS = {
   branches: [{ name: "main", target: "abc123def456", committed_at: "2026-07-24T13:06:00+09:00" }],
   tags: [
@@ -83,15 +94,30 @@ const COMMIT_DIFF = {
   ],
 };
 
-test("shows the repository summary and links to refs", async ({ page }) => {
+test("shows the repository summary, README, and links to refs", async ({ page }) => {
   await page.route("**/api/v1/repos/git-compose", async (route) => {
     await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/readme*", async (route) => {
+    await route.fulfill({ json: README });
   });
 
   await page.goto("/git-compose");
 
   await expect(page.getByRole("heading", { name: "git-compose" })).toBeVisible();
   await expect(page.getByText("Compose project of Git server")).toBeVisible();
+  await expect(page.getByRole("link", { name: "tar.gz" })).toHaveAttribute(
+    "href",
+    "/api/v1/repos/git-compose/archive/HEAD.tar.gz",
+  );
+  await expect(page.getByRole("link", { name: "Atom" })).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom");
+
+  // The README renders below the metadata, with its relative link rewritten
+  // to the repository's blob page and its code fence highlighted.
+  await expect(page.getByRole("heading", { name: "Getting started", level: 1 })).toBeVisible();
+  const docsLink = page.getByRole("link", { name: "docs" });
+  await expect(docsLink).toHaveAttribute("href", "/git-compose/blob/docs/setup.md");
+  await expect(page.getByText("echo hello")).toBeVisible();
 
   await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
     await route.fulfill({ json: REFS });
@@ -105,6 +131,9 @@ test("shows the repository summary and links to refs", async ({ page }) => {
 test("navigates from the log to a commit's detail", async ({ page }) => {
   await page.route("**/api/v1/repos/git-compose", async (route) => {
     await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/readme*", async (route) => {
+    await route.fulfill({ status: 404, json: NO_README });
   });
   await page.route("**/api/v1/repos/git-compose/commits", async (route) => {
     await route.fulfill({ json: COMMITS_PAGE });
@@ -175,6 +204,9 @@ const BLAME_MAIN = {
 test("navigates from the tree into a subdirectory and a file", async ({ page }) => {
   await page.route("**/api/v1/repos/git-compose", async (route) => {
     await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/readme*", async (route) => {
+    await route.fulfill({ status: 404, json: NO_README });
   });
   await page.route("**/api/v1/repos/git-compose/tree/HEAD", async (route) => {
     await route.fulfill({ json: TREE_ROOT });

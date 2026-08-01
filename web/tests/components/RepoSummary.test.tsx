@@ -7,9 +7,13 @@ import { ApiError } from "@/lib/api/client";
 import { getRepo } from "@/lib/api/repos";
 import type { RepoSummary as RepoSummaryData } from "@/lib/api/schemas";
 
-vi.mock("@/lib/api/repos", () => ({
-  getRepo: vi.fn(),
-}));
+vi.mock("@/lib/api/repos", async (importOriginal) => {
+  // `archiveUrl`/`feedUrl` are pure link builders (no network) — kept real
+  // via `importOriginal` so the href assertions below exercise the actual
+  // implementation, only `getRepo` needs mocking.
+  const actual = await importOriginal<typeof import("@/lib/api/repos")>();
+  return { ...actual, getRepo: vi.fn() };
+});
 
 const mockedGetRepo = vi.mocked(getRepo);
 
@@ -49,6 +53,30 @@ describe("RepoSummary", () => {
     render(<RepoSummary repo="scratch" />);
 
     await expect.element(page.getByText("No commits yet.")).toBeVisible();
+  });
+
+  it("links to archive downloads and the Atom feed", async () => {
+    mockedGetRepo.mockResolvedValue(SUMMARY);
+    render(<RepoSummary repo="git-compose" />);
+
+    const tarGz = page.getByRole("link", { name: "tar.gz" });
+    await expect.element(tarGz).toBeVisible();
+    await expect.element(tarGz).toHaveAttribute("href", "/api/v1/repos/git-compose/archive/HEAD.tar.gz");
+
+    const zip = page.getByRole("link", { name: "zip" });
+    await expect.element(zip).toHaveAttribute("href", "/api/v1/repos/git-compose/archive/HEAD.zip");
+
+    const feed = page.getByRole("link", { name: "Atom" });
+    await expect.element(feed).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom");
+  });
+
+  it("omits archive/feed links for an empty repository", async () => {
+    mockedGetRepo.mockResolvedValue({ ...SUMMARY, head: null, default_branch: null });
+    render(<RepoSummary repo="scratch" />);
+
+    await expect.element(page.getByText("No commits yet.")).toBeVisible();
+    expect(page.getByRole("link", { name: "tar.gz" }).elements().length).toBe(0);
+    expect(page.getByRole("link", { name: "Atom" }).elements().length).toBe(0);
   });
 
   it("shows an error message when the request fails", async () => {

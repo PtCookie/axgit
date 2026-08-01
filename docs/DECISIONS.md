@@ -332,3 +332,51 @@ last gap versus cgit.
   construction.
 - No API contract change — `docs/API.md`/`docs/openapi.json` untouched; `schemas.ts` gained
   `BlameInfo`/`BlameRange` aliases, `lib/api/repos.ts` gained `getBlame`.
+
+## #21 README rendering + archive/feed links
+
+Closed the last gap in ROADMAP.md's "Next up": `readme`/`archive`/`feed.atom` were implemented
+endpoints with no web UI pointing at them at all.
+
+- **react-markdown + remark-gfm + rehype-sanitize, no `rehype-raw`** — matches #11's plan exactly.
+  Omitting `rehype-raw` means raw HTML embedded in a README is dropped rather than sanitized-and-
+  kept; accepted, since re-introducing it would mean trusting `hast-util-sanitize`'s schema to catch
+  everything, and repository content is untrusted input (same rule Shiki tokens and
+  `lib/format/linkify.tsx` already follow — never `dangerouslySetInnerHTML`).
+- **Relative links/images are rewritten to repository URLs** (`lib/markdown-url.ts`'s
+  `isExternalUrl`/`resolveRepoPath`, pure and unit-tested) — without this, every relative
+  `./docs/x.md` or `images/logo.png` in a README 404s, since the browser resolves them against the
+  page URL (`/{repo}`), not the repository tree. `<a href>` maps through `treeHref` (trailing `/`)
+  or `blobHref`, `<img src>` through `rawUrl` — all three already existed. A link/image resolving
+  outside the repository root (`../../escape`) or already absolute/external passes through
+  untouched.
+- **`ReadmeView` is its own island**, not folded into `RepoSummary` — a 404 (`path_not_found`, no
+  candidate found, or `ref_not_found`, unborn HEAD) is `docs/API.md`'s normal "nothing to show"
+  outcome for this endpoint, not an error, and keeping it a separate fetch means that 404 can't
+  touch `RepoSummary`'s own error state.
+- **Markdown code fences get Shiki highlighting**, reusing `lib/format/highlight.ts`: the
+  tokenizing tail was split out into a private `tokenize(code, lang)`, with `highlightCode`
+  (path-derived language) and the new `highlightFence` (fence info-string-derived, via new
+  `languageForFence`, sharing `languageForPath`'s extension-alias table) both thin wrappers over it.
+  `ReadmeView`'s `pre` component override intercepts fenced blocks (inline code isn't wrapped in
+  `<pre>`) and renders them through a local `MarkdownFence`, the same swap-in-once-highlighted
+  pattern as `CodeBlock.tsx`, minus line numbers/gutter.
+  - **Pitfall hit while wiring this up**: react-markdown's `Components` substitution means a hast
+    `<code>` node's React element `type` becomes the *provided component function* once a `code`
+    override is set, not the string `"code"` — so `pre`'s check for "is my child a fenced code
+    block" must compare `child.type` against the `code` component's own reference (hoisted to
+    module scope, `InlineCode`), not `=== "code"`. Also, `children` passed to `pre` is always an
+    array (hast-util-to-jsx-runtime's convention) even for a single child, so it must be unwrapped
+    before the `isValidElement` check. Missing either one silently falls back to unhighlighted
+    plain text with no error — only caught via manual browser verification, not the component
+    tests (which is why `ReadmeView.test.tsx` now asserts on the actual rendered
+    `pre.shiki-code > span[style]`, not just the fence's text content).
+- **archive/feed are HEAD-only links on the summary page** (`RepoSummary.tsx`, two new `dl` rows:
+  tar.gz/zip download, Atom feed) — no per-ref archive UI on `/refs`. `archiveUrl`/`feedUrl` added
+  to `lib/api/repos.ts` alongside the existing `rawUrl`, same link-only pattern (never `fetch`ed by
+  the client). Hidden together with the rest of the empty-repository branch (`head === null`) —
+  the feed endpoint would still return a valid empty feed, but hiding both is simpler than
+  special-casing just the archive links.
+- No new page/route, no `shellFor`/`shell_for` change. No API contract change — `docs/API.md`/
+  `docs/openapi.json` untouched; `schemas.ts` gained `ReadmeInfo`/`ReadmeFormat` aliases,
+  `lib/api/repos.ts` gained `getReadme`/`archiveUrl`/`feedUrl`.

@@ -26,3 +26,5 @@ export type EntryKind = components["schemas"]["EntryKind"];
 export type BlobInfo = components["schemas"]["BlobInfo"];
 export type BlameInfo = components["schemas"]["BlameInfo"];
 export type BlameRange = components["schemas"]["BlameRange"];
+export type ReadmeInfo = components["schemas"]["ReadmeInfo"];
+export type ReadmeFormat = components["schemas"]["ReadmeFormat"];

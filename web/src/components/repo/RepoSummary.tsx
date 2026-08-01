@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { getRepo } from "@/lib/api/repos";
+import { archiveUrl, feedUrl, getRepo } from "@/lib/api/repos";
 import type { RepoSummary as RepoSummaryData } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { repoFromPathname } from "@/lib/repo-param";
@@ -111,6 +111,31 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
           <>
             <dt className="text-muted-foreground">Clone</dt>
             <dd className="font-mono break-all">{summary.clone_url}</dd>
+          </>
+        )}
+        {summary.head !== null && (
+          <>
+            <dt className="text-muted-foreground">Download</dt>
+            <dd className="space-x-3">
+              <a
+                href={archiveUrl(summary.name, undefined, "tar.gz")}
+                className="text-primary underline underline-offset-2"
+              >
+                tar.gz
+              </a>
+              <a
+                href={archiveUrl(summary.name, undefined, "zip")}
+                className="text-primary underline underline-offset-2"
+              >
+                zip
+              </a>
+            </dd>
+            <dt className="text-muted-foreground">Feed</dt>
+            <dd>
+              <a href={feedUrl(summary.name)} className="text-primary underline underline-offset-2">
+                Atom
+              </a>
+            </dd>
           </>
         )}
       </dl>

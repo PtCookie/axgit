@@ -6,6 +6,7 @@ import type {
   CommitDetail,
   CommitDiff,
   CommitsPage,
+  ReadmeInfo,
   RefsInfo,
   ReposResponse,
   RepoSummary,
@@ -88,4 +89,23 @@ export function getBlame(name: string, ref: string | undefined, path: string): P
  *  straight from the api, so `BlobView` renders it as an `<a>` href. */
 export function rawUrl(name: string, ref: string | undefined, path: string): string {
   return apiUrl(`/repos/${encodeSegment(name)}/raw/${refPathSegment(ref, path)}`);
+}
+
+export function getReadme(name: string, ref?: string): Promise<ReadmeInfo> {
+  const query = buildQuery({ ref });
+  return apiFetch<ReadmeInfo>(`/repos/${encodeSegment(name)}/readme${query}`);
+}
+
+export type ArchiveFormat = "tar.gz" | "zip";
+
+/** Link-only (never `fetch`ed by the client), same pattern as `rawUrl` —
+ *  the archive is streamed straight from the api as a download. `ref`
+ *  defaults to `HEAD` like the other `{ref}/{path...}` helpers. */
+export function archiveUrl(name: string, ref: string | undefined, format: ArchiveFormat): string {
+  return apiUrl(`/repos/${encodeSegment(name)}/archive/${encodePath(ref || DEFAULT_REF)}.${format}`);
+}
+
+/** Link-only — an Atom feed URL for the repository's default branch. */
+export function feedUrl(name: string): string {
+  return apiUrl(`/repos/${encodeSegment(name)}/feed.atom`);
 }

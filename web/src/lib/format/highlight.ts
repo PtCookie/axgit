@@ -96,6 +96,22 @@ export function languageForPath(path: string): string | undefined {
   return LANG_BY_EXTENSION[base.slice(dot + 1).toLowerCase()];
 }
 
+/** Canonical Shiki ids (`LANG_LOADERS`' keys) accepted as-is, so a fence
+ *  written ```rust or ```typescript works the same as an alias below. */
+const CANONICAL_LANG_IDS = new Set(Object.keys(LANG_LOADERS));
+
+/** Maps a markdown fence's info string (e.g. `rust`, `ts`, `js title=x`) to
+ *  a Shiki language id, or `undefined` if unsupported — reuses the same
+ *  extension-alias table `languageForPath` draws from, so `README.md` fences
+ *  and repository file extensions recognize the same set of languages.
+ *  Exported for testing. */
+export function languageForFence(info: string): string | undefined {
+  const token = info.trim().split(/\s+/, 1)[0]?.toLowerCase();
+  if (!token) return undefined;
+  if (CANONICAL_LANG_IDS.has(token)) return token;
+  return LANG_BY_EXTENSION[token];
+}
+
 const LIGHT_THEME = "github-light";
 const DARK_THEME = "github-dark";
 
@@ -134,13 +150,13 @@ export interface HighlightedToken {
 
 export type HighlightedLine = HighlightedToken[];
 
-/** Tokenizes `code` for syntax highlighting, keyed off `path`'s extension.
- *  Returns `null` — meaning "render as plain text" — when the language
- *  isn't supported, or the file is above the size/line threshold. */
-export async function highlightCode(code: string, path: string): Promise<HighlightedLine[] | null> {
+/** Tokenizes `code` in the given Shiki language id. Returns `null` — meaning
+ *  "render as plain text" — when `lang` is `undefined`/unsupported, or the
+ *  content is above the size/line threshold. Shared by `highlightCode`
+ *  (path-derived language) and `highlightFence` (markdown fence info
+ *  string). */
+async function tokenize(code: string, lang: string | undefined): Promise<HighlightedLine[] | null> {
   if (code.length > SIZE_THRESHOLD_BYTES) return null;
-
-  const lang = languageForPath(path);
   if (!lang) return null;
 
   const loader = LANG_LOADERS[lang];
@@ -165,4 +181,17 @@ export async function highlightCode(code: string, path: string): Promise<Highlig
   });
 
   return tokens.map((line) => line.map((token) => ({ content: token.content, style: token.htmlStyle ?? {} })));
+}
+
+/** Tokenizes `code` for syntax highlighting, keyed off `path`'s extension.
+ *  Returns `null` — meaning "render as plain text" — when the language
+ *  isn't supported, or the file is above the size/line threshold. */
+export function highlightCode(code: string, path: string): Promise<HighlightedLine[] | null> {
+  return tokenize(code, languageForPath(path));
+}
+
+/** Tokenizes `code` for a markdown fence, keyed off its info string (e.g.
+ *  ` ```rust `). Same fallback rules as `highlightCode`. */
+export function highlightFence(code: string, info: string): Promise<HighlightedLine[] | null> {
+  return tokenize(code, languageForFence(info));
 }
