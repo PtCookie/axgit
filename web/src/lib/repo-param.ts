@@ -46,9 +46,11 @@ export function filePathFromPathname(pathname: string): string {
 }
 
 /**
- * One query-string param from a page URL (`?ref=`, `?cursor=`, …). There's
- * no client-side router (DECISIONS.md #17), so this reads `location.search`
- * directly rather than anything stateful.
+ * One query-string param from a page URL (`?ref=`, `?cursor=`, …). Data
+ * islands are deliberately not persisted across client-side navigations
+ * (`layouts/Layout.astro`, DECISIONS.md #24) — each one remounts fresh on
+ * every page and reads `location.search` directly at that point, rather than
+ * holding any navigation state of its own.
  */
 export function paramFromSearch(name: string, search: string): string | undefined {
   return new URLSearchParams(search).get(name) ?? undefined;

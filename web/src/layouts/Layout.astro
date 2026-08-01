@@ -1,4 +1,6 @@
 ---
+import { ClientRouter, fade } from "astro:transitions";
+
 import "../styles/global.css";
 import ThemeToggle, { ThemeToggleFallback } from "../components/ThemeToggle";
 
@@ -19,6 +21,7 @@ const { title = "Axgit" } = Astro.props;
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content="Self-hosted Git repository web viewer" />
     <title>{title}</title>
+    <ClientRouter />
     {
       /*
         Resolves the theme onto <html> before the document has a body, so no
@@ -39,35 +42,115 @@ const { title = "Axgit" } = Astro.props;
         (docs/DECISIONS.md #17), so nothing user-specific may be baked into
         the HTML — the mechanism has to be client-side.
 
+        With the ClientRouter, this also has to run on every client-side
+        navigation, not just the first paint: Astro's swap diffs <html>'s
+        *attributes* (`swapRootAttributes` in astro's transitions runtime)
+        and the incoming shell carries neither `data-theme` nor `class` (see
+        above), so a same-shell navigation would otherwise reset every page
+        back to light. `astro:after-swap` fires while the outgoing page's
+        snapshot is still on screen — before the new page paints — which is
+        the same "before paint" guarantee this script relies on for the
+        initial load, so wrapping it in a named function and re-invoking it
+        from that event is safe. `data-astro-rerun` was considered instead,
+        but Astro's re-run scripts execute in `runScripts()`, which fires
+        *after* the view transition's DOM update finishes — i.e. after paint
+        — so it would flash light before correcting itself.
+
         The counterpart that wires the toggle itself lives in
         `components/ThemeToggle.tsx`.
       */
     }
     <script is:inline data-theme-init>
       {
-        let pref = "system";
-        try {
-          const stored = localStorage.getItem("axgit:theme");
-          if (stored === "system" || stored === "light" || stored === "dark") {
-            pref = stored;
+        function applyStoredTheme() {
+          let pref = "system";
+          try {
+            const stored = localStorage.getItem("axgit:theme");
+            if (stored === "system" || stored === "light" || stored === "dark") {
+              pref = stored;
+            }
+          } catch {
+            // localStorage access throws outright when storage is disabled or
+            // partitioned (private mode, some embedded webviews) — fall
+            // through to the OS preference rather than aborting the script and
+            // leaving the page unthemed.
           }
-        } catch {
-          // localStorage access throws outright when storage is disabled or
-          // partitioned (private mode, some embedded webviews) — fall
-          // through to the OS preference rather than aborting the script and
-          // leaving the page unthemed.
+
+          document.documentElement.dataset.theme = pref;
+          document.documentElement.classList.toggle(
+            "dark",
+            pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches),
+          );
         }
 
-        document.documentElement.dataset.theme = pref;
-        document.documentElement.classList.toggle(
-          "dark",
-          pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches),
-        );
+        applyStoredTheme();
+        document.addEventListener("astro:after-swap", applyStoredTheme);
+      }
+    </script>
+    {
+      /*
+        Fills in the repository shell's name, <title>, and tab hrefs from
+        `location` — see `RepoLayout.astro` and `components/repo/RepoNav.astro`
+        for what it reads and why the value isn't known at build time.
+        Defined here (not in RepoLayout) so the `astro:after-swap` listener is
+        registered by *every* page, including non-repository ones: the first
+        navigation into a repository page must already have a listener
+        attached, and this script (unlike RepoLayout's) exists on every shell.
+        `window.__axgit` is guarded so a re-run of this script (e.g. back to
+        a page that has it after visiting one that doesn't) doesn't attach a
+        second listener — `document.addEventListener` would also dedupe an
+        identical function reference, but the guard also means the function
+        only needs to be defined once per document lifetime.
+      */
+    }
+    <script is:inline data-repo-shell-init>
+      {
+        if (!window.__axgit) {
+          window.__axgit = {};
+        }
+
+        window.__axgit.fillRepoShell = function fillRepoShell() {
+          const heading = document.querySelector("[data-repo-name]");
+          // Not a repository page (e.g. `/`, `/404`) — nothing to fill in.
+          if (!heading) {
+            return;
+          }
+
+          const suffix = heading.dataset.titleSuffix ?? "";
+          // The raw segment is already correctly encoded for use in an href;
+          // only the displayed name needs decoding.
+          const segment = location.pathname.split("/")[1] ?? "";
+          let name = segment;
+          try {
+            name = decodeURIComponent(segment);
+          } catch {
+            // A malformed escape means a hand-typed URL — show it verbatim
+            // rather than aborting the script and leaving dead links.
+          }
+
+          document.title = name + suffix;
+          heading.textContent = name;
+          for (const link of document.querySelectorAll("[data-repo-href]")) {
+            const sub = link.dataset.repoHref;
+            link.setAttribute("href", sub ? `/${segment}/${sub}` : `/${segment}`);
+          }
+        };
+
+        document.addEventListener("astro:after-swap", window.__axgit.fillRepoShell);
       }
     </script>
   </head>
   <body class="min-h-screen">
-    <header class="border-border border-b">
+    {
+      /*
+        Persisted across navigations rather than torn down and rebuilt: the
+        header is identical on every page, and persisting it keeps the
+        `ThemeToggle` island alive so its `client:only` hydration (and the
+        disabled `ThemeToggleFallback` skeleton that precedes it) doesn't
+        flash on every same-site link click.
+      */
+    }
+    <header class="border-border border-b" transition:persist>
       <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
         <a href="/" class="font-heading text-lg font-medium">Axgit</a>
         <ThemeToggle client:only="react">
@@ -75,7 +158,18 @@ const { title = "Axgit" } = Astro.props;
         </ThemeToggle>
       </div>
     </header>
-    <main class="mx-auto max-w-5xl px-4 py-6">
+    {
+      /*
+        Deliberately NOT persisted: every data island inside (RepoSummary,
+        TreeView, CommitLog, …) reads `location` only once, at mount
+        (`lib/repo-param.ts`) — persisting <main> across a same-shell
+        navigation (e.g. `/tree/a` -> `/tree/a/b`) would keep the old island
+        alive showing stale data instead of remounting it against the new
+        URL. A short fade is enough to mask the swap without implying the
+        content below carries over.
+      */
+    }
+    <main class="mx-auto max-w-5xl px-4 py-6" transition:animate={fade({ duration: "0.18s" })}>
       <slot />
     </main>
   </body>

@@ -22,9 +22,12 @@ interface CommitLogProps {
   repo?: string;
   /**
    * `ref`/`path`/`cursor` follow the same "prop overrides, `location` is the
-   * default source" pattern as `repo` — there is no client-side router
-   * (DECISIONS.md #17), so navigating between log pages is a full page load
-   * and these three live in the URL's query string.
+   * default source" pattern as `repo`. Navigating between log pages (e.g.
+   * "Older →") is a client-side transition to a new `/{repo}/log?...` URL
+   * (DECISIONS.md #24) — `<main>` isn't persisted across it (`Layout.astro`),
+   * so this component always remounts fresh against the new query string
+   * rather than receiving these as changed props on a live instance. They
+   * still live in the URL's query string rather than in any router state.
    */
   ref?: string;
   path?: string;
@@ -69,12 +72,14 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
   useEffect(() => {
     let cancelled = false;
 
-    // Navigating between log pages is a full page load (DECISIONS.md #17),
-    // so `resolvedRef`/`resolvedPath`/`resolvedCursor` never actually change
-    // on an already-mounted instance in production — this effect only
-    // re-runs (in tests) when a prop changes on the same mount, and staying
-    // on the previous result until the new one arrives is preferable to a
-    // loading flash.
+    // `resolvedRef`/`resolvedPath`/`resolvedCursor` never actually change on
+    // an already-mounted instance in production — `<main>` isn't persisted
+    // across navigations (DECISIONS.md #24), so a new URL always remounts
+    // this component fresh instead of updating its props in place. This
+    // effect's dependency array only matters for tests, which render the
+    // component directly and change props on a live instance; staying on the
+    // previous result until the new one arrives is preferable to a loading
+    // flash there too.
     listCommits(resolvedRepo, { ref: resolvedRef, path: resolvedPath, cursor: resolvedCursor })
       .then((page) => {
         if (!cancelled) {

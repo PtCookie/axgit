@@ -410,6 +410,34 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     no theme of its own. Untestable at the vitest-browser-mode layer by construction (no Astro
     layout is rendered there), same as `RepoLayout.astro`'s script.
   - No new page/route, so no `shellFor`/`shell_for` change. No API contract change.
+- **Client-side routing via Astro's `<ClientRouter />`** (docs/DECISIONS.md #24). Same-origin link
+  clicks now swap `<body>` in place instead of a full page load, with a short fade on `<main>`.
+  - `<header>` is `transition:persist`ed (keeps the `ThemeToggle` island alive across navigations);
+    `<main>` and every data island inside it are not, so islands always remount fresh against the
+    new URL rather than receiving props on a live instance — required since they all read
+    `location` only at mount (`lib/repo-param.ts`).
+  - Astro's swap replaces `<html>`'s whole attribute set, which resets the theme (#23) on every
+    navigation unless reapplied — `Layout.astro`'s theme script became a named function invoked
+    again on `astro:after-swap`. Same event carries `RepoLayout.astro`'s shell fill-in logic,
+    relocated to `Layout.astro` as `window.__axgit.fillRepoShell` (present on every page, so the
+    listener is attached before the first navigation into a repository page) and keyed off
+    `data-title-suffix` on the heading rather than `document.currentScript`, which is `null` when
+    Astro re-runs a script post-swap.
+  - `data-astro-rerun` was rejected for both of the above: Astro's re-run scripts execute after the
+    transition's DOM update finishes (after paint), while `astro:after-swap` fires before it —
+    confirmed by reading Astro 7.1.6's router source directly.
+  - `prefetch.prefetchAll: false` set in `astro.config.mjs`, overriding the `true` default
+    `<ClientRouter />` enables — every `/{repo}/blob/*`-shaped URL maps to one byte-identical,
+    `Cache-Control: no-cache` shell (#17), so prefetching it on hover has no upside.
+  - Dev middleware (`astro.config.mjs::shellFallback`) widened to also match the router's own
+    fetches (`Sec-Fetch-Dest: empty`, no `Accept: text/html`), or `astro dev`/Playwright would 404
+    every client-side navigation and silently fall back to full reloads.
+  - `global.css` disables the root view-transition animation so the persisted header/tab bar swap
+    instantly instead of cross-fading under `<main>`'s own fade.
+  - `web/e2e/theme.spec.ts` gained a regression test for theme survival across a client-side
+    navigation; `web/e2e/repo.spec.ts` gained a marker-survival assertion that's the only signal
+    a test is exercising client-side routing rather than a downgraded full reload. No new
+    route/page, no API contract change.
 
 ## Next up: Repository search
 

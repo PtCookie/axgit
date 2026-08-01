@@ -251,3 +251,32 @@ test("shows a not-found page for unsupported sub-routes", async ({ page }) => {
   await page.getByRole("link", { name: "Back to repository list" }).click();
   await expect(page).toHaveURL("/");
 });
+
+// A link click navigating via `<ClientRouter />` (docs/DECISIONS.md #24) never
+// tears down the JS realm — `window` survives. A silently downgraded full
+// reload (e.g. the dev shell-fallback middleware not recognizing the
+// router's fetch, or a non-2xx response) would still land on the same URL
+// and pass every other assertion in this file, so this marker is the only
+// signal that a test is actually exercising client-side routing.
+test("tab navigation is client-side, not a full page reload", async ({ page }) => {
+  await page.route("**/api/v1/repos/git-compose", async (route) => {
+    await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/readme*", async (route) => {
+    await route.fulfill({ status: 404, json: NO_README });
+  });
+  await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
+    await route.fulfill({ json: REFS });
+  });
+
+  await page.goto("/git-compose");
+  await page.evaluate(() => {
+    (window as unknown as { __navMarker?: number }).__navMarker = 1;
+  });
+
+  await page.getByRole("link", { name: "Refs" }).click();
+
+  await expect(page).toHaveURL("/git-compose/refs");
+  await expect(page.getByText("v1.0.0")).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __navMarker?: number }).__navMarker)).toBe(1);
+});

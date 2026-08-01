@@ -123,6 +123,28 @@ test("the served shell carries no theme of its own", async ({ page }) => {
   expect(openingTag).not.toMatch(/\bclass=/);
 });
 
+// Regression test for the `<ClientRouter />` swap (docs/DECISIONS.md #24):
+// Astro's swap replaces every attribute on <html> with the incoming
+// document's, and the served shell carries none of its own (asserted right
+// below), so a same-shell navigation resets the theme unless
+// `Layout.astro`'s theme script re-applies it from `astro:after-swap`. This
+// page (`/{repo}/stats`, the 404 shell) has a "Back to repository list" link
+// to `/` to navigate with, with no API stub needed for either endpoint.
+test("an explicit Dark choice survives a client-side navigation", async ({ page }) => {
+  await page.goto(PAGE);
+  await choose(page, "Dark");
+  // Selecting a radio item doesn't close the menu (DECISIONS.md #23's
+  // documented Base UI default), and the open menu's portal overlay
+  // otherwise intercepts the click below.
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("link", { name: "Back to repository list" }).click();
+  await expect(page).toHaveURL("/");
+
+  expect(await preference(page)).toBe("dark");
+  expect(await isDark(page)).toBe(true);
+});
+
 // No-flash guard. There is no API that observes "the class was set before
 // first paint" — anything queryable from `page.evaluate` already runs after
 // it — so what's asserted instead is the structural property that

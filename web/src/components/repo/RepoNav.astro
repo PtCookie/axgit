@@ -1,17 +1,24 @@
 ---
 interface Props {
   active: "summary" | "refs" | "log" | "tree";
+  /** Appended after the repository name to build `document.title`, e.g.
+   *  " log — Axgit". Carried on `data-title-suffix` rather than read from
+   *  `document.currentScript`, since `window.__axgit.fillRepoShell`
+   *  (`Layout.astro`) also runs from an `astro:after-swap` listener, where
+   *  `document.currentScript` is `null`. */
+  titleSuffix: string;
 }
 
-const { active } = Astro.props;
+const { active, titleSuffix } = Astro.props;
 
 /**
  * Static repository heading + tab bar. The repository name is unknown at
  * build time (this page is prerendered once under a placeholder param, see
  * `lib/shell.ts`), so `href`s carry a `data-repo-href` hook and the heading
- * carries `data-repo-name` — both are filled in by the inline script in
- * `RepoLayout.astro` before first paint. `sub` is the path segment appended
- * to `/{repo}`; `""` is the summary page.
+ * carries `data-repo-name` — both are filled in by
+ * `window.__axgit.fillRepoShell` (`Layout.astro`) before first paint and
+ * again after every client-side navigation. `sub` is the path segment
+ * appended to `/{repo}`; `""` is the summary page.
  */
 const TABS = [
   { key: "summary", sub: "", label: "Summary" },
@@ -22,7 +29,7 @@ const TABS = [
 ---
 
 <div class="mb-6 space-y-3">
-  <h1 class="font-heading text-2xl font-medium break-all" data-repo-name></h1>
+  <h1 class="font-heading text-2xl font-medium break-all" data-repo-name data-title-suffix={titleSuffix}></h1>
   <nav class="border-border flex gap-4 border-b">
     {
       TABS.map((tab) => (

@@ -180,3 +180,19 @@ html[data-theme="light"] [data-theme-icon="light"],
 html[data-theme="dark"] [data-theme-icon="dark"] {
     display: block;
 }
+
+/*
+ * View transitions (docs/DECISIONS.md #24): <main> carries its own fade
+ * (`transition:animate` in `layouts/Layout.astro`). Without this rule, the
+ * *root* snapshot — which by default covers the whole viewport, including
+ * the persisted header and, on repository pages, the tab bar — would also
+ * cross-fade underneath it, doubling the animation and blurring the chrome
+ * that's supposed to swap instantly. `prefers-reduced-motion` needs no
+ * separate handling here: Astro's `<ClientRouter />` already ships a media
+ * query that disables view transition animations outright when it's set.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}

@@ -40,38 +40,25 @@ const navActive = NAV_ACTIVE[active];
 ---
 
 <Layout title={title}>
-  <RepoNav active={navActive} />
+  <RepoNav active={navActive} titleSuffix={titleSuffix} />
   {
     /*
       Everything on a repository page is static except the repository *name*:
       the shell is prerendered under a placeholder param (`lib/shell.ts`), so
-      the name only exists in `location`. `is:inline` keeps this a
-      synchronous classic script that runs before first paint — a bundled
-      `<script>` is deferred (`type="module"`) and would flash an empty
-      heading and dead tab links.
+      the name only exists in `location`. The fill-in logic itself lives in
+      `Layout.astro`'s `data-repo-shell-init` script as
+      `window.__axgit.fillRepoShell`, registered there against
+      `astro:after-swap` so every client-side navigation (not just this
+      page's own initial load) re-runs it. This one-line call handles the
+      *first* load of a repository page, which happens before body content
+      (and so before `Layout`'s head script could find `[data-repo-name]`
+      itself even if it tried). `is:inline` keeps it a synchronous classic
+      script that runs before first paint — a bundled `<script>` is deferred
+      (`type="module"`) and would flash an empty heading and dead tab links.
     */
   }
-  <script is:inline data-title-suffix={titleSuffix}>
-    {
-      const suffix = document.currentScript.dataset.titleSuffix;
-      // The raw segment is already correctly encoded for use in an href;
-      // only the displayed name needs decoding.
-      const segment = location.pathname.split("/")[1] ?? "";
-      let name = segment;
-      try {
-        name = decodeURIComponent(segment);
-      } catch {
-        // A malformed escape means a hand-typed URL — show it verbatim
-        // rather than aborting the script and leaving dead links.
-      }
-
-      document.title = name + suffix;
-      document.querySelector("[data-repo-name]").textContent = name;
-      for (const link of document.querySelectorAll("[data-repo-href]")) {
-        const sub = link.dataset.repoHref;
-        link.setAttribute("href", sub ? `/${segment}/${sub}` : `/${segment}`);
-      }
-    }
+  <script is:inline>
+    window.__axgit.fillRepoShell();
   </script>
   <slot />
 </Layout>

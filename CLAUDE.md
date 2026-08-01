@@ -106,12 +106,19 @@ progress.
 
 - Astro is pinned to **static mode**. Don't add an SSR adapter (that's a deployment-shape change
   that needs discussion first).
-- Routing is Astro file-based (`web/src/pages/`); there is no client-side router. Per-repository
-  pages can't be enumerated at build time, so `src/pages/[repo]/*.astro` is prerendered once under
-  a reserved placeholder param (`__repo__`) and the server maps request path shapes onto the
-  matching shell (`api/src/shell.rs`, docs/DECISIONS.md #17). **Adding a route means updating three
-  places together**: `web/src/pages/`, `web/src/lib/shell.ts::shellFor`, and
-  `api/src/shell.rs::shell_for`.
+- Routing is Astro file-based (`web/src/pages/`). Per-repository pages can't be enumerated at
+  build time, so `src/pages/[repo]/*.astro` is prerendered once under a reserved placeholder param
+  (`__repo__`) and the server maps request path shapes onto the matching shell (`api/src/shell.rs`,
+  docs/DECISIONS.md #17). **Adding a route means updating three places together**:
+  `web/src/pages/`, `web/src/lib/shell.ts::shellFor`, and `api/src/shell.rs::shell_for`.
+- Navigation uses Astro's `<ClientRouter />` (docs/DECISIONS.md #24) — same-origin link clicks swap
+  `<body>` client-side instead of a full page load, with a short fade on `<main>`. The header is
+  `transition:persist`ed; `<main>` and everything inside it is not, so every data island always
+  remounts fresh against the new URL rather than receiving props on a live instance. Anything that
+  touches the repository shell (name, `<title>`, tab hrefs) has to re-run on
+  `astro:after-swap`, not just on initial load — see `window.__axgit.fillRepoShell` in
+  `web/src/layouts/Layout.astro`. `data-astro-rerun` alone is insufficient for that: Astro's
+  re-run scripts execute after the transition's DOM update, i.e. after paint.
 - Dynamic data is fetched from React islands. They stay `client:only="react"` with a static
   `slot="fallback"` skeleton — don't switch to `client:load` without re-reading DECISIONS.md #17
   (the shell is built under a placeholder param, so a hydrated island would receive it as a prop).

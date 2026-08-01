@@ -507,3 +507,80 @@ dual-theme tokens, with nothing in the app ever applying the class.
 - No new page/route, so no `shellFor`/`shell_for` change. No API contract change — `docs/API.md`,
   `docs/openapi.json`, and `web/src/lib/api/types.ts` are untouched, and `api/src` is not touched
   at all.
+
+## #24 Client-side routing via Astro's `<ClientRouter />` (refines #17)
+
+Added `<ClientRouter />` (`astro:transitions`) to `Layout.astro`, turning same-origin link clicks
+into client-side `<body>` swaps with a short fade on `<main>`, instead of full page loads. #17's
+decision to prerender one shell per route shape and delete the old client router (`lib/router.ts`)
+stands unchanged — this is Astro's own router, not a return to hand-rolled client-side routing, and
+no new page/route/API surface is involved.
+
+- **Why SPA mode over native cross-document view transitions**: the CSS-only
+  `@view-transition { navigation: auto }` approach still does a full page load per navigation (it
+  only animates the browser's native MPA transition), so it wouldn't touch the actual cost this
+  change targets — React runtime, Shiki's per-language dynamic import, and DiceBear all
+  re-executing on every tab switch between Summary/Tree/Log/Refs, which is this app's primary
+  navigation pattern.
+- **`<main>` is not persisted; `<header>` is.** Every data island (`RepoSummary`, `TreeView`,
+  `CommitLog`, …) is `client:only="react"` and reads `location` exactly once, at mount
+  (`lib/repo-param.ts`). Persisting `<main>` across a same-shell navigation (e.g.
+  `/{repo}/tree/src` → `/{repo}/tree/src/lib`) would keep the *old* island alive showing stale data
+  instead of remounting against the new URL — `transition:persist` was deliberately left off it.
+  `<header>` is identical on every page and holds only the `ThemeToggle` island, so persisting it
+  avoids re-hydrating that island (and re-flashing its disabled `ThemeToggleFallback` skeleton) on
+  every navigation.
+- **The theme resets on every swap unless explicitly reapplied.** Astro's swap
+  (`swapRootAttributes` in its transitions runtime) replaces `<html>`'s entire attribute set with
+  the incoming document's — and per #23, the prerendered shell's `<html>` carries neither
+  `data-theme` nor `class` (`theme.spec.ts` asserts that absence directly), so a same-shell
+  navigation would silently revert every page to light. `Layout.astro`'s theme script was
+  refactored into a named `applyStoredTheme()` function, called once on initial load and again on
+  every `astro:after-swap`.
+- **`astro:after-swap`, not `data-astro-rerun`, for both shell-mutating scripts** (theme,
+  `window.__axgit.fillRepoShell`). Astro's re-run mechanism (`data-astro-rerun`) executes inline
+  scripts inside `runScripts()`, which only fires after the view transition's `updateCallbackDone`
+  resolves — i.e. after the new page has already painted. `astro:after-swap` fires from inside the
+  DOM-swap step itself, before that paint, which is the same "before paint" guarantee both scripts
+  already relied on for the initial load. Verified by reading Astro 7.1.6's
+  `node_modules/astro/dist/transitions/router.js` directly rather than assuming from the docs.
+- **`RepoLayout.astro`'s fill-in script moved to `Layout.astro` as `window.__axgit.fillRepoShell`,
+  keyed off a `[data-repo-name]` query rather than `document.currentScript`.** Two forced moves:
+  (1) `document.currentScript` is `null` when Astro re-executes a script post-swap, so the old
+  `document.currentScript.dataset.titleSuffix` read had to go — the suffix now travels as
+  `data-title-suffix` on the heading element itself (`RepoNav.astro`, now taking `titleSuffix` as a
+  prop). (2) The `astro:after-swap` listener has to be registered by a script present on *every*
+  page, not just repository ones, so the very first navigation *into* a repository page already has
+  a listener attached — `Layout.astro`'s head runs on every shell; `RepoLayout.astro`'s body script
+  does not. `RepoLayout.astro` keeps a one-line `<script is:inline>window.__axgit.fillRepoShell();</script>`
+  for its own initial load, which happens before `Layout`'s head script could otherwise discover
+  the heading.
+- **`prefetch.prefetchAll: false` in `astro.config.mjs`**, overriding the `true` default
+  `<ClientRouter />` sets. Every `/{repo}/blob/*` (and tree/blame/commit) maps to one
+  byte-identical shell served `Cache-Control: no-cache` (#17) — prefetching it on hover fetches the
+  same HTML repeatedly for zero benefit, since the actual per-page data always arrives afterward
+  via a separate `/api` call once the island mounts.
+- **Dev middleware (`astro.config.mjs::shellFallback`) widened to recognize the router's own
+  fetches.** It previously matched navigations by `Accept: text/html` only; `ClientRouter`'s
+  `fetchHTML` sends no such header when there's no adapter (`Accept: */*`), which browsers pair
+  with `Sec-Fetch-Dest: empty` — added as an alternate match so `astro dev` (and Playwright, which
+  runs against it) keeps mapping `/{repo}/...` requests onto the placeholder-param shell instead of
+  404ing every client-side navigation. Production (`api/src/shell.rs::serve_shell`) already matches
+  on path shape alone, so it needed no change.
+- **`::view-transition-old(root)`/`::view-transition-new(root)` animations disabled in
+  `global.css`.** Without this, the root snapshot — covering the full viewport, including the
+  persisted header and (on repository pages) the tab bar — would cross-fade underneath `<main>`'s
+  own `transition:animate={fade(...)}`, doubling the animation on chrome that's supposed to swap
+  instantly. No separate `prefers-reduced-motion` handling was added: `<ClientRouter />` already
+  ships a media query that disables view-transition animation outright when it's set.
+- **Testing**: `web/e2e/theme.spec.ts` gained a case asserting an explicit Dark choice survives a
+  client-side tab navigation (the direct regression test for the reset behavior above) — the
+  existing two structural assertions (no theme baked into the served shell; the theme script is a
+  synchronous, non-deferred, `src`-less script in `<head>`) needed no change, since
+  `data-theme-init`'s position and the shell's own markup are untouched. `web/e2e/repo.spec.ts`
+  gained an assertion that a client-side marker set before navigating survives it, which is the
+  only signal that a test is actually exercising client-side routing rather than a silently
+  downgraded full reload landing on the same URL. No `web/tests/` (vitest) changes and no
+  `shellFor`/`shell_for` change — no new route shape.
+- No API contract change — `docs/API.md`, `docs/openapi.json`, and `web/src/lib/api/types.ts` are
+  untouched, and `api/src` is not touched at all.

@@ -50,7 +50,18 @@ function shellFallback() {
       server.middlewares.use((req, res, next) => {
         const [pathname, query] = (req.url ?? "/").split("?");
         const accept = req.headers.accept ?? "";
-        const isNavigation = (req.method === "GET" || req.method === "HEAD") && accept.includes("text/html");
+        // A real browser navigation asks for `text/html`. Astro's
+        // `<ClientRouter />` (docs/DECISIONS.md #24) instead calls plain
+        // `fetch(href)` with no adapter-supplied headers, which Chrome/Firefox
+        // send as `Accept: */*` with `Sec-Fetch-Dest: empty` — so relying on
+        // `accept` alone would make every client-side navigation 404 in dev
+        // (and under Playwright, which runs against `astro dev`) and silently
+        // fall back to a full reload. `sec-fetch-dest` isn't sent by non-browser
+        // clients (e.g. `curl`), but those fall through to `next()` untouched
+        // either way, so this only ever widens which *browser* requests match.
+        const isNavigation =
+          (req.method === "GET" || req.method === "HEAD") &&
+          (accept.includes("text/html") || req.headers["sec-fetch-dest"] === "empty");
         const isAppRoute =
           !pathname.startsWith("/api") &&
           !pathname.startsWith("/@") &&
@@ -77,6 +88,14 @@ function shellFallback() {
 export default defineConfig({
   output: "static",
   integrations: [react()],
+  // `<ClientRouter />` (docs/DECISIONS.md #24) defaults `prefetchAll` to
+  // `true`. That's a net loss here: every `/{repo}/blob/*` (etc.) maps to one
+  // byte-identical shell served `Cache-Control: no-cache` (`api/src/shell.rs`,
+  // DECISIONS.md #17), so hovering a file listing would refetch that same
+  // shell over and over for no benefit — the real per-page data always comes
+  // from a separate `/api` call after the island mounts, which prefetching
+  // the shell does nothing to speed up.
+  prefetch: { prefetchAll: false },
   vite: {
     plugins: [tailwindcss(), shellFallback()],
     server: {
