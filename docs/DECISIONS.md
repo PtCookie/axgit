@@ -985,3 +985,52 @@ View Transition API from the visual layer entirely: `<main>` no longer carries a
   during a navigation and an identical `axgit-page-in` opacity ramp on `<main>`. No new
   route/shell (`shellFor`/`shell_for` untouched) and no API contract change — this commit is
   web-only.
+
+## #33 Commit graph column laid out client-side, no walk-order change
+
+The Log tab gained a leading graph column (cgit's ASCII DAG, redone as inline SVG). It needed
+no API change: `CommitInfo.parents` (full shas, all parents, git parent order) has been in every
+`/commits` response since the endpoint was built, and no frontend code had read it before this.
+
+- **The walk stays unsorted, deliberately** (`api/src/repo/commits.rs::log`). A "correct" DAG
+  layout wants topological order (what `git log --graph` implies via `--topo-order`), but
+  libgit2 1.9.6's `revwalk.c` shows any sort flag (`GIT_SORT_TOPOLOGICAL`, or even bare
+  `GIT_SORT_TIME`) sets `walk->limited = 1`, which makes `prepare_walk` run `limit_list` —
+  draining and parsing the *entire reachable history* before the first commit is emitted.
+  `GIT_SORT_NONE` (today's setting) keeps `walk->limited = 0`, a lazy O(page size) walk. Since
+  the response cache keys on the cursor, N pages on a cold cache would mean N full-history walks
+  under any sort flag. Not worth it: plain committer-date order is enough for a correct graph, because
+  within a single page a parent can never be *emitted* above its child (libgit2's lazy walk only
+  discovers a commit by popping an already-emitted child) — the only real cost is that branches
+  interleave more than `--topo-order` would, so lanes run a bit longer and cross more.
+- **One row per commit, no cgit-style `|\`/`|/` filler rows.** Filler rows would leave the other
+  four columns empty and break `TableRow` hover/zebra/row semantics on a shadcn table. The
+  trade-off: a merge edge gets only half a row (24px) of vertical travel, so a wide lane jump
+  reads as near-horizontal. Leftmost-free lane allocation (`web/src/lib/commit-graph.ts`) keeps
+  most jumps to 1–2 lanes, and lanes never shift horizontally once assigned (a freed lane is left
+  as a hole and reused later) — every `through` line is a straight vertical, and the only
+  diagonals are a node's own half-edges into/out of its row.
+- **Monochrome, merge-vs-normal encoded as shape (hollow ring vs filled dot), not colour.**
+  `--chart-2..5` are unvalidated shadcn boilerplate (#29) that the roadmap wants run through the
+  dataviz skill's validator before a second series uses them — this sidesteps that question
+  entirely rather than deferring it. Do not "improve" this with per-lane hue without running that
+  validator first.
+- **Hidden when `?path=` is set.** `touches_path` yields a subsequence of the true history —
+  displayed commits are usually not each other's parents — so edges would be arbitrary.
+  Also hidden under `sm` (`hidden sm:table-cell`) so it can't crowd the useful columns off a
+  narrow, already-`overflow-x-auto` table.
+- **Lanes reset at each page boundary.** The cursor is an opaque commit sha (`docs/API.md`),
+  validated as a git2 `Oid` — encoding lane state into it would break that contract, and cgit has
+  the same per-page reset. `continuesAbove` (set whenever the page was reached via `cursor`) draws
+  row 0's own edge to the top rather than showing a fake root when its children are actually on
+  the previous page.
+- **No new dependency.** The layout + renderer is ~190 lines / a few KB, small enough that — unlike
+  `StatsChart.tsx`'s recharts (#29/#30) — it does not need lazy-loading.
+- **Ref badges (HEAD/main/v1.0.x) deliberately left out of this pass.** #18 already rejected
+  prefetching `/refs` for a page that doesn't otherwise need the request; if badges are wanted
+  later they belong in the Summary cell as separate work.
+- **Pre-existing issue this makes visible, not introduced by it**: page ≥2 pushes only the cursor
+  commit, so a side-branch commit pending at the page cut that isn't an ancestor of the cursor
+  silently drops out of every later page. Noted as a `docs/ROADMAP.md` candidate.
+- No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**`
+  all untouched.

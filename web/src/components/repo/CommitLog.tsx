@@ -4,9 +4,11 @@ import { ApiError } from "@/lib/api/client";
 import { encodeSegment } from "@/lib/api/path";
 import { listCommits } from "@/lib/api/repos";
 import type { CommitsPage } from "@/lib/api/schemas";
+import { layoutCommitGraph } from "@/lib/commit-graph";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
+import CommitGraph from "@/components/repo/CommitGraph";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -39,9 +41,9 @@ interface CommitLogProps {
 export function CommitLogSkeleton() {
   return (
     <div className="space-y-2" aria-busy="true">
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-12 w-full" />
+      <Skeleton className="h-12 w-full" />
+      <Skeleton className="h-12 w-full" />
     </div>
   );
 }
@@ -116,6 +118,11 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
 
   const { page } = state;
   const current = { ref: resolvedRef, path: resolvedPath };
+  // Hidden under a path filter: `touches_path` yields a subsequence, so
+  // displayed commits are usually not each other's parents and edges would
+  // be arbitrary (docs/DECISIONS.md #33).
+  const showGraph = !resolvedPath && page.commits.length > 0;
+  const graph = showGraph ? layoutCommitGraph(page.commits, { continuesAbove: Boolean(resolvedCursor) }) : null;
 
   return (
     <div className="space-y-4">
@@ -134,6 +141,11 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
         <Table>
           <TableHeader>
             <TableRow>
+              {graph && (
+                <TableHead className="hidden w-0 p-0 sm:table-cell">
+                  <span className="sr-only">Graph</span>
+                </TableHead>
+              )}
               <TableHead>Author</TableHead>
               <TableHead>Summary</TableHead>
               <TableHead>Commit</TableHead>
@@ -141,8 +153,13 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
             </TableRow>
           </TableHeader>
           <TableBody>
-            {page.commits.map((commit) => (
-              <TableRow key={commit.sha}>
+            {page.commits.map((commit, index) => (
+              <TableRow key={commit.sha} className="h-12">
+                {graph && (
+                  <TableCell className="hidden w-0 p-0 pr-2 align-middle sm:table-cell">
+                    <CommitGraph row={graph.rows[index]} lanes={graph.lanes} />
+                  </TableCell>
+                )}
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <AuthorAvatar author={commit.author} className="size-6 shrink-0 rounded-full" />

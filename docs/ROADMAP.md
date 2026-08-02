@@ -583,6 +583,25 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   transition resolves within a frame. `<ClientRouter />` still drives the swap. No test changed and
   no API/route change — `Layout.astro` + `global.css` only.
 
+- **Commit graph column on the Log tab** (DECISIONS.md #33). cgit-style branch/merge visualization,
+  redone as one inline SVG per table row rather than cgit's ASCII filler rows. Finalized design:
+  - Zero API change: `CommitInfo.parents` (full shas, all parents) has been in every `/commits`
+    response since the log endpoint was built and no frontend code had read it before this.
+  - **The walk stays unsorted on purpose** — new `web/src/lib/commit-graph.ts::layoutCommitGraph`
+    lays out lanes from plain committer-date order. Verified against libgit2 1.9.6's `revwalk.c`
+    that any sort flag (`TOPOLOGICAL` or even bare `TIME`) forces a full-history walk before the
+    first commit is emitted (`walk->limited = 1` → `limit_list`), which would turn every cursor
+    page into an O(repo size) request — not changed.
+  - Lanes never shift horizontally (a freed lane is left as a hole, reused leftmost-first); merge
+    vs. normal is encoded as node shape (hollow ring vs. filled dot), not color, sidestepping the
+    unvalidated `--chart-2..5` question (#29) entirely. Hidden under `?path=` (the path filter's
+    subsequence breaks parent/child adjacency) and under `sm` (narrow screens).
+  - New `web/src/components/repo/CommitGraph.tsx` (presentational, one row) wired into
+    `CommitLog.tsx`; `TableRow` gained `h-12` to pin the row height the SVG geometry assumes.
+  - New `web/tests/lib/commit-graph.test.ts` (pure layout unit tests); `CommitLog.test.tsx` gained
+    graph-presence/merge-marker/path-hidden cases. No API contract change —
+    `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**` all untouched.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
@@ -601,3 +620,10 @@ fresh request.
 - `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
   revisit with the `dataviz` skill's validator if the stats page (or a future one) ever needs a
   second chart series.
+- Commit log pagination silently drops side-branch commits pending at a page boundary that aren't
+  ancestors of the next page's cursor (noted while building the graph column, DECISIONS.md #33) —
+  not a regression from that change, but now visibly noticeable as a branch that "vanishes" across
+  the Older boundary.
+- Ref badges (HEAD/branch/tag names) on the Log tab's Summary cell — deliberately left out of the
+  graph column work (DECISIONS.md #33), consistent with #18's rejection of prefetching `/refs` for
+  a page that doesn't otherwise need it.

@@ -110,4 +110,44 @@ describe("CommitLog", () => {
     const clear = page.getByRole("link", { name: "clear filter" });
     await expect.element(clear).toHaveAttribute("href", "/git-compose/log");
   });
+
+  it("renders one graph cell per commit", async () => {
+    const twoCommits: CommitsPage = {
+      commits: [
+        PAGE.commits[0],
+        {
+          sha: "def456abc123def456abc123def456abc123def",
+          summary: "feat: add graph",
+          author: { name: "Ada Lovelace", email_hash: "deadbeef" },
+          authored_at: "2026-07-23T13:06:00+09:00",
+          parents: [],
+        },
+      ],
+      next_cursor: null,
+    };
+    mockedListCommits.mockResolvedValue(twoCommits);
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByTestId("commit-graph").elements().length).toBe(2);
+  });
+
+  it("marks a merge commit's node as a merge", async () => {
+    mockedListCommits.mockResolvedValue({
+      commits: [{ ...PAGE.commits[0], parents: ["p1", "p2"] }],
+      next_cursor: null,
+    });
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByTestId("commit-graph").element().querySelectorAll("[data-merge='true']").length).toBe(1);
+  });
+
+  it("hides the graph column when a path filter is active", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" path="src/main.rs" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByTestId("commit-graph").elements().length).toBe(0);
+  });
 });
