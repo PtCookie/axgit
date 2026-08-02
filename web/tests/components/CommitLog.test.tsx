@@ -4,14 +4,16 @@ import { page } from "vitest/browser";
 
 import CommitLog from "@/components/repo/CommitLog";
 import { ApiError } from "@/lib/api/client";
-import { listCommits } from "@/lib/api/repos";
-import type { CommitsPage } from "@/lib/api/schemas";
+import { getRefs, listCommits } from "@/lib/api/repos";
+import type { CommitsPage, RefsInfo } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", () => ({
   listCommits: vi.fn(),
+  getRefs: vi.fn(),
 }));
 
 const mockedListCommits = vi.mocked(listCommits);
+const mockedGetRefs = vi.mocked(getRefs);
 
 const PAGE: CommitsPage = {
   commits: [
@@ -26,9 +28,13 @@ const PAGE: CommitsPage = {
   next_cursor: null,
 };
 
+const NO_REFS: RefsInfo = { branches: [], tags: [] };
+
 describe("CommitLog", () => {
   beforeEach(() => {
     mockedListCommits.mockReset();
+    mockedGetRefs.mockReset();
+    mockedGetRefs.mockResolvedValue(NO_REFS);
   });
 
   afterEach(() => {
@@ -149,5 +155,69 @@ describe("CommitLog", () => {
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByTestId("commit-graph").elements().length).toBe(0);
+  });
+
+  it("shows a badge for a branch pointing at the commit", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    mockedGetRefs.mockResolvedValue({
+      branches: [{ name: "main", target: PAGE.commits[0].sha, committed_at: null }],
+      tags: [],
+    });
+    render(<CommitLog repo="git-compose" />);
+
+    const badge = page.getByText("main");
+    await expect.element(badge).toBeVisible();
+    await expect.element(badge.element().closest("a")).toHaveAttribute("href", "/git-compose/log?ref=main");
+  });
+
+  it("shows a badge for a tag pointing at the commit", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    mockedGetRefs.mockResolvedValue({
+      branches: [],
+      tags: [{ name: "v1.0.0", target: PAGE.commits[0].sha, annotation: null, tagged_at: null }],
+    });
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("v1.0.0")).toBeVisible();
+  });
+
+  it("shows no badge for a commit no ref points at", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    mockedGetRefs.mockResolvedValue({
+      branches: [{ name: "main", target: "someothersha", committed_at: null }],
+      tags: [],
+    });
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByText("main").elements().length).toBe(0);
+  });
+
+  it("caps badges at 3 with a +N overflow link", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    mockedGetRefs.mockResolvedValue({
+      branches: [
+        { name: "main", target: PAGE.commits[0].sha, committed_at: null },
+        { name: "dev", target: PAGE.commits[0].sha, committed_at: null },
+        { name: "release", target: PAGE.commits[0].sha, committed_at: null },
+        { name: "hotfix", target: PAGE.commits[0].sha, committed_at: null },
+      ],
+      tags: [],
+    });
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("main")).toBeVisible();
+    expect(page.getByText("hotfix").elements().length).toBe(0);
+    const overflow = page.getByRole("link", { name: "+1" });
+    await expect.element(overflow).toHaveAttribute("href", "/git-compose/refs");
+  });
+
+  it("renders no badges and no error when the refs request fails", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    mockedGetRefs.mockRejectedValue(new ApiError("internal", "boom", 500));
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByRole("alert").elements().length).toBe(0);
   });
 });

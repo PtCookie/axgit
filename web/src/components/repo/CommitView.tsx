@@ -4,10 +4,12 @@ import { ApiError } from "@/lib/api/client";
 import { encodeSegment } from "@/lib/api/path";
 import { getCommit, getCommitDiff } from "@/lib/api/repos";
 import type { CommitAuthor, CommitDetail, CommitDiff, DiffStatus, FileDiff, Line } from "@/lib/api/schemas";
+import { useCommitRefs } from "@/lib/commit-refs";
 import { linkify } from "@/lib/format/linkify";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { commitShaFromPathname, repoFromPathname } from "@/lib/repo-param";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
+import RefBadges from "@/components/repo/RefBadges";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -143,6 +145,7 @@ export default function CommitView({ repo, sha }: CommitViewProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const resolvedSha = sha ?? commitShaFromPathname(window.location.pathname);
   const [state, setState] = useState<State>({ status: "loading" });
+  const refsBySha = useCommitRefs(resolvedRepo);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,7 +190,10 @@ export default function CommitView({ repo, sha }: CommitViewProps) {
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <h2 className="text-lg font-medium break-words">{detail.summary ?? "(no commit message)"}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-medium break-words">{detail.summary ?? "(no commit message)"}</h2>
+          <RefBadges repo={resolvedRepo} refs={refsBySha.get(detail.sha) ?? []} />
+        </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt className="text-muted-foreground">Commit</dt>
           <dd className="font-mono break-all">{detail.sha}</dd>

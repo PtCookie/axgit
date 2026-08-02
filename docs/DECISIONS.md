@@ -1034,3 +1034,39 @@ no API change: `CommitInfo.parents` (full shas, all parents, git parent order) h
   silently drops out of every later page. Noted as a `docs/ROADMAP.md` candidate.
 - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**`
   all untouched.
+
+## #34 Ref badges on the Log tab and commit detail, via a parallel client-side `/refs` fetch
+
+Closes the one item #33 deliberately deferred: decorating a commit with the branch/tag names that
+point at it (cgit's ref decoration). Each commit row (and the commit detail header) now shows a
+badge per branch/tag whose tip is that commit, linking to `/{repo}/log?ref={name}`.
+
+- **Not the prefetch #18 rejected.** #18 rejected reimplementing the api's ref longest-match
+  client-side to *resolve a URL* — a blocking dependency that would gate rendering on a second
+  request. Badges are pure decoration: `web/src/lib/commit-refs.ts::useCommitRefs` fires `/refs`
+  in its own effect, parallel to and independent of the page's own commits/detail fetch. Zero API
+  change — `CommitInfo` (shared with `/search?type=message`) is untouched.
+  `indexRefsBySha`/`useCommitRefs` are unit-tested separately (`web/tests/lib/commit-refs.test.ts`)
+  from the two components that consume the hook.
+- **Fails silently, same as `ReadmeView`'s 404 (#21).** A rejected `/refs` request just leaves the
+  index empty — no error state, no retry, the commit list/detail renders exactly as it would
+  without it. Ref badges are additive polish, not required data.
+- **No HEAD/default-branch badge.** `GET /refs` returns branches and tags only, and
+  `default_branch` lives on the repo summary — pulling in a third request for a styling nuance
+  wasn't worth it. The default branch still appears, just as an ordinary branch badge (e.g. `main`
+  next to its tip commit), not specially marked.
+- **Icon distinguishes kind, not colour** — `GitBranchIcon`/`TagIcon` (already used this way on
+  `RepoSummary.tsx`). Same reasoning as #33: `--chart-2..5` are still unvalidated shadcn
+  boilerplate (#29), so nothing new gets colour ahead of the dataviz skill's validator.
+- **Capped at 3 in the log table, uncapped in the commit detail header.** A heavily-tagged commit
+  must not blow out the `h-12` row height #33 relies on for the graph column; the table shows the
+  first 3 refs (branches before tags, both already name-sorted by the api) plus a `+N` link to
+  `/{repo}/refs`. The commit detail page has room and shows every ref.
+- **New `web/src/components/ui/badge.tsx`** (`pnpm exec shadcn add badge`, vendored like
+  `input`/`chart` in #25/#29) — `variant="secondary"` for branches, `"outline"` for tags, wrapped
+  in an `<a>` via its Base UI `render` prop (same pattern as `ThemeMenu.tsx`'s
+  `DropdownMenuTrigger`). `logHref` moved from `CommitLog.tsx` into `web/src/lib/repo-href.ts`
+  (matching `searchHref`/`statsHref`'s shape) so the new `RefBadges.tsx` and `CommitLog.tsx` can
+  both build ref links from it.
+- No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**`
+  all untouched. No new route, so `shellFor`/`shell_for`/`RepoNav.astro` are untouched.

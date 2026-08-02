@@ -143,7 +143,7 @@ test("shows the repository summary, README, and links to refs", async ({ page })
   await expect(page.getByText("v1.0.0")).toBeVisible();
 });
 
-test("navigates from the log to a commit's detail", async ({ page }) => {
+test("navigates from the log to a commit's detail, showing its ref badge on both pages", async ({ page }) => {
   await page.route("**/api/v1/repos/git-compose", async (route) => {
     await route.fulfill({ json: SUMMARY });
   });
@@ -153,12 +153,18 @@ test("navigates from the log to a commit's detail", async ({ page }) => {
   await page.route("**/api/v1/repos/git-compose/commits", async (route) => {
     await route.fulfill({ json: COMMITS_PAGE });
   });
+  // The branch tip matches the log's one commit, so its ref badge should
+  // show up on both the log row and the commit detail page below.
+  await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
+    await route.fulfill({ json: { branches: [{ name: "main", target: COMMIT_SHA, committed_at: null }], tags: [] } });
+  });
 
   await page.goto("/git-compose");
   await page.getByRole("link", { name: "Log" }).click();
 
   await expect(page).toHaveURL("/git-compose/log");
   await expect(page.getByText("fix: update the readme")).toBeVisible();
+  await expect(page.getByRole("link", { name: "main" })).toHaveAttribute("href", "/git-compose/log?ref=main");
 
   await page.route(`**/api/v1/repos/git-compose/commits/${COMMIT_SHA}`, async (route) => {
     await route.fulfill({ json: COMMIT_DETAIL });
@@ -171,6 +177,7 @@ test("navigates from the log to a commit's detail", async ({ page }) => {
   await expect(page).toHaveURL(`/git-compose/commit/${COMMIT_SHA}`);
   await expect(page.getByRole("heading", { name: "fix: update the readme" })).toBeVisible();
   await expect(page.getByText("More text")).toBeVisible();
+  await expect(page.getByRole("link", { name: "main" })).toHaveAttribute("href", "/git-compose/log?ref=main");
 });
 
 const TREE_ROOT = {

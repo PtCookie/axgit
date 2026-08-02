@@ -25,6 +25,19 @@ export function refsHref(repo: string): string {
   return `/${encodeSegment(repo)}/refs`;
 }
 
+/** Builds a `/{repo}/log` href from the given params, omitting any left
+ *  unset — same shape as `searchHref`/`statsHref`. Moved out of
+ *  `CommitLog.tsx` (docs/DECISIONS.md #34) so `RefBadges`' ref links can
+ *  share it too. */
+export function logHref(repo: string, params: { ref?: string; path?: string; cursor?: string } = {}): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const query = search.toString();
+  return `/${encodeSegment(repo)}/log${query ? `?${query}` : ""}`;
+}
+
 /** Builds a `/{repo}/blame/{path}` href. Same non-empty-`path` rule as
  *  `blobHref`. */
 export function blameHref(repo: string, path: string, ref: string | undefined): string {

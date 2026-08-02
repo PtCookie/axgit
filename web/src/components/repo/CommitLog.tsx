@@ -5,12 +5,20 @@ import { encodeSegment } from "@/lib/api/path";
 import { listCommits } from "@/lib/api/repos";
 import type { CommitsPage } from "@/lib/api/schemas";
 import { layoutCommitGraph } from "@/lib/commit-graph";
+import { useCommitRefs } from "@/lib/commit-refs";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
+import { logHref } from "@/lib/repo-href";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
 import CommitGraph from "@/components/repo/CommitGraph";
+import RefBadges from "@/components/repo/RefBadges";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+/** Caps how many ref badges render per log row before an overflow link
+ *  takes over (`RefBadges`) — the commit detail header shows every ref
+ *  instead (docs/DECISIONS.md #34). */
+const MAX_ROW_BADGES = 3;
 
 type State = { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; page: CommitsPage };
 
@@ -48,28 +56,13 @@ export function CommitLogSkeleton() {
   );
 }
 
-/** Builds a `/{repo}/log` href, keeping the given params and clearing any
- *  key set to `undefined` in `overrides`. */
-function logHref(
-  repo: string,
-  current: { ref?: string; path?: string },
-  overrides: Record<string, string | undefined>,
-) {
-  const params = new URLSearchParams();
-  const merged = { ...current, ...overrides };
-  for (const [key, value] of Object.entries(merged)) {
-    if (value) params.set(key, value);
-  }
-  const query = params.toString();
-  return `/${encodeSegment(repo)}/log${query ? `?${query}` : ""}`;
-}
-
 export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor: cursorParam }: CommitLogProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const resolvedRef = refParam ?? paramFromSearch("ref", window.location.search);
   const resolvedPath = pathParam ?? paramFromSearch("path", window.location.search);
   const resolvedCursor = cursorParam ?? paramFromSearch("cursor", window.location.search);
   const [state, setState] = useState<State>({ status: "loading" });
+  const refsBySha = useCommitRefs(resolvedRepo);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,7 +122,7 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
       {resolvedPath && (
         <p className="text-muted-foreground text-sm">
           Filtered by path <code className="text-foreground">{resolvedPath}</code> —{" "}
-          <a className="underline" href={logHref(resolvedRepo, current, { path: undefined, cursor: undefined })}>
+          <a className="underline" href={logHref(resolvedRepo, { ref: resolvedRef })}>
             clear filter
           </a>
         </p>
@@ -167,12 +160,15 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
                   </div>
                 </TableCell>
                 <TableCell className="font-medium">
-                  <a
-                    className="hover:underline"
-                    href={`/${encodeSegment(resolvedRepo)}/commit/${encodeSegment(commit.sha)}`}
-                  >
-                    {commit.summary ?? "(no commit message)"}
-                  </a>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      className="hover:underline"
+                      href={`/${encodeSegment(resolvedRepo)}/commit/${encodeSegment(commit.sha)}`}
+                    >
+                      {commit.summary ?? "(no commit message)"}
+                    </a>
+                    <RefBadges repo={resolvedRepo} refs={refsBySha.get(commit.sha) ?? []} max={MAX_ROW_BADGES} />
+                  </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground font-mono">{commit.sha.slice(0, 12)}</TableCell>
                 <TableCell className="text-muted-foreground">
@@ -191,7 +187,7 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
       {page.next_cursor && (
         <a
           className="text-muted-foreground hover:text-foreground text-sm underline"
-          href={logHref(resolvedRepo, current, { cursor: page.next_cursor })}
+          href={logHref(resolvedRepo, { ...current, cursor: page.next_cursor })}
         >
           Older →
         </a>

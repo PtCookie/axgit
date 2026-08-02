@@ -4,16 +4,20 @@ import { page } from "vitest/browser";
 
 import CommitView from "@/components/repo/CommitView";
 import { ApiError } from "@/lib/api/client";
-import { getCommit, getCommitDiff } from "@/lib/api/repos";
-import type { CommitDetail, CommitDiff } from "@/lib/api/schemas";
+import { getCommit, getCommitDiff, getRefs } from "@/lib/api/repos";
+import type { CommitDetail, CommitDiff, RefsInfo } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", () => ({
   getCommit: vi.fn(),
   getCommitDiff: vi.fn(),
+  getRefs: vi.fn(),
 }));
 
 const mockedGetCommit = vi.mocked(getCommit);
 const mockedGetCommitDiff = vi.mocked(getCommitDiff);
+const mockedGetRefs = vi.mocked(getRefs);
+
+const NO_REFS: RefsInfo = { branches: [], tags: [] };
 
 const AUTHOR = { name: "Ada Lovelace", email_hash: "deadbeef" };
 
@@ -69,6 +73,8 @@ describe("CommitView", () => {
   beforeEach(() => {
     mockedGetCommit.mockReset();
     mockedGetCommitDiff.mockReset();
+    mockedGetRefs.mockReset();
+    mockedGetRefs.mockResolvedValue(NO_REFS);
   });
 
   afterEach(() => {
@@ -155,5 +161,32 @@ describe("CommitView", () => {
     render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+  });
+
+  it("shows every ref badge pointing at the commit, uncapped", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    mockedGetCommitDiff.mockResolvedValue(DIFF);
+    mockedGetRefs.mockResolvedValue({
+      branches: [
+        { name: "main", target: DETAIL.sha, committed_at: null },
+        { name: "dev", target: DETAIL.sha, committed_at: null },
+      ],
+      tags: [{ name: "v1.0.0", target: DETAIL.sha, annotation: null, tagged_at: null }],
+    });
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+
+    await expect.element(page.getByText("main")).toBeVisible();
+    await expect.element(page.getByText("dev")).toBeVisible();
+    await expect.element(page.getByText("v1.0.0")).toBeVisible();
+  });
+
+  it("renders no badges and no error when the refs request fails", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    mockedGetCommitDiff.mockResolvedValue(DIFF);
+    mockedGetRefs.mockRejectedValue(new ApiError("internal", "boom", 500));
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+
+    await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
+    expect(page.getByRole("alert").elements().length).toBe(0);
   });
 });

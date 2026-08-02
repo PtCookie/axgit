@@ -602,12 +602,31 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     graph-presence/merge-marker/path-hidden cases. No API contract change —
     `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**` all untouched.
 
+- **Ref badges (branch/tag) on the Log tab and commit detail** (DECISIONS.md #34). Closed the last
+  candidate left over from the graph column work (#33). Finalized design:
+  - Client-side only: `web/src/lib/commit-refs.ts::useCommitRefs` fetches `/refs` in its own
+    effect, parallel to and independent of each page's own commits/detail fetch — never blocks
+    rendering, fails silently (same precedent as `ReadmeView`'s 404 handling, #21). Zero API
+    change, so `CommitInfo` (shared with `/search?type=message`) stays untouched. This is a
+    different trade-off from the blocking prefetch #18 rejected, not a reversal of that decision.
+  - New `web/src/components/repo/RefBadges.tsx` + `web/src/components/ui/badge.tsx` (vendored via
+    `shadcn add badge`). Icon (`GitBranchIcon`/`TagIcon`) distinguishes branch vs. tag, not colour
+    — `--chart-2..5` stay unvalidated (#29) until something runs them through the dataviz
+    validator. Capped at 3 badges + a `+N` overflow link in the log table (`h-12` row height,
+    #33); uncapped in the commit detail header. No HEAD/default-branch badge — `/refs` doesn't
+    carry that, and a third request wasn't worth it for a styling nuance.
+  - `logHref` moved from `CommitLog.tsx` into `web/src/lib/repo-href.ts` (matching
+    `searchHref`/`statsHref`'s shape) so `RefBadges`'s ref links and `CommitLog`'s own pagination
+    links share one builder.
+  - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**`
+    all untouched. No new route, so `shellFor`/`shell_for`/`RepoNav.astro` are untouched.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
-stays permanently excluded, not deferred, by the read-only invariant), and the build-chunk-size
-candidate above is now resolved. Pick the next piece of work from the candidates below, or from a
-fresh request.
+stays permanently excluded, not deferred, by the read-only invariant), and both the
+build-chunk-size and ref-badge candidates above are now resolved. Pick the next piece of work from
+the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -624,6 +643,3 @@ fresh request.
   ancestors of the next page's cursor (noted while building the graph column, DECISIONS.md #33) —
   not a regression from that change, but now visibly noticeable as a branch that "vanishes" across
   the Older boundary.
-- Ref badges (HEAD/branch/tag names) on the Log tab's Summary cell — deliberately left out of the
-  graph column work (DECISIONS.md #33), consistent with #18's rejection of prefetching `/refs` for
-  a page that doesn't otherwise need it.
