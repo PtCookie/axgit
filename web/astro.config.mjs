@@ -7,6 +7,7 @@ import { defineConfig } from "astro/config";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@astrojs/react";
 
+import { redirectFor } from "./src/lib/cgit-compat.ts";
 import { shellFor } from "./src/lib/shell.ts";
 
 const PUBLIC_DIR = path.join(fileURLToPath(new URL(".", import.meta.url)), "public");
@@ -71,6 +72,17 @@ function shellFallback() {
           !isPublicAsset(pathname);
 
         if (isNavigation && isAppRoute) {
+          // cgit-compatibility redirects (docs/DECISIONS.md #35) run first —
+          // a `.git`-suffixed or cgit-query-shaped path gets a real redirect,
+          // mirroring `api/src/shell.rs::serve_shell_or_redirect` — before
+          // falling through to the shell rewrite below.
+          const redirect = redirectFor(pathname, query ?? "");
+          if (redirect !== null) {
+            res.writeHead(308, { Location: redirect });
+            res.end();
+            return;
+          }
+
           const target = shellFor(pathname);
           // `shellFor` is idempotent on its own targets, so this also leaves
           // a direct request to `/` or `/__repo__` alone.

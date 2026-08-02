@@ -1070,3 +1070,45 @@ badge per branch/tag whose tip is that commit, linking to `/{repo}/log?ref={name
   both build ref links from it.
 - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**`
   all untouched. No new route, so `shellFor`/`shell_for`/`RepoNav.astro` are untouched.
+
+## #35 cgit URL compatibility redirects
+
+Jenkins' `git-plugin` Repository browser was still set to `cgit`, so build "changes" links were
+rendered as `/{repo}.git/commit/?id={sha}` — a shape axgit has never served. Separately, any
+`.git`-suffixed page URL (old cgit bookmarks, wiki links) silently rendered a broken page: it
+matched `shell::shell_for`'s route-*shape* matching (which never validates the repo segment), so
+the shell served 200, then the client-side island resolved the repo as literally `{repo}.git` and
+the API 404'd.
+
+- **Two-part fix.** (1) Jenkins' job Repository browser was switched to `githubweb` (URL without a
+  `.git` suffix) — its changeset (`{url}/commit/{sha}`), file (`{url}/blob/{sha}/{path}`), and diff
+  (`{url}/commit/{sha}#diff-N`) link shapes match axgit's native routes exactly, so this alone needs
+  no axgit change. (2) A permanent-redirect compatibility layer for the cases that already existed
+  before the Jenkins change: old cgit URLs and any `.git`-suffixed page request.
+- **Core shapes only, not full cgit coverage.** `/{repo}[.git]/commit/?id=` and `/{repo}[.git]/diff/`
+  → `/{repo}/commit/{sha}`; `/{repo}[.git]/log/?h=` → `/{repo}/log?ref=`; a bare `/{repo}.git` →
+  `/{repo}`; any other `.git`-suffixed path has the suffix stripped, query preserved. cgit's
+  `tree/{path}?id=` is **not** split into `tree` vs `blob` — telling those apart needs a git lookup
+  the redirect layer doesn't have — so it only gets the generic `.git`-strip. `plain/`, `atom/`,
+  `snapshot/` are out of scope; nothing currently links to them.
+  cgit-shaped queries (`commit`/`diff`/`log` above) redirect **regardless of `.git`**, since
+  `/{repo}/commit` (2 segments) was never a valid shape either way. Anything that's already a valid
+  native shape is left untouched — this is also what rules out redirect loops: the new
+  `cgit_compat::redirect_for`/`redirectFor` return `None`/`null` whenever the computed target would
+  equal the request as-is.
+- **New `api/src/cgit_compat.rs`, wired into `shell::serve_shell_or_redirect`** (replaces
+  `serve_shell` as the static-fallback handler in `routes.rs`; `serve_shell` itself is unchanged and
+  still exported for the shapes that fall through). Runs after `ServeDir` and the Smart HTTP /
+  Swagger UI routes (both real routes on the router, matched before the fallback ever executes), so
+  clone/fetch and the API are untouched — verified by
+  `cgit_compat_test.rs::smart_http_routes_take_precedence_over_cgit_redirects` and
+  `::dot_git_clone_still_works`.
+- **No percent-decoding.** `id`/`h` are matched and copied into the `Location` on their raw,
+  still-encoded text; `id` is additionally constrained to `[0-9a-fA-F]{4,64}` before it's accepted.
+  Together this means nothing built here can carry characters the original request didn't already
+  contain — no decode/re-encode round trip, no header-injection surface.
+- **Mirrored into the dev server**, same as `shellFor`/`shell_for`: new `web/src/lib/cgit-compat.ts`
+  (`redirectFor`), called from `astro.config.mjs`'s `shellFallback()` middleware ahead of the
+  `shellFor` rewrite, answering a real `308` instead of rewriting `req.url`.
+- No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**`
+  (beyond the new module) all untouched; this is static-fallback behavior, not an `/api/v1` route.

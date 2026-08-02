@@ -12,7 +12,9 @@
 use std::path::{Path, PathBuf};
 
 use axum::http::{StatusCode, Uri, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
+
+use crate::cgit_compat;
 
 /// The reserved `getStaticPaths` param the `/{repo}` shells are built under.
 /// Keep in sync with `web/src/lib/shell.ts::REPO_SHELL_PARAM`.
@@ -78,6 +80,17 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
             StatusCode::OK,
         ),
         _ => (PathBuf::from("404.html"), StatusCode::NOT_FOUND),
+    }
+}
+
+/// `ServeDir` fallback, cgit-compatibility redirects included: a `.git`-suffixed
+/// or cgit-query-shaped path (`docs/DECISIONS.md #35`) gets a permanent
+/// redirect to its axgit equivalent; everything else falls through to
+/// [`serve_shell`] unchanged.
+pub async fn serve_shell_or_redirect(static_dir: PathBuf, uri: Uri) -> Response {
+    match cgit_compat::redirect_for(&uri) {
+        Some(location) => Redirect::permanent(&location).into_response(),
+        None => serve_shell(static_dir, uri).await,
     }
 }
 

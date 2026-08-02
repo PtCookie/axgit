@@ -635,12 +635,32 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   (`repo.spec.ts`, `theme.spec.ts`) were reworded to state which parts of the behavior are
   Chromium-specific vs. shared.
 
+- **cgit URL compatibility redirects** (DECISIONS.md #35). Prompted by Jenkins' `git-plugin`
+  Repository browser still being set to `cgit`, which rendered build "changes" links as
+  `/{repo}.git/commit/?id={sha}` — a shape axgit never served. Two-part fix: the Jenkins job's
+  Repository browser was switched to `githubweb` (its link shapes match axgit's native routes
+  exactly, no axgit change needed for new links), plus a redirect layer for what already existed —
+  old cgit URLs and any `.git`-suffixed page request (which previously rendered a broken page: the
+  shell served 200 on route *shape* alone, then the client-side island resolved the repo as
+  literally `{repo}.git` and the API 404'd).
+  - New `api/src/cgit_compat.rs::redirect_for`, wired into `shell::serve_shell_or_redirect` (the
+    static-fallback handler in `routes.rs`; `serve_shell` itself is unchanged). Covers the core
+    shapes only: `commit`/`diff` query → `/{repo}/commit/{sha}`, `log?h=` → `/{repo}/log?ref=`, a
+    bare `/{repo}.git` → `/{repo}`, anything else `.git`-suffixed gets the suffix stripped with the
+    query preserved. cgit's `tree/{path}?id=` isn't split into `tree` vs `blob` (that needs a git
+    lookup the redirect layer doesn't have) — it only gets the generic `.git`-strip. `plain/`,
+    `atom/`, `snapshot/` are out of scope; nothing links to them.
+  - Mirrored into the dev server as `web/src/lib/cgit-compat.ts::redirectFor`, called from
+    `astro.config.mjs`'s `shellFallback()` middleware ahead of the `shellFor` rewrite — same
+    pairing as `shellFor`/`shell_for`.
+  - No API contract change — this is static-fallback behavior, not an `/api/v1` route.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
-stays permanently excluded, not deferred, by the read-only invariant), and both the
-build-chunk-size and ref-badge candidates above are now resolved. Pick the next piece of work from
-the candidates below, or from a fresh request.
+stays permanently excluded, not deferred, by the read-only invariant), and the build-chunk-size,
+ref-badge, and cgit-compatibility candidates above are all now resolved. Pick the next piece of
+work from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 

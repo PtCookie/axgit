@@ -122,7 +122,9 @@ render.
 - Per-repository pages can't be enumerated at build time (the repo list is per-deployment), so
   `src/pages/[repo]/*.astro` is prerendered once under a reserved placeholder param and the server
   maps request path *shapes* onto the matching shell (`api/src/shell.rs`, docs/DECISIONS.md #17).
-  There is no client-side router; the only client-side URL parsing left is recovering the real
+  Ahead of that mapping, a small compatibility layer (`api/src/cgit_compat.rs`,
+  docs/DECISIONS.md #35) permanently redirects cgit-style URLs (`.git`-suffixed paths, cgit's
+  `commit`/`diff`/`log` query shapes) onto their axgit equivalents. There is no client-side router; the only client-side URL parsing left is recovering the real
   repository name from `location` for the data islands and for one `is:inline` script that fills in
   the heading/tab links/title before first paint.
 - Code highlighting: **Shiki, client-side**, with lazy-loaded language grammars, using the

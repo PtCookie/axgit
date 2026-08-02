@@ -71,7 +71,8 @@ pub fn build_router(state: AppState) -> Router {
         // map whatever is left onto the matching prerendered page shell —
         // or `404.html` with a real 404 status.
         let dir = static_dir.clone();
-        let shell: MethodRouter<()> = get(move |uri: Uri| shell::serve_shell(dir.clone(), uri));
+        let shell: MethodRouter<()> =
+            get(move |uri: Uri| shell::serve_shell_or_redirect(dir.clone(), uri));
         router = router.fallback_service(ServeDir::new(static_dir).fallback(shell));
     }
 
