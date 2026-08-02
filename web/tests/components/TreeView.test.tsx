@@ -61,6 +61,17 @@ describe("TreeView", () => {
     expect(page.getByRole("link", { name: "vendor" }).elements().length).toBe(0);
   });
 
+  it("orders the columns as Mode, Name, Size and shows symbolic modes", async () => {
+    mockedGetTree.mockResolvedValue(ROOT_TREE);
+    render(<TreeView repo="git-compose" path="" />);
+
+    await expect.element(page.getByText("d---------")).toBeVisible();
+    await expect.element(page.getByText("-rw-r--r--")).toBeVisible();
+
+    const headers = page.getByRole("row").elements()[0].textContent;
+    expect(headers).toEqual("ModeNameSize");
+  });
+
   it("shows a parent-directory link when not at the root", async () => {
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, path: "src" });
     render(<TreeView repo="git-compose" path="src" />);

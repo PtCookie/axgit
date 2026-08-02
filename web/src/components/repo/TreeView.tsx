@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import { getTree } from "@/lib/api/repos";
 import type { EntryKind, TreeListing } from "@/lib/api/schemas";
+import { formatMode } from "@/lib/format/mode";
 import { formatSize } from "@/lib/format/size";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import { blobHref, treeHref } from "@/lib/repo-href";
@@ -116,8 +117,8 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
             <TableHead>Mode</TableHead>
+            <TableHead>Name</TableHead>
             <TableHead>Size</TableHead>
           </TableRow>
         </TableHeader>
@@ -144,6 +145,9 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
               const label = entry.type === "tree" ? `${entry.name}/` : entry.name;
               return (
                 <TableRow key={entry.name}>
+                  <TableCell className="text-muted-foreground font-mono whitespace-nowrap" title={entry.mode}>
+                    {formatMode(entry.mode)}
+                  </TableCell>
                   <TableCell className="font-medium">
                     {href ? (
                       <a className="hover:underline" href={href}>
@@ -153,7 +157,6 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
                       <span title={KIND_LABEL[entry.type]}>{label}</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground font-mono">{entry.mode}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {entry.size === null ? "—" : formatSize(entry.size)}
                   </TableCell>
