@@ -112,7 +112,11 @@ progress.
   docs/DECISIONS.md #17). **Adding a route means updating three places together**:
   `web/src/pages/`, `web/src/lib/shell.ts::shellFor`, and `api/src/shell.rs::shell_for`.
 - Navigation uses Astro's `<ClientRouter />` (docs/DECISIONS.md #24) — same-origin link clicks swap
-  `<body>` client-side instead of a full page load, with a short fade on `<main>`. The header is
+  `<body>` client-side instead of a full page load, with a short fade on `<main>`. **Nothing is
+  animated by the View Transition API**: every `::view-transition-*(root)` animation is off in
+  `global.css` and no element carries a `view-transition-name`, because naming one made Firefox
+  scale the page vertically for the whole navigation (docs/DECISIONS.md #30). The fade is a plain
+  CSS animation on `<main>` — don't reintroduce `transition:animate`. The header is
   `transition:persist`ed; `<main>` and everything inside it is not, so every data island always
   remounts fresh against the new URL rather than receiving props on a live instance. Anything that
   touches the repository shell (name, `<title>`, tab hrefs) has to re-run on

@@ -197,17 +197,54 @@ html[data-theme="dark"] [data-theme-icon="dark"] {
 }
 
 /*
- * View transitions (docs/DECISIONS.md #24): <main> carries its own fade
- * (`transition:animate` in `layouts/Layout.astro`). Without this rule, the
- * *root* snapshot — which by default covers the whole viewport, including
- * the persisted header and, on repository pages, the tab bar — would also
- * cross-fade underneath it, doubling the animation and blurring the chrome
- * that's supposed to swap instantly. `prefers-reduced-motion` needs no
- * separate handling here: Astro's `<ClientRouter />` already ships a media
- * query that disables view transition animations outright when it's set.
+ * View transitions (docs/DECISIONS.md #24, #30): `<ClientRouter />` drives the
+ * swap through `startViewTransition`, but nothing here is animated *by* the
+ * View Transition API — the whole page is a single `root` snapshot and every
+ * animation on it is off, so the transition resolves within a frame and the
+ * real DOM is back on screen immediately.
+ *
+ * Two reasons. The cross-fade the UA puts on `root` covers the full viewport,
+ * including the persisted header and (on repository pages) the tab bar, so it
+ * blurs chrome that's supposed to swap instantly. And the group animation —
+ * which morphs the snapshot box from its old size to its new one — is what
+ * made Firefox scale the live page into that box, squashing or stretching it
+ * vertically for the length of every navigation (#30). Sizes never differ for
+ * `root` (its snapshot is always the viewport-sized snapshot containing
+ * block), so switching it off costs nothing.
+ *
+ * `prefers-reduced-motion` needs no separate handling here: Astro's
+ * `<ClientRouter />` already ships a media query that disables view transition
+ * animations outright when it's set.
  */
+::view-transition-group(root),
 ::view-transition-old(root),
 ::view-transition-new(root) {
     animation: none;
     mix-blend-mode: normal;
+}
+
+/*
+ * The page fade `<ClientRouter />` no longer provides (see above). <main> is
+ * never `transition:persist`ed (`layouts/Layout.astro`), so Astro's swap
+ * inserts a brand-new element on every navigation and this animation restarts
+ * by itself — the same reason it also plays once on a cold load. Only the
+ * incoming page fades in; the outgoing one is gone the moment the swap
+ * commits, which is what makes this immune to the snapshot-scaling behavior
+ * a shared-element transition on <main> ran into (#30).
+ */
+@keyframes axgit-page-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+main {
+    animation: axgit-page-in 0.18s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+    main {
+        animation: none;
+    }
 }
