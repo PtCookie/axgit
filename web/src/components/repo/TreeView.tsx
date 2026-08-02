@@ -117,7 +117,7 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Mode</TableHead>
+            <TableHead className="w-px">Mode</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Size</TableHead>
           </TableRow>
@@ -145,7 +145,7 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
               const label = entry.type === "tree" ? `${entry.name}/` : entry.name;
               return (
                 <TableRow key={entry.name}>
-                  <TableCell className="text-muted-foreground font-mono whitespace-nowrap" title={entry.mode}>
+                  <TableCell className="text-muted-foreground w-px font-mono" title={entry.mode}>
                     {formatMode(entry.mode)}
                   </TableCell>
                   <TableCell className="font-medium">
