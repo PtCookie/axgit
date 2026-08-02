@@ -688,3 +688,48 @@ The web UI for #26's search endpoint, closing out repository search (#9/#25/#26)
 - `web/src/lib/api/repos.ts` gained `searchRepo`/`SearchParams` (reusing the existing `buildQuery`
   helper); `repo-href.ts` gained `blobLineHref`/`searchHref`; `schemas.ts` gained
   `SearchResults`/`SearchKind`/`FileMatch`/`LineMatch` aliases. No API contract change.
+
+## #28 Commit-statistics API: git2 revwalk, 12 fixed buckets anchored on the resolved commit
+
+`GET /api/v1/repos/{repo}/stats?ref=&period=&limit=` (docs/API.md) — cgit's `stats` page, the
+other half of #9's v1 exclusions (repository search, #25/#26/#27, was the first). Closes out #9.
+
+- **git2 in-process revwalk, not a `git log` exec, not a persistent index.** Same reasoning as
+  search (#26): an index would be this app's first piece of mutable, persistent state in an
+  otherwise stateless, read-only container, and an exec can only be bounded by a process timeout
+  where git2 lets the walk enforce an exact commit budget (`MAX_SCANNED_COMMITS = 20_000`,
+  the same budget family as search/archive/diff/blob's existing caps).
+- **The window is anchored on the resolved commit's authordate, not the request time.** cgit's own
+  stats page anchors on "now," but doing that here would make every response time-dependent —
+  ineligible for the immutable full-sha caching rule every other endpoint gets
+  (`handlers/mod.rs::cached_response`). Anchoring on the commit instead makes a full-sha `ref`
+  request fully deterministic, so it gets the same `Cache-Control: public, immutable` treatment as
+  commit detail/diff/blame.
+- **12 buckets, fixed, regardless of `period`.** Keeps the response shape (and the web table's
+  column count) independent of the period selection — `period` only changes each bucket's
+  duration (week/month/quarter/year), not how many there are.
+- **Bucket boundaries are calendar-aware, computed with jiff's `Span` (not fixed-duration
+  arithmetic).** Month/quarter/year lengths vary, so subtracting "1 month" from a `Date` (jiff
+  handles this correctly, unlike naively subtracting a fixed number of seconds) is required for
+  bucket starts to land on the 1st. Week buckets start on Monday (`Weekday::to_monday_zero_offset`).
+  All bucketing happens in UTC — the anchor's original offset (the commit's authored timezone) is
+  discarded once used to pick which UTC instant to anchor on, so the response's bucket boundaries
+  don't depend on where the author's clock was set.
+- **A commit authored after the window's end clamps into the last bucket rather than being
+  dropped** — out-of-order authordates are possible across merged branches (an old branch merged
+  late). Commits older than the window are simply excluded; no early-exit heuristic stops the
+  revwalk on the first out-of-window commit, since revwalk order isn't strictly chronological
+  across merges — only the scan budget bounds the walk, same as search's message search.
+- **`authors[].buckets` is a parallel array to the top-level `buckets`**, avoiding a second
+  boundary/label scheme the frontend would have to keep in sync — same shape idea as feed reusing
+  the commit log's `CommitInfo`.
+- **`limit` (default 50, 1–100, not clamped) caps only the `authors` rows returned, never the
+  bucket totals** — `buckets[].commits` always reflects every commit in the window regardless of
+  which authors got cut, and `author_count` reports the full distinct count so the UI can show
+  "top N of M." `truncated` is set by either cause (scan budget or `limit`), matching search's
+  precedent of one flag for two independent causes.
+- `handlers/mod.rs::parse_limit` gained a third caller (after commits/search); `repo/commits.rs`'s
+  `signature_info`/`CommitAuthor` are reused directly for the author breakdown (email is never
+  exposed, only its hash, per the existing rule).
+- The `/{repo}/stats` web page (chart + author table) is deferred to a follow-up commit
+  (ROADMAP.md), same split search used (#26 API → #27 page).

@@ -1079,6 +1079,110 @@
         }
       }
     },
+    "/api/v1/repos/{repo}/stats": {
+      "get": {
+        "tags": [
+          "repos"
+        ],
+        "summary": "Commit-activity statistics",
+        "description": "Buckets commits into 12 `period`-sized windows anchored on the resolved\ncommit's authordate (docs/DECISIONS.md #28), plus a per-author breakdown.\ngit2 in-process scan, same budget approach as search (#26) — not a\npersistent index or a `git log` exec.",
+        "operationId": "get_stats",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "description": "`week`, `month` (default), `quarter`, or `year`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "month"
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "description": "Branch, tag, or commit sha; HEAD when absent.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of authors returned, most active first. Parsed manually so an\ninvalid value yields the JSON `invalid_param` envelope instead of\naxum's plain-text 400. Never clamped.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            },
+            "example": 50
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Commit statistics. An empty repository with no `ref` yields an empty result.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent on full-sha `ref` requests"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResults"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — unknown `period`, or bad `limit`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/repos/{repo}/tree/{ref}/{path}": {
       "get": {
         "tags": [
@@ -1384,6 +1488,33 @@
   },
   "components": {
     "schemas": {
+      "AuthorStats": {
+        "type": "object",
+        "description": "Per-author breakdown (docs/API.md).",
+        "required": [
+          "author",
+          "commits",
+          "buckets"
+        ],
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/CommitAuthor"
+          },
+          "commits": {
+            "type": "integer",
+            "description": "Total commits by this author within the window.",
+            "minimum": 0
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Parallel to the response's `buckets` — same length and order."
+          }
+        }
+      },
       "BlameInfo": {
         "type": "object",
         "description": "Response of the blame endpoint (docs/API.md).",
@@ -1539,6 +1670,25 @@
               "null"
             ],
             "description": "Authordate (RFC 3339) of the branch tip."
+          }
+        }
+      },
+      "BucketStats": {
+        "type": "object",
+        "description": "One time bucket (docs/API.md).",
+        "required": [
+          "start",
+          "commits"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Bucket start, UTC, RFC 3339. Ascending order (oldest first)."
+          },
+          "commits": {
+            "type": "integer",
+            "description": "Total commits in this bucket, including any authors cut by `limit`.",
+            "minimum": 0
           }
         }
       },
@@ -2243,6 +2393,62 @@
           }
         }
       },
+      "StatsPeriod": {
+        "type": "string",
+        "description": "Requested bucket size, echoed back in the response's `period` field.",
+        "enum": [
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ]
+      },
+      "StatsResults": {
+        "type": "object",
+        "description": "Response of `GET /api/v1/repos/{repo}/stats` (docs/API.md).",
+        "required": [
+          "sha",
+          "period",
+          "truncated",
+          "author_count",
+          "buckets",
+          "authors"
+        ],
+        "properties": {
+          "sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Resolved commit sha the window is anchored on. `None` only for an\nempty repository (unborn HEAD) with no explicit `ref`."
+          },
+          "period": {
+            "$ref": "#/components/schemas/StatsPeriod"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "`true` when the commit scan budget was hit, or the author list was cut\nby `limit` — either way, the results are a prefix."
+          },
+          "author_count": {
+            "type": "integer",
+            "description": "Number of distinct authors within the window (may exceed\n`authors.len()` once cut by `limit`).",
+            "minimum": 0
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BucketStats"
+            }
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorStats"
+            },
+            "description": "Sorted by commit count, descending; capped at `limit`."
+          }
+        }
+      },
       "TagRef": {
         "type": "object",
         "description": "Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).",
@@ -2339,7 +2545,7 @@
   "tags": [
     {
       "name": "repos",
-      "description": "Repository discovery, summary, refs, and feed"
+      "description": "Repository discovery, summary, refs, feed, and commit statistics"
     },
     {
       "name": "commits",

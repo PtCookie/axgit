@@ -56,6 +56,13 @@ impl From<serde_json::Error> for ApiError {
     }
 }
 
+/// Bucket-boundary arithmetic in `repo/stats.rs` (docs/DECISIONS.md #28).
+impl From<jiff::Error> for ApiError {
+    fn from(err: jiff::Error) -> Self {
+        Self::Internal(err.into())
+    }
+}
+
 impl ApiError {
     fn status_and_code(&self) -> (StatusCode, &'static str) {
         match self {

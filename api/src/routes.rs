@@ -8,7 +8,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::error::{ApiError, ErrorResponse};
-use crate::handlers::{archive, commits, feed, files, repos, search};
+use crate::handlers::{archive, commits, feed, files, repos, search, stats};
 use crate::openapi::ApiDoc;
 use crate::shell;
 use crate::smart_http;
@@ -41,6 +41,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/repos/{repo}/archive/{*rest}", get(archive::get_archive))
         .route("/repos/{repo}/feed.atom", get(feed::get_feed))
         .route("/repos/{repo}/search", get(search::get_search))
+        .route("/repos/{repo}/stats", get(stats::get_stats))
         // `nest`ed routers inherit the outer `fallback_service` (the SPA shell
         // below), so an unmatched `/api/v1/...` path must get its own JSON
         // 404 rather than falling through to `index.html`.

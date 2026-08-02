@@ -289,6 +289,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/repos/{repo}/stats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Commit-activity statistics
+     * @description Buckets commits into 12 `period`-sized windows anchored on the resolved
+     *     commit's authordate (docs/DECISIONS.md #28), plus a per-author breakdown.
+     *     git2 in-process scan, same budget approach as search (#26) — not a
+     *     persistent index or a `git log` exec.
+     */
+    get: operations["get_stats"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/repos/{repo}/tree/{ref}/{path}": {
     parameters: {
       query?: never;
@@ -377,6 +400,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** @description Per-author breakdown (docs/API.md). */
+    AuthorStats: {
+      author: components["schemas"]["CommitAuthor"];
+      /** @description Total commits by this author within the window. */
+      commits: number;
+      /** @description Parallel to the response's `buckets` — same length and order. */
+      buckets: number[];
+    };
     /** @description Response of the blame endpoint (docs/API.md). */
     BlameInfo: {
       /** @description Resolved commit sha the file was blamed at. */
@@ -439,6 +470,13 @@ export interface components {
       target: string;
       /** @description Authordate (RFC 3339) of the branch tip. */
       committed_at: string | null;
+    };
+    /** @description One time bucket (docs/API.md). */
+    BucketStats: {
+      /** @description Bucket start, UTC, RFC 3339. Ascending order (oldest first). */
+      start: string;
+      /** @description Total commits in this bucket, including any authors cut by `limit`. */
+      commits: number;
     };
     /**
      * @description Commit author of `GET /api/v1/repos/{repo}/commits` (docs/API.md).
@@ -711,6 +749,33 @@ export interface components {
        *     the frontend can render matches the same way as log rows.
        */
       commits: components["schemas"]["CommitInfo"][];
+    };
+    /**
+     * @description Requested bucket size, echoed back in the response's `period` field.
+     * @enum {string}
+     */
+    StatsPeriod: "week" | "month" | "quarter" | "year";
+    /** @description Response of `GET /api/v1/repos/{repo}/stats` (docs/API.md). */
+    StatsResults: {
+      /**
+       * @description Resolved commit sha the window is anchored on. `None` only for an
+       *     empty repository (unborn HEAD) with no explicit `ref`.
+       */
+      sha: string | null;
+      period: components["schemas"]["StatsPeriod"];
+      /**
+       * @description `true` when the commit scan budget was hit, or the author list was cut
+       *     by `limit` — either way, the results are a prefix.
+       */
+      truncated: boolean;
+      /**
+       * @description Number of distinct authors within the window (may exceed
+       *     `authors.len()` once cut by `limit`).
+       */
+      author_count: number;
+      buckets: components["schemas"]["BucketStats"][];
+      /** @description Sorted by commit count, descending; capped at `limit`. */
+      authors: components["schemas"]["AuthorStats"][];
     };
     /** @description Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md). */
     TagRef: {
@@ -1498,6 +1563,79 @@ export interface operations {
         content?: never;
       };
       /** @description `invalid_param` — missing/oversized `q`, unknown `type`, or bad `limit` */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description `repo_not_found`, `ref_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_stats: {
+    parameters: {
+      query?: {
+        /**
+         * @description `week`, `month` (default), `quarter`, or `year`.
+         * @example month
+         */
+        period?: string;
+        /**
+         * @description Branch, tag, or commit sha; HEAD when absent.
+         * @example main
+         */
+        ref?: string;
+        /**
+         * @description Number of authors returned, most active first. Parsed manually so an
+         *     invalid value yields the JSON `invalid_param` envelope instead of
+         *     axum's plain-text 400. Never clamped.
+         * @example 50
+         */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        /**
+         * @description Repository name without the `.git` suffix
+         * @example git-compose
+         */
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Commit statistics. An empty repository with no `ref` yields an empty result. */
+      200: {
+        headers: {
+          /** @description `no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref` */
+          "Cache-Control"?: string;
+          /** @description Validator-derived; absent on full-sha `ref` requests */
+          ETag?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["StatsResults"];
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `invalid_param` — unknown `period`, or bad `limit` */
       400: {
         headers: {
           [name: string]: unknown;

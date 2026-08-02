@@ -445,6 +445,52 @@ bounded by its own size budget, independent of `limit`.
 - Caching follows the commit-detail pattern: immutable only when `ref` is given and equals the
   resolved commit's full sha as a string; otherwise `ETag` + `Cache-Control: no-cache`.
 
+### `GET /api/v1/repos/{repo}/stats?ref=&period=&limit=`
+
+Commit-activity statistics: commit counts bucketed by time period, plus a per-author breakdown.
+cgit's `stats` page. Implemented as an in-process git2 revwalk (not a `git log` exec, not a
+persistent index — DECISIONS.md #28), bounded by the same kind of scan budget as search.
+
+```json
+{
+  "sha": "<full sha, or null for an empty repository>",
+  "period": "month",
+  "truncated": false,
+  "author_count": 23,
+  "buckets": [{ "start": "2025-09-01T00:00:00+00:00", "commits": 12 }],
+  "authors": [
+    { "author": { "name": "...", "email_hash": "..." }, "commits": 120, "buckets": [3, 0, 7] }
+  ]
+}
+```
+
+- `ref`: branch/tag/sha, defaults to HEAD. `404 ref_not_found` on resolution failure.
+- `period`: `week`, `month` (default), `quarter`, or `year`. Any other value is
+  `400 invalid_param`.
+- The response always covers **12 buckets**, regardless of `period` — the window is anchored on
+  the **resolved commit's authordate** (not the request time), so a full-sha `ref` yields a
+  deterministic response and is eligible for immutable caching, same as commit detail. The last
+  bucket is the period containing that authordate; the first is 11 periods before it.
+- `buckets[].start`: the bucket's start instant, UTC, RFC 3339. Ascending order (oldest first).
+  Week buckets start on Monday 00:00 UTC; month/quarter/year buckets start on the 1st.
+- `buckets[].commits`: total commits in that bucket, **including** any authors cut by `limit` —
+  bucket totals are never affected by the author cap.
+- `authors[].buckets` is a **parallel array** to the top-level `buckets`: same length and order,
+  so `authors[i].buckets[j]` is that author's commit count in `buckets[j]`.
+- A commit older than the 12-bucket window is excluded entirely. A commit authored *after* the
+  window's end (possible with out-of-order authordates across merged branches) is clamped into
+  the last bucket rather than dropped.
+- `limit`: default 50, allowed range 1–100, same rules as the commit log's `limit` (not clamped).
+  Caps the number of `authors` rows returned, most active first; `author_count` reports the full
+  distinct-author count within the window even when `authors` is cut shorter.
+- `truncated`: `true` when either the commit scan budget (20,000 commits walked) or `limit` cut
+  the results before finishing — the same two-cause rule search's `truncated` uses.
+- Empty repository (unborn HEAD): omitting `ref` returns `200` with `"sha": null`, empty
+  `buckets`/`authors`, `author_count: 0`. An explicit `ref` returns `404 ref_not_found` — the same
+  carve-out the commit log and search apply.
+- Caching follows the commit-detail pattern: immutable only when `ref` is given and equals the
+  resolved commit's full sha as a string; otherwise `ETag` + `Cache-Control: no-cache`.
+
 ## Smart HTTP (clone/fetch only)
 
 Outside the API prefix, mapped directly to repository paths. Handled by spawning

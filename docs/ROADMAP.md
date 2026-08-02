@@ -497,25 +497,59 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     `blobLineHref`/`searchHref`; `schemas.ts` gained the search type aliases. No API contract
     change.
 
-## Next up: commit-statistics graphs (`stats`)
+- **`GET /api/v1/repos/{repo}/stats` — commit-activity statistics** (DECISIONS.md #28). The other
+  half of #9's v1 exclusions (repository search, #25/#26/#27, was the first) — cgit's `stats` page.
+  Finalized design:
+  - git2 in-process revwalk (`repo/stats.rs`), same reasoning as search: no persistent index, no
+    `git log` exec — bounded by `MAX_SCANNED_COMMITS = 20_000`.
+  - **The window is anchored on the resolved commit's authordate, not the request time** —
+    makes a full-sha `ref` response deterministic, so it gets the same immutable-caching
+    treatment as commit detail/diff/blame via `handlers/mod.rs::cached_response`.
+  - Always **12 buckets** regardless of `period` (`week`/`month`/`quarter`/`year`, default
+    `month`); boundaries computed with jiff's calendar-aware `Span` arithmetic (month/quarter/year
+    lengths vary), in UTC. Out-of-window commits are dropped; commits authored past the window's
+    end clamp into the last bucket rather than being dropped (no early-exit heuristic — revwalk
+    order isn't strictly chronological across merges).
+  - `authors[].buckets` is a parallel array to the top-level `buckets`. `limit` (reusing
+    `handlers/mod.rs::parse_limit`, now a third caller) caps only the `authors` rows, never bucket
+    totals; `truncated` covers both the scan budget and the `limit` cut, matching search's
+    precedent.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` all updated (new endpoint);
+    `schemas.ts` still needs its stats aliases (deferred to the page commit below).
+
+## Next up: `/{repo}/stats` page (web)
 
 ### Context
 
-The last gap versus cgit — DECISIONS.md #9's other v1 exclusion (repository search, the first
-exclusion, is now done per #26/#27 above). cgit's `stats` page shows commit-activity graphs
-(commits per author/week/month) for a repository.
+The web half of #28 above — same split search used (#26 API → #27 page). Once this lands, #9's
+v1 exclusion list is fully closed (HTTP push is permanently excluded by the read-only invariant,
+not deferred).
 
 ### Things to review before starting
 
-- Needs a new API endpoint — no existing endpoint aggregates commit counts by author or time
-  bucket. `commits.rs::log`'s revwalk is the natural starting point, but the full-history walk this
-  needs (not a paginated window) should get its own size/time bound up front, consistent with
-  search's scan budget (docs/DECISIONS.md #26) and archive/diff/blob's existing caps.
-- Decide the aggregation shape (by author, by week/month, or both) and whether it's computed
-  on-request or benefits from the response cache more than other endpoints do, given a full-history
-  walk is more expensive than a single page of commits.
-- New route shape likely `/{repo}/stats`, needed in `web/src/pages/[repo]/stats.astro`,
-  `web/src/lib/shell.ts::shellFor`, and `api/src/shell.rs::shell_for` together (CLAUDE.md's "adding
-  a route" rule) — `unmatched_shapes_map_to_the_404_shell`'s existing `/git-compose/stats` test
-  case will need to move.
-- Decide on a charting approach for the web side — no chart library is a dependency yet.
+- Route `/{repo}/stats` needs `web/src/pages/[repo]/stats.astro`, `web/src/lib/shell.ts::shellFor`,
+  and `api/src/shell.rs::shell_for` together (CLAUDE.md's "adding a route" rule) — the existing
+  `/git-compose/stats` case in each shell's 404 test table needs to move to the new matched-shape
+  test instead. `RepoNav.astro`/`RepoLayout.astro` need a `stats` tab (own tab, not a drill-down,
+  same as `search`).
+- Chart library: **Recharts, added via `pnpm exec shadcn add chart`** — confirmed the `base-luma`
+  style's `chart` registry item declares `recharts` as its own dependency (the CLI installs it,
+  no separate `pnpm add` needed) and pulls in `registryDependencies: card`, so `ui/chart.tsx` +
+  `ui/card.tsx` both get vendored, same as every other `ui/` file. Read the `dataviz` skill before
+  writing chart code; check both light/dark contrast against the `--chart-1..5` tokens in
+  `global.css` (their light/dark values are currently identical, unverified for contrast — #23
+  had to fix `--primary` for exactly this reason).
+- Period switching should be plain links (`statsHref`, mirroring `searchHref`), not a form — it's
+  a fixed 4-way choice, and `<ClientRouter />` (#24) already intercepts link clicks.
+- `web/src/lib/api/repos.ts` needs `getStats`; `schemas.ts` needs the stats type aliases
+  (`RepoStats`/`StatsPeriod`/`StatsBucket`/`AuthorStats` or similar — `types.ts` already has the
+  generated shapes from the API commit).
+
+### Later candidates (not urgent)
+
+- `git blame --follow` (rename tracking) — noted as a possible follow-up when blame was built
+  (DECISIONS.md #14/#20), never revisited.
+- `git grep`/`git log` exec fallbacks for search/stats if either proves too slow on a large
+  repository — both left this escape hatch for themselves (DECISIONS.md #26/#28).
+- Commit log's `path` filter walk can be slow on paths that change rarely across a long history
+  (noted when `commits.rs::log` was built) — no reports of this being a real problem yet.

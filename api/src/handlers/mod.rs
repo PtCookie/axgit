@@ -4,6 +4,7 @@ pub mod feed;
 pub mod files;
 pub mod repos;
 pub mod search;
+pub mod stats;
 
 use axum::body::Bytes;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
