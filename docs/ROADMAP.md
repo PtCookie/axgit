@@ -517,35 +517,46 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` all updated (new endpoint);
     `schemas.ts` still needs its stats aliases (deferred to the page commit below).
 
-## Next up: `/{repo}/stats` page (web)
+- **`/{repo}/stats` page** (DECISIONS.md #29). The web half of #28 — closes out #9's v1 exclusion
+  list entirely (HTTP push remains permanently excluded by the read-only invariant, not deferred).
+  Finalized design:
+  - Route `web/src/pages/[repo]/stats.astro` follows `search.astro`'s shape (no path segments, all
+    state in `?period=&ref=`) — one new two-segment case in `shellFor`/`shell_for`. `RepoNav.astro`
+    gained a "Stats" tab; `RepoLayout.astro`'s `Active`/`TITLE_SUFFIXES`/`NAV_ACTIVE` grew a `stats`
+    case. `theme.spec.ts`/`repo.spec.ts`'s 404-shell test fixture moved from `/git-compose/stats`
+    (no longer unmatched) to `/git-compose/blob` (still structurally unmatched with no path).
+  - **Recharts, installed via `pnpm exec shadcn add chart`** (not a separate `pnpm add`) —
+    confirmed the `base-luma` style's `chart` registry item declares `recharts` as its own
+    dependency and pulls in `registryDependencies: card`, so `ui/chart.tsx` + `ui/card.tsx` both
+    vendored in one step. The vendored file's one lint error was `eslint --fix`ed; its remaining
+    warnings are left as shadcn generated them (CLAUDE.md's "generated files may be modified"
+    policy — fix what's broken, not the whole file's style).
+  - **`--chart-1` was genuinely broken and got fixed via the `dataviz` skill's validator**, not by
+    eye — light mode measured 1.44:1 contrast (FAIL, near-invisible) and dark mode's lightness sat
+    above the dark band (FAIL, would glow). Fixed by reusing `--primary`'s hue at two different
+    validator-passing lightness steps (light reuses `--primary` itself; dark needed a new L 0.6
+    step, since `--primary`'s own dark value was tuned for text contrast, not a chart mark's
+    dark-band requirement). `--chart-2..5` remain unvalidated — untouched until a second series
+    exists.
+  - **`minPointSize={2}` on the `<Bar>`** — a real bug the skill's mandatory "render it and look at
+    it" step caught: Recharts omits the bar element entirely for a zero-commit bucket, leaving that
+    month with no hover/tooltip hit target. Confirmed via rendered-SVG inspection (11 bars for 12
+    buckets before the fix, 12 after).
+  - Period switcher is four plain links (`statsHref`), not a form — a fixed 4-way pick needs no
+    free-text input, and `<ClientRouter />` (#24) already intercepts the clicks.
+  - The author table (`authors[].buckets`, parallel to the response's `buckets`) doubles as the
+    chart's required "table view" — a `TableFooter` "Total" row sums each bucket column, so every
+    number the chart plots is also reachable without it.
+  - `web/src/lib/api/repos.ts` gained `getStats`/`StatsParams`; `repo-href.ts` gained `statsHref`;
+    `schemas.ts` gained the stats aliases. No API contract change — web-only commit.
 
-### Context
+## Next up
 
-The web half of #28 above — same split search used (#26 API → #27 page). Once this lands, #9's
-v1 exclusion list is fully closed (HTTP push is permanently excluded by the read-only invariant,
-not deferred).
+None queued — #9's v1 scope is now fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
+stays permanently excluded, not deferred, by the read-only invariant). Pick the next piece of work
+from the candidates below, or from a fresh request.
 
-### Things to review before starting
-
-- Route `/{repo}/stats` needs `web/src/pages/[repo]/stats.astro`, `web/src/lib/shell.ts::shellFor`,
-  and `api/src/shell.rs::shell_for` together (CLAUDE.md's "adding a route" rule) — the existing
-  `/git-compose/stats` case in each shell's 404 test table needs to move to the new matched-shape
-  test instead. `RepoNav.astro`/`RepoLayout.astro` need a `stats` tab (own tab, not a drill-down,
-  same as `search`).
-- Chart library: **Recharts, added via `pnpm exec shadcn add chart`** — confirmed the `base-luma`
-  style's `chart` registry item declares `recharts` as its own dependency (the CLI installs it,
-  no separate `pnpm add` needed) and pulls in `registryDependencies: card`, so `ui/chart.tsx` +
-  `ui/card.tsx` both get vendored, same as every other `ui/` file. Read the `dataviz` skill before
-  writing chart code; check both light/dark contrast against the `--chart-1..5` tokens in
-  `global.css` (their light/dark values are currently identical, unverified for contrast — #23
-  had to fix `--primary` for exactly this reason).
-- Period switching should be plain links (`statsHref`, mirroring `searchHref`), not a form — it's
-  a fixed 4-way choice, and `<ClientRouter />` (#24) already intercepts link clicks.
-- `web/src/lib/api/repos.ts` needs `getStats`; `schemas.ts` needs the stats type aliases
-  (`RepoStats`/`StatsPeriod`/`StatsBucket`/`AuthorStats` or similar — `types.ts` already has the
-  generated shapes from the API commit).
-
-### Later candidates (not urgent)
+### Candidates (not urgent, no particular order)
 
 - `git blame --follow` (rename tracking) — noted as a possible follow-up when blame was built
   (DECISIONS.md #14/#20), never revisited.
@@ -553,3 +564,10 @@ not deferred).
   repository — both left this escape hatch for themselves (DECISIONS.md #26/#28).
 - Commit log's `path` filter walk can be slow on paths that change rarely across a long history
   (noted when `commits.rs::log` was built) — no reports of this being a real problem yet.
+- `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
+  revisit with the `dataviz` skill's validator if the stats page (or a future one) ever needs a
+  second chart series.
+- The web build's largest JS chunk is now over the default 500 kB warning threshold (Recharts,
+  DECISIONS.md #29) — no action taken; revisit with code-splitting (`import()`, or
+  `build.rolldownOptions.output.codeSplitting`) if load performance on `/{repo}/stats` ever becomes
+  a real complaint.

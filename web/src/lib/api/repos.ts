@@ -12,6 +12,8 @@ import type {
   RepoSummary,
   SearchKind,
   SearchResults,
+  StatsPeriod,
+  StatsResults,
   TreeListing,
 } from "./schemas";
 
@@ -122,4 +124,15 @@ export interface SearchParams {
 export function searchRepo(name: string, params: SearchParams): Promise<SearchResults> {
   const query = buildQuery(params);
   return apiFetch<SearchResults>(`/repos/${encodeSegment(name)}/search${query}`);
+}
+
+export interface StatsParams {
+  period?: StatsPeriod;
+  ref?: string;
+  limit?: number;
+}
+
+export function getStats(name: string, params: StatsParams = {}): Promise<StatsResults> {
+  const query = buildQuery(params);
+  return apiFetch<StatsResults>(`/repos/${encodeSegment(name)}/stats${query}`);
 }

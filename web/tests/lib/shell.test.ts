@@ -71,6 +71,12 @@ describe("shellFor", () => {
     }
   });
 
+  it("maps repo stats paths to the placeholder stats shell", () => {
+    for (const path of ["/git-compose/stats", "/git-compose/stats/"]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/stats`);
+    }
+  });
+
   it("maps unmatched shapes to /404", () => {
     for (const path of [
       "/git-compose/blob",
@@ -79,7 +85,7 @@ describe("shellFor", () => {
       "/git-compose/blame/",
       "/git-compose/commit",
       "/git-compose/commit/abc123/extra",
-      "/git-compose/stats",
+      "/git-compose/stats/extra",
       "/a/b/c",
     ]) {
       expect(shellFor(path)).toBe("/404");

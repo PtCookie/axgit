@@ -32,3 +32,7 @@ export type SearchResults = components["schemas"]["SearchResults"];
 export type SearchKind = components["schemas"]["SearchKind"];
 export type FileMatch = components["schemas"]["FileMatch"];
 export type LineMatch = components["schemas"]["LineMatch"];
+export type StatsResults = components["schemas"]["StatsResults"];
+export type StatsPeriod = components["schemas"]["StatsPeriod"];
+export type BucketStats = components["schemas"]["BucketStats"];
+export type AuthorStats = components["schemas"]["AuthorStats"];

@@ -50,6 +50,10 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
                 .join("index.html"),
             StatusCode::OK,
         ),
+        [_repo, "stats"] => (
+            Path::new(REPO_SHELL_PARAM).join("stats").join("index.html"),
+            StatusCode::OK,
+        ),
         [_repo, "commit", _sha] => (
             Path::new(REPO_SHELL_PARAM)
                 .join("commit")
@@ -249,6 +253,20 @@ mod tests {
     }
 
     #[test]
+    fn repo_stats_paths_map_to_the_stats_shell() {
+        for path in ["/git-compose/stats", "/git-compose/stats/"] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM).join("stats").join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
     fn unmatched_shapes_map_to_the_404_shell() {
         for path in [
             "/git-compose/blob",
@@ -257,7 +275,7 @@ mod tests {
             "/git-compose/blame/",
             "/git-compose/commit",
             "/git-compose/commit/abc123/extra",
-            "/git-compose/stats",
+            "/git-compose/stats/extra",
             "/a/b/c",
         ] {
             assert_eq!(

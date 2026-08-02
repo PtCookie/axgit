@@ -245,7 +245,9 @@ test("navigates from the tree into a subdirectory and a file", async ({ page }) 
 });
 
 test("shows a not-found page for unsupported sub-routes", async ({ page }) => {
-  await page.goto("/git-compose/stats");
+  // `/{repo}/blob` with no path segment is a structurally unmatched shape
+  // (`lib/shell.ts::shellFor`) — there's nothing to show for a bare blob URL.
+  await page.goto("/git-compose/blob");
 
   await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await page.getByRole("link", { name: "Back to repository list" }).click();

@@ -35,7 +35,16 @@
     --border: oklch(0.925 0.005 214.3);
     --input: oklch(0.925 0.005 214.3);
     --ring: oklch(0.723 0.014 214.4);
-    --chart-1: oklch(0.855 0.138 181.071);
+    /* shadcn's generated chart-1 was never checked against the dataviz
+     * skill's checks (docs/DECISIONS.md #29): at its original lightness
+     * (oklch L 0.855) it read at ~1.4:1 against this surface, effectively
+     * invisible as a bar fill. Reset to --primary's hue/chroma, which the
+     * skill's validator already passes here (ALL CHECKS PASS) — one brand
+     * hue instead of introducing an unvalidated new one. chart-2..5 stay as
+     * shadcn generated them; nothing uses them yet (single-series stats
+     * chart only needs slot 1), so they're unvalidated and unfixed until a
+     * second series exists. */
+    --chart-1: oklch(0.508 0.118 165.612);
     --chart-2: oklch(0.704 0.14 182.503);
     --chart-3: oklch(0.6 0.118 184.704);
     --chart-4: oklch(0.511 0.096 186.391);
@@ -78,7 +87,13 @@
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.56 0.021 213.5);
-    --chart-1: oklch(0.855 0.138 181.071);
+    /* Same hue/chroma as --primary (line above uses a lighter step tuned for
+     * *text* contrast — see the comment on --primary above); a chart mark
+     * needs to land in the dataviz skill's dark-mode lightness band (OKLCH L
+     * 0.48-0.67) instead, or it reads as glowing against this surface.
+     * oklch(0.72 ...) — --primary's dark value — sits above that band; this
+     * step (L 0.60) is the one the validator passes (docs/DECISIONS.md #29). */
+    --chart-1: oklch(0.6 0.118 165.612);
     --chart-2: oklch(0.704 0.14 182.503);
     --chart-3: oklch(0.6 0.118 184.704);
     --chart-4: oklch(0.511 0.096 186.391);

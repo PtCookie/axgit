@@ -1,0 +1,19 @@
+---
+import RepoLayout from "../../layouts/RepoLayout.astro";
+import StatsView, { StatsViewSkeleton } from "../../components/repo/StatsView";
+import { REPO_SHELL_PARAM } from "../../lib/shell";
+
+/**
+ * One shell per route shape, not per repository — see `[repo]/index.astro`
+ * (`api/src/shell.rs`, docs/DECISIONS.md #17).
+ */
+export function getStaticPaths() {
+  return [{ params: { repo: REPO_SHELL_PARAM } }];
+}
+---
+
+<RepoLayout active="stats" title="Stats — Axgit">
+  <StatsView client:only="react">
+    <div slot="fallback"><StatsViewSkeleton /></div>
+  </StatsView>
+</RepoLayout>

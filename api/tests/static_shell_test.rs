@@ -200,7 +200,7 @@ async fn unknown_paths_should_serve_the_404_shell_with_a_404_status() {
         "/git-compose/blame/",
         "/git-compose/commit",
         "/git-compose/commit/abc123/extra",
-        "/git-compose/stats",
+        "/git-compose/stats/extra",
         "/a/b/c",
     ] {
         let router = router_with_static(repo_root.path(), static_dir.path());

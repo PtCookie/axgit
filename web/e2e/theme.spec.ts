@@ -1,10 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-// `/{repo}/stats` is an unmatched route shape (`lib/shell.ts::shellFor`), so
-// it serves `pages/404.astro` — the only page in the app that renders the
+// `/{repo}/blob` with no path segment is an unmatched route shape
+// (`lib/shell.ts::shellFor` — there's nothing to show for a bare blob URL),
+// so it serves `pages/404.astro` — the only page in the app that renders the
 // real `Layout.astro` with no islands other than the theme toggle itself,
-// and therefore no API calls to stub.
-const PAGE = "/git-compose/stats";
+// and therefore no API calls to stub. (`/{repo}/stats` used to serve this
+// role too, until DECISIONS.md #29 gave it a real page.)
+const PAGE = "/git-compose/blob";
 const STORAGE_KEY = "axgit:theme";
 
 const preference = (page: import("@playwright/test").Page) =>
@@ -128,8 +130,8 @@ test("the served shell carries no theme of its own", async ({ page }) => {
 // document's, and the served shell carries none of its own (asserted right
 // below), so a same-shell navigation resets the theme unless
 // `Layout.astro`'s theme script re-applies it from `astro:after-swap`. This
-// page (`/{repo}/stats`, the 404 shell) has a "Back to repository list" link
-// to `/` to navigate with, with no API stub needed for either endpoint.
+// page (`PAGE`, the 404 shell) has a "Back to repository list" link to `/`
+// to navigate with, with no API stub needed for either endpoint.
 test("an explicit Dark choice survives a client-side navigation", async ({ page }) => {
   await page.goto(PAGE);
   await choose(page, "Dark");

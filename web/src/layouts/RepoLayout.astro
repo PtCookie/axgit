@@ -2,7 +2,7 @@
 import Layout from "./Layout.astro";
 import RepoNav from "../components/repo/RepoNav.astro";
 
-type Active = "summary" | "refs" | "log" | "commit" | "tree" | "blob" | "blame" | "search";
+type Active = "summary" | "refs" | "log" | "commit" | "tree" | "blob" | "blame" | "search" | "stats";
 
 interface Props {
   /** Which tab renders as current; also selects the document title shape. */
@@ -22,13 +22,14 @@ const TITLE_SUFFIXES: Record<Active, string> = {
   blob: " blob — Axgit",
   blame: " blame — Axgit",
   search: " search — Axgit",
+  stats: " stats — Axgit",
 };
 const titleSuffix = TITLE_SUFFIXES[active];
 
 // Commit detail, blob view, and blame aren't their own tabs — they're
 // drill-downs from the log and tree respectively — so the nav bar
 // highlights the parent tab while showing any of them.
-const NAV_ACTIVE: Record<Active, "summary" | "refs" | "log" | "tree" | "search"> = {
+const NAV_ACTIVE: Record<Active, "summary" | "refs" | "log" | "tree" | "search" | "stats"> = {
   summary: "summary",
   refs: "refs",
   log: "log",
@@ -37,6 +38,7 @@ const NAV_ACTIVE: Record<Active, "summary" | "refs" | "log" | "tree" | "search">
   blob: "tree",
   blame: "tree",
   search: "search",
+  stats: "stats",
 };
 const navActive = NAV_ACTIVE[active];
 ---

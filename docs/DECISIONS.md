@@ -733,3 +733,65 @@ other half of #9's v1 exclusions (repository search, #25/#26/#27, was the first)
   exposed, only its hash, per the existing rule).
 - The `/{repo}/stats` web page (chart + author table) is deferred to a follow-up commit
   (ROADMAP.md), same split search used (#26 API → #27 page).
+
+## #29 `/{repo}/stats` page: Recharts (via shadcn), dataviz-validated chart color
+
+The web UI for #28's endpoint — closes out #9's v1 exclusion list (the last item; HTTP push
+remains permanently excluded by the read-only invariant, not deferred).
+
+- **Route** `web/src/pages/[repo]/stats.astro` follows `search.astro`'s shape (no path segments,
+  all state in `?period=&ref=`) — one new two-segment case in `shellFor`/`shell_for`
+  (`[_repo, "stats"]`). `RepoNav.astro` gained a "Stats" tab; `RepoLayout.astro`'s `Active`/
+  `TITLE_SUFFIXES`/`NAV_ACTIVE` grew a `stats` case (its own tab, not a drill-down). Since
+  `/{repo}/stats` was the 404-shell test fixture `theme.spec.ts` and `repo.spec.ts` deliberately
+  relied on (a route with zero API-dependent islands, needed to test the theme toggle/404 page in
+  isolation), both moved to `/{repo}/blob` (no path segment — still a structurally unmatched
+  shape) instead.
+- **Chart library: Recharts, installed via `pnpm exec shadcn add chart`**, not `pnpm add
+  recharts` directly — the `base-luma` style's `chart` registry item declares `recharts` as its
+  own dependency (the CLI installs the exact pinned version) and pulls in `registryDependencies:
+  card`, so `ui/chart.tsx` **and** `ui/card.tsx` (unused so far, vendored regardless — registry
+  dependencies aren't cherry-picked) both land the same way every other `ui/` file does. The
+  vendored `chart.tsx` had one lint error (`@typescript-eslint/consistent-type-definitions` on
+  its `ChartConfig` type alias) fixed via `eslint --fix`; its remaining warnings (React 19
+  `useContext`/`Context.Provider` style, `dangerouslySetInnerHTML`, two array-index keys) are
+  left as shadcn generated them, same "vendored, modify only what's broken" policy CLAUDE.md
+  states — none of them are errors that fail `pnpm check`.
+- **`--chart-1` was broken and got fixed, following the `dataviz` skill's procedure instead of
+  eyeballing it.** Like `--primary` before #23, `global.css`'s `--chart-1..5` had never been
+  exercised (no chart existed yet) and its light/dark values were byte-identical shadcn
+  boilerplate. Running the skill's `validate_palette.js` against the converted hex confirmed real
+  breakage: light mode read at **1.44:1** contrast against the surface (FAIL, essentially
+  invisible as a bar fill) and dark mode's lightness (OKLCH L 0.855) sat above the dark band
+  (0.48–0.67, FAIL — would read as glowing). Fixed by reusing `--primary`'s hue/chroma (165.612 /
+  0.118) at two different lightness steps: `--primary`'s own light value (L 0.508, already
+  validator-PASS) for the light-mode chart-1, and a new L 0.6 step for dark mode — `--primary`'s
+  own dark value (L 0.72) was tuned for *text* contrast, not a chart mark's dark-band requirement,
+  so reusing it as-is would have repeated the same FAIL. `--chart-2..5` are untouched and
+  unvalidated — nothing uses them yet (this page has exactly one series); fix them when a second
+  series exists. Chosen a single validated hue over introducing the skill's reference
+  blue/orange/aqua palette, since the app already has an established brand hue and this chart has
+  no multi-series adjacency requirement to justify a bigger palette.
+- **`minPointSize={2}` on the `<Bar>` — a real bug the skill's "render it and look at it" step
+  caught.** Without it, Recharts omits the rectangle element entirely for a zero-value bucket (a
+  month with no commits) — confirmed by inspecting the rendered SVG (11 bar elements for 12
+  buckets). No element means no hover/tooltip hit target for that bucket, violating
+  `references/interaction.md`'s "the mark is the hit target" rule. `minPointSize` keeps a thin
+  visible/hoverable sliver instead. (The same render-and-look pass also caught, and ruled out, a
+  false alarm: an early screenshot showed near-invisible slivers for *every* bar — that was
+  Recharts' entrance animation caught mid-flight by too short a wait in the ad-hoc screenshot
+  script, not a real rendering bug; the settled render confirmed bar heights are correctly
+  proportional.)
+- **Period switcher is four plain links (`statsHref`), not a form** — unlike `SearchView`'s free-
+  text query, the period is a fixed 4-way pick, so a `<form>` (needed there for the no-JS
+  fallback) adds nothing; `<ClientRouter />` (#24) already intercepts the link clicks.
+- **The author table doubles as the chart's required "table view"** (`references/color-formula.md`
+  / accessibility-pass rule: every value shown by a mark must be reachable without it).
+  `authors[].buckets` (parallel to the response's `buckets`, #28) becomes one table column per
+  bucket, and a `TableFooter` "Total" row sums each column — the same numbers the chart plots, so
+  nothing is chart-only. `author_count` vs `authors.length` renders as a "Showing top N of M"
+  note when `limit` cut the list (search's `truncated` banner precedent, reused here for the
+  scan/limit truncation flag too).
+- `web/src/lib/api/repos.ts` gained `getStats`/`StatsParams` (reusing the existing `buildQuery`
+  helper); `repo-href.ts` gained `statsHref`; `schemas.ts` gained the stats type aliases. No API
+  contract change — this commit is web-only.
