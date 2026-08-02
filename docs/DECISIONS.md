@@ -795,3 +795,80 @@ remains permanently excluded by the read-only invariant, not deferred).
 - `web/src/lib/api/repos.ts` gained `getStats`/`StatsParams` (reusing the existing `buildQuery`
   helper); `repo-href.ts` gained `statsHref`; `schemas.ts` gained the stats type aliases. No API
   contract change — this commit is web-only.
+
+## #30 Lazy-load Recharts, react-markdown, and the theme menu behind `React.lazy`
+
+ROADMAP.md's "web build's largest JS chunk is over the 500 kB warning threshold" candidate,
+picked up on its own. The premise on file turned out to be wrong once measured: the chunk that
+actually trips Vite's 500 kB warning is Shiki's `cpp` grammar (637 KB) — already lazy, loaded
+only when a `.cpp` file is opened, and left untouched here. The real problem was three chunks
+that load *eagerly*, one of them (`ThemeToggle`) on every single page:
+
+| Chunk | Before | Loads on |
+|---|---|---|
+| `ThemeToggle` | 137 KB | every page |
+| `StatsView` | 345 KB | `/{repo}/stats`, unconditionally |
+| `ReadmeView` | 145 KB | `/{repo}`, even with no README |
+
+- **`ThemeToggle`/`ThemeMenu`/`theme.tsx` three-way split** — `@base-ui/react`'s Menu (floating-ui
+  positioning, ~121 KB) was the only thing in the app pulling in `@base-ui/react` at all
+  (`grep -rln "ui/button" src/` found only `ThemeToggle.tsx`), so it was a fully exclusive chunk
+  and moving its import behind `import()` moved the bytes outright. `theme.tsx` holds the leaf
+  state/icons shared by both `ThemeToggle.tsx` (eager) and the new `ThemeMenu.tsx` (lazy) —
+  neither of the two imports the other, since a cross-import would pull the lazy side's weight
+  back into the eager chunk.
+  - Chose base-ui's **`defaultOpen`** over controlled `open`/`onOpenChange`: `useInitialOpenSync`
+    (`@base-ui/react`'s internal store) initializes the popup open on first render and then owns
+    every close path (Escape, outside-press, trigger re-click, scroll lock) itself — nothing to
+    resync from the eager side. Verified by reading `@base-ui/react` 1.6.0's source directly
+    (`MenuRoot.d.ts`, `utils/popups/popupStoreUtils.js`): a trigger mounting in the same commit as
+    an already-open popup is claimed pre-paint by `registerTrigger`/`useImplicitActiveTrigger`, so
+    there's no anchor-position gap, and `FloatingFocusManager`'s `initialFocus: true` moves focus
+    into the popup regardless of `openMethod` being `null` for a programmatic open. Manually
+    verified end-to-end in a running dev server (not just the automated suite) since this is
+    exactly the kind of interaction a component test can't reach: Tab-to-focus + Enter opens the
+    real menu with focus landing inside the popup container, and click-based arrow-key selection
+    updates `aria-checked`/`data-theme`/`localStorage` while the popup stays open (`closeOnClick`
+    defaults to `false` on `MenuRadioItem`, matching #23's already-tested "selecting doesn't close
+    the menu" behavior — not re-implemented here).
+  - The eager trigger's eventual `onClick` wraps `setMenuRequested(true)` in `startTransition` —
+    `@astrojs/react`'s own `startTransition` only covers the initial `client:only` mount, not a
+    later click that causes a boundary to suspend; without it a synchronous update that suspends
+    commits the Suspense fallback and warns in dev. `onPointerEnter`/`onFocus` also warm the
+    dynamic import ahead of an actual click, and the plain pre-interaction button and the
+    `Suspense` fallback are the literal same `PlainTrigger` element, so there is nothing to flash
+    even if the fallback ever actually commits.
+  - Result: `ThemeToggle`'s entry chunk 137 KB → ~2 KB; new `ThemeMenu` chunk ~119 KB, fetched
+    once, on first hover/focus/click.
+- **`StatsView`/`StatsChart` split**, with **pre-warming** — `StatsChart.tsx` now owns
+  `recharts` + `ui/chart` + `chartConfig`; `StatsView.tsx` fires
+  `void import("./StatsChart")` in parallel with its `getStats` fetch, since the stats page
+  renders a chart for nearly every response — serializing the chunk fetch behind the API round
+  trip would be pure latency with no payoff. `Suspense`'s fallback is `<Skeleton className="h-64
+  w-full" />`, pixel-matched to both `ChartContainer`'s own sizing and `StatsViewSkeleton`'s
+  middle block, so there's no layout shift regardless of which resolves first.
+  Result: `StatsView` 345 KB → ~5 KB; new `StatsChart` chunk ~333 KB.
+- **`ReadmeView`/`ReadmeMarkdown` split**, deliberately **not** pre-warmed — the opposite policy
+  from `StatsChart`, on purpose: a repository with no README, or one whose README is
+  `rst`/`plain`, should never download react-markdown/remark-gfm/rehype-sanitize at all, and
+  `format` isn't known until the `/readme` response lands. `ReadmeMarkdown.tsx` took the entire
+  markdown-only surface — `InlineCode`, `textContent`, `MarkdownFence`, `rewriteHref`/
+  `rewriteSrc`, and the `components` map — as one unit, keeping `InlineCode` and the `pre`
+  override's `child.type === InlineCode` identity check (#21) in the same module; splitting them
+  across files would have reintroduced that exact bug with no type error to catch it a second
+  time. `components` is now also wrapped in `useMemo` keyed on `repo` — a pre-existing (harmless
+  but wasteful) inefficiency where every `ReadmeView` re-render rebuilt the map and remounted the
+  whole markdown tree, caught while doing this split, not a new defect.
+  Result: `ReadmeView` 145 KB → ~2 KB; new `ReadmeMarkdown` chunk ~140 KB, fetched only for an
+  actual markdown README.
+- **Confirmed non-issues, left alone**: `ui/dropdown-menu.tsx`'s `@phosphor-icons/react` barrel
+  import already tree-shakes correctly (only the icons actually used land in the chunk — checked
+  by grepping the built output); Vite's chunkSizeWarningLimit and the `cpp` grammar chunk are
+  unchanged, since that chunk is already behind `lib/format/highlight.ts`'s existing lazy-language
+  loading and only downloads when a `.cpp`/`.hpp` file is actually viewed.
+- All three splits follow the one dynamic-import precedent already in the codebase
+  (`lib/format/highlight.ts`'s Shiki language loaders) — confirmed rolldown treats a dynamic
+  `import()` as a real chunk boundary here (`cpp`/`markdown`/`core` were already separate chunks
+  before this change), not something that gets hoisted back into the static graph.
+- No API contract change, no new route — `docs/API.md`/`docs/openapi.json`/
+  `web/src/lib/api/types.ts`/`shellFor`/`shell_for` all untouched.

@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
-
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
 import { getStats } from "@/lib/api/repos";
@@ -9,9 +7,15 @@ import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import { statsHref } from "@/lib/repo-href";
 import { cn } from "@/lib/utils";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
-import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+// Module scope, not inside a component — otherwise every render would mint a
+// new lazy type and remount the chart. `importStatsChart` is also called
+// directly (outside `lazy()`) to warm the chunk in parallel with the `/stats`
+// fetch below, since this page renders a chart for almost every response.
+const importStatsChart = () => import("@/components/repo/StatsChart");
+const StatsChart = lazy(importStatsChart);
 
 type State = { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; results: StatsResults };
 
@@ -59,10 +63,6 @@ function bucketLabel(startIso: string, period: StatsPeriod): string {
   }
 }
 
-const chartConfig: ChartConfig = {
-  commits: { label: "Commits", color: "var(--chart-1)" },
-};
-
 /** Also rendered statically into the page shell as the island's
  *  `slot="fallback"`, so the prerendered HTML is not blank. */
 export function StatsViewSkeleton() {
@@ -84,6 +84,11 @@ export default function StatsView({ repo, period: periodParam, ref: refParam }: 
 
   useEffect(() => {
     let cancelled = false;
+
+    // Warm the chart chunk in parallel with the API call rather than after
+    // it — this page renders a chart for almost every response, so there's
+    // no reason to serialize the two.
+    void importStatsChart();
 
     getStats(resolvedRepo, { period: resolvedPeriod, ref: resolvedRef })
       .then((results) => {
@@ -185,20 +190,9 @@ function StatsResultsView({ results, period }: StatsResultsViewProps) {
         </p>
       )}
 
-      <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
-        <BarChart data={chartData} margin={{ left: 0, right: 0, top: 8, bottom: 0 }}>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
-          <YAxis tickLine={false} axisLine={false} width={32} allowDecimals={false} />
-          <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-          {/* Recharts omits the bar element entirely for a zero value — with
-              no mark there's no hover/tooltip hit target for that bucket
-              (`references/interaction.md`'s "the mark is the hit target"
-              rule). `minPointSize` keeps a thin sliver so every bucket stays
-              hoverable, a zero-commit month included. */}
-          <Bar dataKey="commits" fill="var(--color-commits)" radius={[4, 4, 0, 0]} maxBarSize={24} minPointSize={2} />
-        </BarChart>
-      </ChartContainer>
+      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        <StatsChart data={chartData} />
+      </Suspense>
 
       <div className="space-y-2">
         <p className="text-muted-foreground text-sm">

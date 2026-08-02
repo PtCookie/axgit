@@ -1,54 +1,14 @@
-import { useEffect, useState } from "react";
-import { MonitorIcon } from "@phosphor-icons/react/dist/ssr/Monitor";
-import { MoonIcon } from "@phosphor-icons/react/dist/ssr/Moon";
-import { SunIcon } from "@phosphor-icons/react/dist/ssr/Sun";
+import { lazy, Suspense, startTransition, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { apply, isTheme, STORAGE_KEY, ThemeIcons, type Theme } from "@/components/theme";
 
-type Theme = "system" | "light" | "dark";
-
-const STORAGE_KEY = "axgit:theme";
-
-const OPTIONS: { value: Theme; label: string; Icon: typeof MonitorIcon }[] = [
-  { value: "system", label: "System", Icon: MonitorIcon },
-  { value: "light", label: "Light", Icon: SunIcon },
-  { value: "dark", label: "Dark", Icon: MoonIcon },
-];
-
-function isTheme(value: string | null | undefined): value is Theme {
-  return value === "system" || value === "light" || value === "dark";
-}
-
-/** Applies `theme` to <html>: `data-theme` carries the *preference*
- *  (system/light/dark), the `dark` class carries the *resolved* value that
- *  `global.css`'s `@custom-variant dark` and `.dark {}` token block key off.
- *  Mirrors the resolve expression in `Layout.astro`'s head script — kept
- *  duplicated rather than shared, since that one is a separate `is:inline`
- *  script with no import of its own. */
-function apply(theme: Theme, media: MediaQueryList) {
-  document.documentElement.dataset.theme = theme;
-  document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && media.matches));
-}
-
-function ThemeIcons() {
-  return (
-    <>
-      {OPTIONS.map(({ value, Icon }) => (
-        // `global.css` shows only the icon matching `<html data-theme>`, so
-        // all three are always in the DOM — including here, before the
-        // island hydrates.
-        <Icon key={value} data-theme-icon={value} className="size-4" aria-hidden="true" />
-      ))}
-    </>
-  );
-}
+// Module scope, not inside the component — otherwise every render would mint
+// a new lazy type and remount `ThemeMenu`. `importThemeMenu` is also called
+// directly (outside `lazy()`) to warm the chunk on hover/focus, ahead of an
+// actual click.
+const importThemeMenu = () => import("./ThemeMenu");
+const ThemeMenu = lazy(importThemeMenu);
 
 /** Rendered with no client directive, so Astro inlines it as static SVG at
  *  build time — the prerendered shell's `slot="fallback"` for the island
@@ -63,6 +23,29 @@ export function ThemeToggleFallback() {
   );
 }
 
+/** The plain, pre-interaction trigger — also `<ThemeMenu>`'s `Suspense`
+ *  fallback, so the two renders are the literal same element and swapping
+ *  between them (should the fallback ever actually commit) has nothing to
+ *  flash. `aria-haspopup="menu"` matters beyond a11y: `ui/button.tsx`'s cva
+ *  has `active:not-aria-[haspopup]:translate-y-px`, so without it this
+ *  button's press animation would visibly change the instant it's replaced
+ *  by the real trigger. */
+function PlainTrigger({ onClick }: { onClick?: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label="Theme"
+      aria-haspopup="menu"
+      onClick={onClick}
+      onPointerEnter={() => void importThemeMenu()}
+      onFocus={() => void importThemeMenu()}
+    >
+      <ThemeIcons />
+    </Button>
+  );
+}
+
 export default function ThemeToggle() {
   // Safe to read `document` synchronously: this island is `client:only`, so
   // it never runs during the static build, and `Layout.astro`'s head script
@@ -71,6 +54,13 @@ export default function ThemeToggle() {
     const current = document.documentElement.dataset.theme;
     return isTheme(current) ? current : "system";
   });
+  // Set once the toggle has been interacted with (click, or a warmed hover/
+  // focus that resolved before a click) — mounts the lazy `ThemeMenu`, which
+  // then owns its own open state via `defaultOpen` (see `ThemeMenu.tsx`).
+  // `transition:persist`ing `<header>` (docs/DECISIONS.md #24) means this
+  // survives client-side navigations, which is a feature: once requested on
+  // one page, the toggle is already the real menu on the next.
+  const [menuRequested, setMenuRequested] = useState(false);
 
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
@@ -115,21 +105,24 @@ export default function ThemeToggle() {
     }
   }
 
+  if (!menuRequested) {
+    return (
+      <PlainTrigger
+        onClick={() => {
+          // A synchronous setState that causes `ThemeMenu` to suspend would
+          // otherwise make React commit the Suspense fallback immediately
+          // (and warn in dev) — `startTransition` keeps this button on
+          // screen until the chunk resolves, then swaps straight to the open
+          // menu.
+          startTransition(() => setMenuRequested(true));
+        }}
+      />
+    );
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Theme" />}>
-        <ThemeIcons />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup value={theme} onValueChange={handleChange}>
-          {OPTIONS.map(({ value, label, Icon }) => (
-            <DropdownMenuRadioItem key={value} value={value}>
-              <Icon className="size-4" aria-hidden="true" />
-              {label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Suspense fallback={<PlainTrigger />}>
+      <ThemeMenu theme={theme} onThemeChange={handleChange} />
+    </Suspense>
   );
 }

@@ -550,11 +550,22 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `web/src/lib/api/repos.ts` gained `getStats`/`StatsParams`; `repo-href.ts` gained `statsHref`;
     `schemas.ts` gained the stats aliases. No API contract change — web-only commit.
 
+- **Lazy-load Recharts, react-markdown, and the theme menu** (DECISIONS.md #30). Picked up the
+  "web build's largest JS chunk" candidate below — the premise there was wrong once measured (the
+  actual 500 kB-plus chunk is Shiki's already-lazy `cpp` grammar, not Recharts). The real fix was
+  splitting three *eagerly*-loaded chunks behind `React.lazy`/`Suspense`:
+  `ThemeToggle`/`ThemeMenu` (137 KB → ~2 KB eager, loaded on every page), `StatsView`/`StatsChart`
+  (345 KB → ~5 KB, pre-warmed alongside the `/stats` fetch), `ReadmeView`/`ReadmeMarkdown`
+  (145 KB → ~2 KB, deliberately *not* pre-warmed so a README-less repo downloads none of it).
+  `phosphor-icons`' barrel import was checked and confirmed to already tree-shake correctly — left
+  alone. No API contract change, no new route.
+
 ## Next up
 
-None queued — #9's v1 scope is now fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
-stays permanently excluded, not deferred, by the read-only invariant). Pick the next piece of work
-from the candidates below, or from a fresh request.
+None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
+stays permanently excluded, not deferred, by the read-only invariant), and the build-chunk-size
+candidate above is now resolved. Pick the next piece of work from the candidates below, or from a
+fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -567,7 +578,3 @@ from the candidates below, or from a fresh request.
 - `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
   revisit with the `dataviz` skill's validator if the stats page (or a future one) ever needs a
   second chart series.
-- The web build's largest JS chunk is now over the default 500 kB warning threshold (Recharts,
-  DECISIONS.md #29) — no action taken; revisit with code-splitting (`import()`, or
-  `build.rolldownOptions.output.codeSplitting`) if load performance on `/{repo}/stats` ever becomes
-  a real complaint.
