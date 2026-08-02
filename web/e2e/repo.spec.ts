@@ -119,8 +119,9 @@ test("shows the repository summary, README, and links to refs", async ({ page })
   await expect(docsLink).toHaveAttribute("href", "/git-compose/blob/docs/setup.md");
   await expect(page.getByText("echo hello")).toBeVisible();
 
-  // The details block is a right-hand sidebar at `lg` and up (Desktop
-  // Chrome's 1280px viewport), while the DOM order stays details-then-README
+  // The details block is a right-hand sidebar at `lg` and up (all three
+  // desktop projects share a 1280px viewport), while the DOM order stays
+  // details-then-README
   // — `flex-row-reverse` in `pages/[repo]/index.astro`. Compared by
   // bounding box, since that ordering is purely a CSS outcome and nothing in
   // the markup would catch a regression to a single column.

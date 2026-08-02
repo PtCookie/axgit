@@ -621,6 +621,20 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**`
     all untouched. No new route, so `shellFor`/`shell_for`/`RepoNav.astro` are untouched.
 
+- **Playwright e2e and vitest browser mode now run against Chromium, Firefox, and WebKit**, not
+  just Chromium. The single-browser setup dated back to the initial Playwright scaffolding and
+  carried a stale comment claiming the extra browsers "don't run in the lefthook hook" — untrue,
+  since e2e was never wired into a git hook (`lefthook.yml`'s `pre-push` only runs `vitest`; e2e
+  runs solely in the Jenkins `playwright e2e` stage). The gap was real: DECISIONS.md #32's
+  Firefox-only vertical-squash regression had to be found by hand, with no automated suite running
+  Firefox at all. `web/playwright.config.ts` and `web/vitest.config.ts` both enable all three
+  desktop projects/instances, with no `CI`-only branching. `Jenkinsfile`'s browser install gained
+  `--with-deps` (WebKit needs Linux system libraries the other two don't). All three desktop device
+  descriptors share a 1280px viewport, so the `lg`-breakpoint sidebar assertion in `repo.spec.ts`
+  needed no change; a couple of comments that named Chromium/CDP specifically
+  (`repo.spec.ts`, `theme.spec.ts`) were reworded to state which parts of the behavior are
+  Chromium-specific vs. shared.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push

@@ -70,14 +70,15 @@ test.describe("with a light OS preference", () => {
     // Chromium's CDP-based `colorScheme` emulation updates
     // `matchMedia(...).matches` immediately (confirmed manually) but does
     // not reliably dispatch the MediaQueryList "change" event afterwards —
-    // a known CDP/Playwright limitation, not an app bug. Browsers also mint
-    // a fresh `MediaQueryList` object per `matchMedia()` call, so a
-    // "change" event dispatched on one from here wouldn't reach a listener
-    // the app attached to a different one. Pinning the query to a single,
-    // shared object works around both: `emulateMedia` supplies the
-    // `.matches` value the app's listener reads, and dispatching on the
-    // shared object reaches that exact listener — the same notification a
-    // real OS-level toggle sends.
+    // a known CDP/Playwright limitation, not an app bug. Firefox and WebKit
+    // dispatch it natively, so the manual dispatch below is a harmless
+    // no-op duplicate there. Browsers also mint a fresh `MediaQueryList`
+    // object per `matchMedia()` call, so a "change" event dispatched on one
+    // from here wouldn't reach a listener the app attached to a different
+    // one. Pinning the query to a single, shared object works around both:
+    // `emulateMedia` supplies the `.matches` value the app's listener
+    // reads, and dispatching on the shared object reaches that exact
+    // listener — the same notification a real OS-level toggle sends.
     await page.addInitScript(() => {
       const query = "(prefers-color-scheme: dark)";
       const shared = matchMedia(query);
