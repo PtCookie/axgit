@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "axgit-api",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": [
+        "run",
+        "--manifest-path",
+        "api/Cargo.toml",
+        "--",
+        "--repo-root",
+        "./fixtures/repos",
+        "--static-dir",
+        "./web/dist"
+      ],
+      "port": 8080
+    }
+  ]
+}
