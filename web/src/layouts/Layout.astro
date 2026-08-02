@@ -1,5 +1,5 @@
 ---
-import { ClientRouter, fade } from "astro:transitions";
+import { ClientRouter } from "astro:transitions";
 
 import "../styles/global.css";
 import ThemeToggle, { ThemeToggleFallback } from "../components/ThemeToggle";
@@ -167,9 +167,17 @@ const { title = "Axgit" } = Astro.props;
         alive showing stale data instead of remounting it against the new
         URL. A short fade is enough to mask the swap without implying the
         content below carries over.
+
+        That fade is a plain CSS animation on the element itself
+        (`global.css`), *not* `transition:animate={fade(...)}`: giving <main>
+        a `view-transition-name` made Firefox squash/stretch the page
+        vertically for the length of every navigation (docs/DECISIONS.md
+        #32). Because <main> is replaced wholesale on each swap, the
+        animation re-runs on its own — no class toggling or event hook
+        needed.
       */
     }
-    <main class="mx-auto max-w-5xl px-4 py-6" transition:animate={fade({ duration: "0.18s" })}>
+    <main class="mx-auto max-w-5xl px-4 py-6">
       <slot />
     </main>
   </body>

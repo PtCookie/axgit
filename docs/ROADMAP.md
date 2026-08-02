@@ -572,6 +572,17 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   counts now link to `/{repo}/refs`. No route, no `shellFor`/`shell_for` change, no API contract
   change.
 
+- **Page fade moved off the View Transition API** (DECISIONS.md #32). Bug fix, not a feature:
+  Firefox squashed/stretched the page vertically on every client-side navigation. `<main>`'s
+  `view-transition-name` (from #24's `transition:animate={fade(...)}`) made the UA animate its
+  snapshot box between the old and new sizes, and Firefox scales the snapshot into that box where
+  Chromium keeps its intrinsic height — with `client:only` islands the "new size" is the skeleton's
+  height, so live content was being scaled into a box sized for a placeholder. Fixed by removing
+  the name and fading `<main>` with a plain CSS animation (`axgit-page-in`, 0.18 s, plus an
+  explicit `prefers-reduced-motion` rule); `::view-transition-group(root)` is disabled too, so the
+  transition resolves within a frame. `<ClientRouter />` still drives the swap. No test changed and
+  no API/route change — `Layout.astro` + `global.css` only.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push

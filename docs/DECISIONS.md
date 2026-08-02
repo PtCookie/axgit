@@ -936,3 +936,52 @@ narrow right sidebar.
   affected.
 - No API contract change, no new route — `docs/API.md`/`docs/openapi.json`/
   `web/src/lib/api/types.ts`/`shellFor`/`shell_for` all untouched.
+
+## #32 The page fade is a plain CSS animation, not a view transition (fixes a Firefox squash, refines #24)
+
+In Firefox, every client-side navigation visibly compressed or stretched the page vertically for
+the duration of the transition before snapping back to the correct size; Chromium was unaffected.
+The cause was `<main>`'s `transition:animate={fade(...)}` (#24), so the fix removes the
+View Transition API from the visual layer entirely: `<main>` no longer carries a
+`view-transition-name`, and `global.css` animates the element itself.
+
+- **Why it distorted.** Naming an element makes the UA animate its `::view-transition-group` box
+  from the old element's size to the new one's, and paint the old/new snapshots inside that
+  animating box. Firefox scales the snapshot to fit the box; Chromium keeps the snapshot at its own
+  intrinsic block size (the spec's `block-size: auto` on `::view-transition-old/new`) and lets it
+  overflow. Identical markup, opposite results — this is a rendering difference, not a bug in the
+  app's CSS, which is why no duration/easing tweak would have helped.
+- **`client:only` islands are what made it dramatic.** The group's target size is `<main>`'s height
+  *at the DOM swap*, and at that instant `<main>` holds nothing but the static `slot="fallback"`
+  skeletons (#17) — the real content lands milliseconds later, while the transition is still
+  running. So the live content was being scaled into a box sized for a skeleton: squashed when the
+  page turned out taller (the log), stretched when shorter. Measured on the built app with an
+  ad-hoc Playwright script in both browsers, and confirmed visually in a *real* Firefox window
+  against a fixed reference ruler placed outside `<main>` — headless Firefox does not reproduce the
+  mis-scaled paint, so screenshots from a real window were required to see it.
+- **Overriding the pseudo-elements was rejected** (`object-fit: none` / an explicit `block-size` on
+  `::view-transition-old/new`). It would make the fade's correctness depend on Firefox honoring an
+  override for sizing it already renders differently from the spec's default — an unverifiable
+  bet — where dropping the name removes the failure mode outright.
+- **`::view-transition-group(root)` is now disabled too**, alongside the `old`/`new` rules #24
+  already had. With no named elements left, the page is a single `root` snapshot whose size cannot
+  change (it is always the viewport-sized snapshot containing block), so the group animation is a
+  250 ms no-op that only keeps a frozen snapshot on screen. Off, the transition resolves within a
+  frame and the real DOM is back immediately — `<ClientRouter />` still drives the swap through
+  `startViewTransition` (that is what keeps `astro:after-swap` firing before paint, which both
+  head scripts depend on), it just no longer animates anything.
+- **What changed visually**: the incoming page fades in over 0.18 s (`@keyframes axgit-page-in`);
+  the outgoing one is simply gone once the swap commits, where before the two cross-faded. `<main>`
+  is never `transition:persist`ed (#24), so Astro inserts a fresh element on every navigation and
+  the animation restarts on its own — no class toggle, no `astro:after-swap` hook. It also plays
+  once on a cold load, which the shared-element version could not do.
+- **`prefers-reduced-motion` now needs its own rule.** #24 relied on `<ClientRouter />`'s built-in
+  media query, which only governs *view transition* animations; a plain CSS animation isn't covered
+  by it, so `global.css` disables it explicitly.
+- **Testing**: no test changed. Nothing asserted the fade (only that navigation is client-side —
+  `repo.spec.ts`/`stats.spec.ts`'s `window`-survives-navigation checks), and the full suite passes
+  unchanged: 134 vitest, 20 Playwright e2e, `pnpm check`. The fix itself was verified with a
+  throwaway script asserting both browsers now report **zero** `::view-transition-*` animations
+  during a navigation and an identical `axgit-page-in` opacity ramp on `<main>`. No new
+  route/shell (`shellFor`/`shell_for` untouched) and no API contract change — this commit is
+  web-only.
