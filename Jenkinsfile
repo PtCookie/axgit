@@ -13,13 +13,8 @@ pipeline {
     stages {
         stage('Install dependencies') {
             steps {
-                //sh 'corepack enable'
-                //sh 'corepack prepare pnpm@11.17.0 --activate'
                 sh 'pnpm install --frozen-lockfile'
-                // Browser binaries aren't part of the npm packages; both vitest's
-                // browser mode and the Playwright e2e suite need a real Chromium.
-                // Drop --with-deps if the agent's user can't run apt/sudo.
-                sh 'pnpm --filter web exec playwright install --with-deps chromium'
+                sh 'pnpm --filter web exec playwright install'
             }
         }
 
