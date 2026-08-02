@@ -34,7 +34,10 @@ pipeline {
                         }
                         stage('cargo test') {
                             steps {
-                                sh 'cargo test --manifest-path api/Cargo.toml'
+                                // --all-targets skips doctests (there are none in this crate); the
+                                // doctest step links against the system libgit2 in its own rustdoc
+                                // invocation and has been flaky on the Jenkins agent.
+                                sh 'cargo test --manifest-path api/Cargo.toml --all-targets'
                             }
                         }
                     }
