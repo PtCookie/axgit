@@ -112,12 +112,27 @@ test("shows the repository summary, README, and links to refs", async ({ page })
   );
   await expect(page.getByRole("link", { name: "Atom" })).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom");
 
-  // The README renders below the metadata, with its relative link rewritten
-  // to the repository's blob page and its code fence highlighted.
+  // The README is the wide left column; its relative link is rewritten to
+  // the repository's blob page and its code fence is highlighted.
   await expect(page.getByRole("heading", { name: "Getting started", level: 1 })).toBeVisible();
   const docsLink = page.getByRole("link", { name: "docs" });
   await expect(docsLink).toHaveAttribute("href", "/git-compose/blob/docs/setup.md");
   await expect(page.getByText("echo hello")).toBeVisible();
+
+  // The details block is a right-hand sidebar at `lg` and up (Desktop
+  // Chrome's 1280px viewport), while the DOM order stays details-then-README
+  // — `flex-row-reverse` in `pages/[repo]/index.astro`. Compared by
+  // bounding box, since that ordering is purely a CSS outcome and nothing in
+  // the markup would catch a regression to a single column.
+  const details = page.getByRole("complementary", { name: "Repository details" });
+  const detailsBox = await details.boundingBox();
+  const readmeBox = await page.getByRole("heading", { name: "Getting started", level: 1 }).boundingBox();
+  if (!detailsBox || !readmeBox) {
+    throw new Error("expected both the details sidebar and the README heading to have a bounding box");
+  }
+  expect(detailsBox.x).toBeGreaterThan(readmeBox.x);
+
+  await expect(page.getByRole("link", { name: "1 branch" })).toHaveAttribute("href", "/git-compose/refs");
 
   await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
     await route.fulfill({ json: REFS });

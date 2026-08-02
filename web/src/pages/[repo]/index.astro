@@ -16,12 +16,32 @@ export function getStaticPaths() {
 ---
 
 <RepoLayout active="summary">
-  <div class="space-y-8">
-    <RepoSummary client:only="react">
-      <div slot="fallback"><RepoSummarySkeleton /></div>
-    </RepoSummary>
-    <ReadmeView client:only="react">
-      <div slot="fallback"><ReadmeViewSkeleton /></div>
-    </ReadmeView>
+  {
+    /*
+      Two-column at `lg` and up: the README is the wide main column, the
+      repository details sit in a narrow right sidebar. DOM order is
+      details-then-README at *every* breakpoint — `flex-row-reverse` moves
+      the sidebar to the right visually without reordering the document, so
+      the mobile stack (details first) and the reading/focus order stay the
+      same one. The columns are Astro elements *outside* both islands, so
+      the geometry is identical while the `slot="fallback"` skeletons show
+      and after React replaces them — no reflow on hydration.
+    */
+  }
+  <div class="flex flex-col gap-6 lg:flex-row-reverse lg:items-start lg:gap-8">
+    <aside class="lg:w-72 lg:shrink-0" aria-label="Repository details">
+      <RepoSummary client:only="react">
+        <div slot="fallback"><RepoSummarySkeleton /></div>
+      </RepoSummary>
+    </aside>
+    {
+      /* `min-w-0`: a wide `<pre>`/table inside the README would otherwise
+         set this flex item's min-content width and crush the sidebar. */
+    }
+    <div class="min-w-0 lg:flex-1">
+      <ReadmeView client:only="react">
+        <div slot="fallback"><ReadmeViewSkeleton /></div>
+      </ReadmeView>
+    </div>
   </div>
 </RepoLayout>

@@ -19,6 +19,12 @@ export function blobHref(repo: string, path: string, ref: string | undefined): s
   return `/${encodeSegment(repo)}/blob/${encodePath(path)}${refQuery(ref)}`;
 }
 
+/** Builds a `/{repo}/refs` href. Takes no `ref` param — the refs page *is*
+ *  the ref listing, so unlike `treeHref`/`blobHref` there is no `?ref=`. */
+export function refsHref(repo: string): string {
+  return `/${encodeSegment(repo)}/refs`;
+}
+
 /** Builds a `/{repo}/blame/{path}` href. Same non-empty-`path` rule as
  *  `blobHref`. */
 export function blameHref(repo: string, path: string, ref: string | undefined): string {

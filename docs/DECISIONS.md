@@ -872,3 +872,67 @@ that load *eagerly*, one of them (`ThemeToggle`) on every single page:
   before this change), not something that gets hoisted back into the static graph.
 - No API contract change, no new route — `docs/API.md`/`docs/openapi.json`/
   `web/src/lib/api/types.ts`/`shellFor`/`shell_for` all untouched.
+
+## #31 `/{repo}` summary: two-column layout, description + metadata in a right sidebar
+
+Restyled the Summary page GitHub-style: the README becomes the wide main column, and the
+description + metadata `<dl>` (previously a full-width block above the README) moves into a
+narrow right sidebar.
+
+- **Grid lives in `pages/[repo]/index.astro`, not in either island.** `RepoSummary` and
+  `ReadmeView` stay two independent `client:only="react"` islands (unlike #30's `ReadmeView`/
+  `ReadmeMarkdown` split, which merged the markdown surface *within* one island). With
+  `client:only`, Astro emits `<astro-island>{fallback}</astro-island>` and React replaces the
+  children in place — keeping the two column boxes as plain Astro elements around the islands
+  means the geometry is identical before, during, and after hydration, so the `slot="fallback"`
+  skeletons never snap from full-width into a sidebar. The alternative (owning the grid inside a
+  merged React component) would require one combined fetch/skeleton and would pull
+  `ReadmeMarkdown`'s module graph into the summary chunk regardless of README format —
+  defeating #30's lazy split.
+- **`lg:flex-row-reverse`, not `order-*` or `flex-col-reverse`.** DOM order is
+  details-then-README at *every* breakpoint; only the desktop horizontal placement changes.
+  Considered `flex-col-reverse` + `lg:flex-row` (visually equivalent) but rejected it: that
+  would reorder the *mobile* DOM instead, forcing keyboard/screen-reader users through an
+  arbitrarily long README before reaching the details block rendered visually above it — a
+  focus-order/reading-order regression (WCAG 1.3.2/2.4.3) for the sake of matching desktop
+  markup order that doesn't matter there. A `grid` + `lg:order-*` alternative would be
+  equally correct but needs classes on three elements instead of one; not needed here.
+- **`lg` (64rem) breakpoint, not `md`.** At `md` (48rem) the `max-w-5xl` content box is 736px;
+  minus an 18rem (288px) sidebar and the gap, ~416px is left for the README — too narrow for
+  code fences and GFM tables. `lg` leaves 672px, and 64rem is exactly `max-w-5xl`, so the
+  two-column layout starts precisely where the container stops growing.
+- **`min-w-0` on the README wrapper is required, not decoration.** Flex items default to
+  `min-width: auto`; a `<pre>` or GFM table with a long unbroken line would otherwise set the
+  item's min-content width and push the sidebar off-screen. Left unprefixed (applies in the
+  mobile column too, where the same overflow risk exists).
+- **`Layout.astro`'s `max-w-5xl` deliberately left unchanged**, even though a wider shell was
+  briefly considered for more README room. The `<header>` (`Layout.astro:154`) shares the same
+  width and is `transition:persist`ed (#24) — it is never re-rendered across a client-side
+  navigation. A summary-page-only width would leave the content edge visibly offset from the
+  (unmoving) header, and would visibly jump on every tab click. Widening is a global decision
+  for both elements together, not a per-page one.
+- **Branches/tags collapsed into one "Refs" `<dt>`** with two `MetaLink`s whose accessible
+  names are the full phrase (`"3 branches"`, `"1 tag"`), both pointing at the new
+  `repo-href.ts::refsHref`. A bare `<a>{count}</a>` would have an out-of-context accessible
+  name ("3") — rejected on WCAG 2.4.4 grounds. No `#branches`/`#tags` fragment: `RefsView` is
+  `client:only` and its sections don't exist in the DOM when the browser processes a fragment
+  on initial load, so the scroll would silently fail.
+- **`components/ui/card.tsx` still not used.** It was vendored only as a `shadcn add chart`
+  registry dependency (#29) and remains unused; its `rounded-4xl`/`shadow-md`/`bg-card` look
+  doesn't match this app's flat, hairline-border surfaces (`RepoNav`'s `border-b`, `<pre>`
+  blocks). The sidebar's one `border-border border-t` rule under the description follows the
+  existing idiom instead.
+- Icons (`GitBranchIcon`/`TagIcon`/`DownloadSimpleIcon`/`RssIcon`, `@phosphor-icons/react`,
+  same per-icon `dist/ssr/*` deep-import idiom as `theme.tsx`) sit only on the link rows, each
+  with `aria-hidden="true"` — load-bearing, since `RepoSummary.test.tsx` and `repo.spec.ts`
+  look the download/feed links up by accessible name and an un-hidden `<svg>` could otherwise
+  affect it.
+- `<aside aria-label="Repository details">` lives in the Astro page (not inside `RepoSummary`),
+  so the `complementary` landmark exists in the prerendered HTML and survives the island's
+  loading/error branches — the error branch is a bare `<p role="alert">` with no wrapper of its
+  own. No new heading was added; the page's only headings remain `RepoNav`'s `<h1>` and
+  `ReadmeView`'s path-label `<h2>`/markdown headings, so no existing `getByRole("heading")`
+  lookup (including the "must stay unambiguous" fixture note in `e2e/repo.spec.ts`) is
+  affected.
+- No API contract change, no new route — `docs/API.md`/`docs/openapi.json`/
+  `web/src/lib/api/types.ts`/`shellFor`/`shell_for` all untouched.

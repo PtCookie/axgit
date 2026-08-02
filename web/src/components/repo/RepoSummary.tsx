@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { DownloadSimpleIcon } from "@phosphor-icons/react/dist/ssr/DownloadSimple";
+import { GitBranchIcon } from "@phosphor-icons/react/dist/ssr/GitBranch";
+import { RssIcon } from "@phosphor-icons/react/dist/ssr/Rss";
+import { TagIcon } from "@phosphor-icons/react/dist/ssr/Tag";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { ApiError } from "@/lib/api/client";
 import { archiveUrl, feedUrl, getRepo } from "@/lib/api/repos";
 import type { RepoSummary as RepoSummaryData } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
+import { refsHref } from "@/lib/repo-href";
 import { repoFromPathname } from "@/lib/repo-param";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type State =
@@ -20,13 +26,59 @@ interface RepoSummaryProps {
   repo?: string;
 }
 
+/** One label/value pair, stacked (label above value) to fit the narrow
+ *  sidebar (`pages/[repo]/index.astro`). Still a `<dl>` row — only the
+ *  presentation moved from the old `grid-cols-[auto_1fr]` layout. */
+function MetaItem({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{label}</dt>
+      <dd className="mt-1 text-sm break-words">{children}</dd>
+    </div>
+  );
+}
+
+const LINK_CLASS = "text-primary underline underline-offset-2";
+
+/** An icon + label link row. `aria-hidden` on the icon is load-bearing: the
+ *  accessible name must stay exactly the label text ("tar.gz", "Atom", …),
+ *  which is what both the component tests and the e2e spec look these up
+ *  by. Same `size-4` / `aria-hidden` idiom as `components/theme.tsx`. */
+function MetaLink({ href, Icon, children }: { href: string; Icon: typeof GitBranchIcon; children: ReactNode }) {
+  return (
+    <a href={href} className={cn(LINK_CLASS, "inline-flex items-center gap-1.5")}>
+      <Icon className="size-4" aria-hidden="true" />
+      {children}
+    </a>
+  );
+}
+
+/** One `MetaItem`-shaped placeholder — label bar above value bar, same
+ *  rhythm as the real `dl` so nothing shifts when data lands. */
+function SkeletonMetaItem() {
+  return (
+    <div className="space-y-1">
+      <Skeleton className="h-3 w-16" />
+      <Skeleton className="h-4 w-28" />
+    </div>
+  );
+}
+
 /** Also rendered statically into the page shell as the island's
- *  `slot="fallback"`, so the prerendered HTML is not blank. */
+ *  `slot="fallback"`, so the prerendered HTML is not blank. Sized for the
+ *  18rem sidebar it sits in (`pages/[repo]/index.astro`), not a full-width
+ *  block. */
 export function RepoSummarySkeleton() {
   return (
-    <div className="space-y-2" aria-busy="true">
-      <Skeleton className="h-5 w-2/3" />
-      <Skeleton className="h-24 w-full" />
+    <div className="space-y-4" aria-busy="true">
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-3/4" />
+      <div className="border-border space-y-4 border-t pt-4">
+        <SkeletonMetaItem />
+        <SkeletonMetaItem />
+        <SkeletonMetaItem />
+        <SkeletonMetaItem />
+      </div>
     </div>
   );
 }
@@ -75,67 +127,62 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
   const { summary } = state;
 
   return (
-    <div className="space-y-6">
-      {summary.description && <p className="text-foreground">{summary.description}</p>}
+    <div className="space-y-4">
+      {summary.description && <p className="text-foreground text-sm">{summary.description}</p>}
 
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-        {summary.section && (
-          <>
-            <dt className="text-muted-foreground">Section</dt>
-            <dd>{summary.section}</dd>
-          </>
-        )}
-        {summary.owner && (
-          <>
-            <dt className="text-muted-foreground">Owner</dt>
-            <dd>{summary.owner}</dd>
-          </>
-        )}
-        <dt className="text-muted-foreground">Default branch</dt>
-        <dd>{summary.default_branch ?? "—"}</dd>
-        <dt className="text-muted-foreground">Last activity</dt>
-        <dd>
+      <dl className={cn("space-y-4", summary.description && "border-border border-t pt-4")}>
+        {summary.section && <MetaItem label="Section">{summary.section}</MetaItem>}
+        {summary.owner && <MetaItem label="Owner">{summary.owner}</MetaItem>}
+        <MetaItem label="Default branch">{summary.default_branch ?? "—"}</MetaItem>
+        <MetaItem label="Last activity">
           {summary.last_modified ? (
             <span title={formatAbsoluteTime(summary.last_modified)}>{formatRelativeTime(summary.last_modified)}</span>
           ) : (
             "—"
           )}
-        </dd>
-        <dt className="text-muted-foreground">HEAD</dt>
-        <dd className="font-mono">{summary.head ?? "—"}</dd>
-        <dt className="text-muted-foreground">Branches</dt>
-        <dd>{summary.branch_count}</dd>
-        <dt className="text-muted-foreground">Tags</dt>
-        <dd>{summary.tag_count}</dd>
+        </MetaItem>
+        <MetaItem label="HEAD">
+          <span className="font-mono break-all">{summary.head ?? "—"}</span>
+        </MetaItem>
+        {/* Counts are folded into the link text rather than a bare
+            `<a>{count}</a>` — a link whose accessible name is just "3" is
+            useless out of context (WCAG 2.4.4). Both point at the refs
+            page; a `#branches`/`#tags` fragment wouldn't scroll, since
+            `RefsView` is `client:only` and hasn't mounted yet. */}
+        <MetaItem label="Refs">
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <MetaLink href={refsHref(summary.name)} Icon={GitBranchIcon}>
+              {summary.branch_count} {summary.branch_count === 1 ? "branch" : "branches"}
+            </MetaLink>
+            <MetaLink href={refsHref(summary.name)} Icon={TagIcon}>
+              {summary.tag_count} {summary.tag_count === 1 ? "tag" : "tags"}
+            </MetaLink>
+          </span>
+        </MetaItem>
         {summary.clone_url && (
-          <>
-            <dt className="text-muted-foreground">Clone</dt>
-            <dd className="font-mono break-all">{summary.clone_url}</dd>
-          </>
+          <MetaItem label="Clone">
+            <code className="border-border bg-muted/50 block rounded-md border px-2 py-1.5 font-mono text-xs break-all">
+              {summary.clone_url}
+            </code>
+          </MetaItem>
         )}
         {summary.head !== null && (
           <>
-            <dt className="text-muted-foreground">Download</dt>
-            <dd className="space-x-3">
-              <a
-                href={archiveUrl(summary.name, undefined, "tar.gz")}
-                className="text-primary underline underline-offset-2"
-              >
-                tar.gz
-              </a>
-              <a
-                href={archiveUrl(summary.name, undefined, "zip")}
-                className="text-primary underline underline-offset-2"
-              >
-                zip
-              </a>
-            </dd>
-            <dt className="text-muted-foreground">Feed</dt>
-            <dd>
-              <a href={feedUrl(summary.name)} className="text-primary underline underline-offset-2">
+            <MetaItem label="Download">
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <MetaLink href={archiveUrl(summary.name, undefined, "tar.gz")} Icon={DownloadSimpleIcon}>
+                  tar.gz
+                </MetaLink>
+                <MetaLink href={archiveUrl(summary.name, undefined, "zip")} Icon={DownloadSimpleIcon}>
+                  zip
+                </MetaLink>
+              </span>
+            </MetaItem>
+            <MetaItem label="Feed">
+              <MetaLink href={feedUrl(summary.name)} Icon={RssIcon}>
                 Atom
-              </a>
-            </dd>
+              </MetaLink>
+            </MetaItem>
           </>
         )}
       </dl>

@@ -560,6 +560,18 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   `phosphor-icons`' barrel import was checked and confirmed to already tree-shake correctly — left
   alone. No API contract change, no new route.
 
+- `/{repo}` summary as a two-column layout (DECISIONS.md #31). The README becomes the wide main
+  column; the repository description + metadata move into a narrow right sidebar (GitHub's "About"
+  shape). The grid lives in `pages/[repo]/index.astro`, not in either island, so the
+  `slot="fallback"` skeletons occupy the same geometry as the hydrated islands and nothing
+  reflows on hydration. DOM order is details-then-README at every breakpoint;
+  `lg:flex-row-reverse` moves the sidebar right without reordering the document, keeping the
+  mobile stack (details first) as the reading/focus order too. `Layout.astro`'s `max-w-5xl`
+  deliberately unchanged — the `transition:persist`ed header shares it, so a per-page width would
+  misalign the content edge on every navigation. `repo-href.ts` gained `refsHref`; branch/tag
+  counts now link to `/{repo}/refs`. No route, no `shellFor`/`shell_for` change, no API contract
+  change.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push

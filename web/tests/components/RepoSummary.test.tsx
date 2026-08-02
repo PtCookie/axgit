@@ -85,4 +85,29 @@ describe("RepoSummary", () => {
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });
+
+  it("links branch and tag counts to the refs page", async () => {
+    mockedGetRepo.mockResolvedValue(SUMMARY);
+    render(<RepoSummary repo="git-compose" />);
+
+    const branches = page.getByRole("link", { name: "3 branches" });
+    await expect.element(branches).toHaveAttribute("href", "/git-compose/refs");
+
+    const tags = page.getByRole("link", { name: "1 tag" });
+    await expect.element(tags).toHaveAttribute("href", "/git-compose/refs");
+  });
+
+  it("singularizes the branch count", async () => {
+    mockedGetRepo.mockResolvedValue({ ...SUMMARY, branch_count: 1 });
+    render(<RepoSummary repo="git-compose" />);
+
+    await expect.element(page.getByRole("link", { name: "1 branch" })).toBeVisible();
+  });
+
+  it("shows the clone URL", async () => {
+    mockedGetRepo.mockResolvedValue(SUMMARY);
+    render(<RepoSummary repo="git-compose" />);
+
+    await expect.element(page.getByText("git@git.ptcookie.net:git-compose.git")).toBeVisible();
+  });
 });
