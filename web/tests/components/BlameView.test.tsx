@@ -42,6 +42,7 @@ const BLAME: BlameInfo = {
       summary: "feat: initial",
       author: { name: "Ada Lovelace", email_hash: "deadbeef" },
       authored_at: "2026-07-24T13:06:00+09:00",
+      orig_path: null,
     },
   ],
 };
@@ -93,6 +94,28 @@ describe("BlameView", () => {
     await expect
       .element(page.getByRole("link", { name: "History" }))
       .toHaveAttribute("href", "/git-compose/log?path=README.md");
+  });
+
+  it("marks a renamed range with a link to its previous path's blame", async () => {
+    mockedGetBlame.mockResolvedValue({
+      ...BLAME,
+      ranges: [{ ...BLAME.ranges[0], orig_path: "old/README.md" }],
+    });
+    mockedGetBlob.mockResolvedValue(TEXT_BLOB);
+    render(<BlameView repo="git-compose" path="README.md" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "Renamed from old/README.md" }))
+      .toHaveAttribute("href", `/git-compose/blame/old/README.md?ref=${FULL_SHA}`);
+  });
+
+  it("shows no rename marker when orig_path is unset", async () => {
+    mockedGetBlame.mockResolvedValue(BLAME);
+    mockedGetBlob.mockResolvedValue(TEXT_BLOB);
+    render(<BlameView repo="git-compose" path="README.md" />);
+
+    await expect.element(page.getByText("# Axgit")).toBeVisible();
+    expect(page.getByRole("link", { name: /^Renamed from/ }).elements()).toHaveLength(0);
   });
 
   it("shows a binary-file message instead of a gutter", async () => {

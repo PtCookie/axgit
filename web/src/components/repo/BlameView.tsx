@@ -6,7 +6,7 @@ import { getBlame, getBlob, rawUrl } from "@/lib/api/repos";
 import type { BlameInfo, BlameRange, BlobInfo } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
-import { blobHref } from "@/lib/repo-href";
+import { blameHref, blobHref } from "@/lib/repo-href";
 import CodeBlock, { type GutterCell } from "@/components/repo/CodeBlock";
 import PathBreadcrumbs from "@/components/repo/PathBreadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,9 +51,24 @@ function RangeCell({ repo, range }: { repo: string; range: BlameRange }) {
 
   return (
     <div className="flex flex-col text-xs" title={title}>
-      <a className="hover:text-foreground font-mono underline" href={commitHref}>
-        {range.sha.slice(0, 7)}
-      </a>
+      <span className="flex items-center gap-1">
+        <a className="hover:text-foreground font-mono underline" href={commitHref}>
+          {range.sha.slice(0, 7)}
+        </a>
+        {/* Whole-file renames are tracked (docs/API.md); this marker links
+         *  back to the file's blame under its earlier path, at the commit
+         *  that still had it. */}
+        {range.orig_path && (
+          <a
+            className="text-muted-foreground hover:text-foreground"
+            href={blameHref(repo, range.orig_path, range.sha)}
+            title={`Renamed from ${range.orig_path}`}
+            aria-label={`Renamed from ${range.orig_path}`}
+          >
+            ↩
+          </a>
+        )}
+      </span>
       <span>{range.authored_at ? formatRelativeTime(range.authored_at) : "unknown time"}</span>
       <span className="truncate">{range.author.name}</span>
     </div>

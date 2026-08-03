@@ -436,6 +436,13 @@ export interface components {
       summary: string | null;
       author: components["schemas"]["CommitAuthor"];
       authored_at: string | null;
+      /**
+       * @description Path the lines had in the attributed commit, when the file has since
+       *     been renamed — `None` when unchanged (or when the path is not valid
+       *     UTF-8). Only whole-file renames are tracked; libgit2 follows them the
+       *     same way `git blame` does by default.
+       */
+      orig_path: string | null;
     };
     /** @description Response of the blob endpoint (docs/API.md). */
     BlobInfo: {
