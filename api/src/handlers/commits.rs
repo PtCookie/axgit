@@ -25,8 +25,8 @@ pub struct CommitsQuery {
     /// Only commits that changed this file or directory. A path that never
     /// existed yields an empty list rather than a 404.
     path: Option<String>,
-    /// `next_cursor` from a previous page, walked from **inclusive**. Opaque:
-    /// a malformed or unknown value is `400 invalid_param`, not a 404.
+    /// `next_cursor` from a previous page. Opaque: a malformed or unknown
+    /// value is `400 invalid_param`, not a 404.
     cursor: Option<String>,
     /// Parsed manually so an invalid value yields the JSON `invalid_param`
     /// envelope instead of axum's plain-text 400. Never clamped.
@@ -88,19 +88,21 @@ pub async fn list_commits(
         JSON_CONTENT_TYPE,
         &headers,
         move |repo| {
-            let start = if let Some(cursor) = &query.cursor {
-                // The cursor is an opaque token from a previous response, so any
-                // failure is a malformed request (400), not a missing ref (404).
-                git2::Oid::from_str(cursor)
-                    .ok()
-                    .and_then(|oid| repo.find_commit(oid).ok())
-                    .ok_or_else(|| ApiError::InvalidParam(format!("invalid cursor '{cursor}'")))?
-                    .id()
+            // The cursor is an opaque token from a previous response, so any
+            // failure is a malformed request (400), not a missing ref (404).
+            let (start, skip) = if let Some(cursor) = &query.cursor {
+                let parsed = commits::Cursor::parse(cursor)
+                    .ok_or_else(|| ApiError::InvalidParam(format!("invalid cursor '{cursor}'")))?;
+                let start = repo
+                    .find_commit(parsed.start)
+                    .map_err(|_| ApiError::InvalidParam(format!("invalid cursor '{cursor}'")))?
+                    .id();
+                (start, parsed.offset)
             } else if let Some(refname) = &query.r#ref {
-                resolve::resolve_commit(repo, refname)?.id()
+                (resolve::resolve_commit(repo, refname)?.id(), 0)
             } else {
                 match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
-                    Some(commit) => commit.id(),
+                    Some(commit) => (commit.id(), 0),
                     // Empty repository (unborn HEAD): an empty page, not an error.
                     None => {
                         let page = CommitsPage {
@@ -111,7 +113,7 @@ pub async fn list_commits(
                     }
                 }
             };
-            let page = commits::log(repo, start, path.as_deref(), limit)?;
+            let page = commits::log(repo, start, path.as_deref(), skip, limit)?;
             Ok((false, serde_json::to_vec(&page)?))
         },
     )

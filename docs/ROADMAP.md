@@ -668,12 +668,32 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   (`git blame -M`/`-C`) remains genuinely unsupported by libgit2 and would need an exec fallback —
   not attempted here.
 
+- **Commit log pagination made lossless across side branches** (DECISIONS.md #37), closing the
+  candidate noted while building the graph column (#33). Finalized design:
+  - The cursor became an opaque `"<start-sha>.<offset>"` token instead of a single boundary-commit
+    sha: every page re-walks from the same fixed start and skips ahead, so pagination is a plain
+    continuation of one walk and can't drop or duplicate a commit. Root cause (confirmed against
+    libgit2 1.9.6's `revwalk.c`): `GIT_SORT_NONE` still pops from a commit-date-ordered pending
+    list, and the old cursor discarded every commit in that list except the boundary one.
+  - `Cursor::MAX_OFFSET = 100_000` (`repo/commits.rs`) bounds the walk a manipulated cursor can
+    force, same rationale as search/stats' scan budgets. The old bare-sha cursor format is rejected
+    outright (`400 invalid_param`), not accepted as a legacy alias — it's documented as opaque and
+    had shipped for one release cycle.
+  - `commits::log` gained a `skip: usize` parameter; `feed.rs`'s fixed, never-paginated call passes
+    `0`. New test fixture `commits_test.rs::setup_branching_history` (a DAG with dates chosen so the
+    walk visits a merge, its first-parent chain, and a side branch in a specific order) backs a new
+    `commits_pagination_keeps_side_branch_commits` test — confirmed to fail against the pre-fix code
+    before the fix landed.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (description-only: cursor
+    semantics changed, `CommitsPage`'s shape did not). No web change — `CommitLog.tsx` already
+    treats `next_cursor` as an opaque string.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), and the build-chunk-size,
-ref-badge, cgit-compatibility, and blame-rename candidates above are all now resolved. Pick the
-next piece of work from the candidates below, or from a fresh request.
+ref-badge, cgit-compatibility, blame-rename, and commit-log-pagination candidates above are all now
+resolved. Pick the next piece of work from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -684,7 +704,8 @@ next piece of work from the candidates below, or from a fresh request.
 - `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
   revisit with the `dataviz` skill's validator if the stats page (or a future one) ever needs a
   second chart series.
-- Commit log pagination silently drops side-branch commits pending at a page boundary that aren't
-  ancestors of the next page's cursor (noted while building the graph column, DECISIONS.md #33) —
-  not a regression from that change, but now visibly noticeable as a branch that "vanishes" across
-  the Older boundary.
+- Cursor- and full-sha-`ref`-addressed commit pages are now fully deterministic (DECISIONS.md #37
+  made every page a pure function of its start commit + offset), so they could be promoted to
+  immutable caching like commit detail/diff/blame — deferred because it would change the API.md
+  contract ("sha appears in the URL path"); same follow-up already noted for the moka cache
+  rollout.

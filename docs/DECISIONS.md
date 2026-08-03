@@ -1143,3 +1143,49 @@ at all.
 - **Web**: `BlameView.tsx`'s gutter cell gets a small marker next to the short sha when
   `orig_path` is set, linking to `blameHref(repo, orig_path, sha)` (blame of the old path as of
   that commit) — reusing the existing href helper (`web/src/lib/repo-href.ts`), no new routing.
+
+## #37 Commit log cursor became an offset token (closes the #33 side-branch-drop candidate)
+
+Closes the `docs/ROADMAP.md` candidate noted while building the graph column (#33): commit log
+pagination silently dropped a side-branch commit pending at a page boundary that wasn't an
+ancestor of the next page's cursor.
+
+- **Root cause, confirmed against libgit2 1.9.6's `revwalk.c` directly**: `commits.rs::log` walks
+  with `GIT_SORT_NONE` (deliberately, #33 — any sort flag forces a full-history walk before the
+  first commit is emitted). That still isn't an unordered walk: `revwalk_next_unsorted` pops from a
+  pending list libgit2 maintains in commit-date order (`git_commit_list_insert_by_date`), i.e. a
+  date-priority queue. Once `limit` commits are emitted, the old cursor kept only the single
+  boundary commit's sha; the next page's `revwalk.push()`'d only that sha, silently losing every
+  *other* commit still in the pending list — a sibling that isn't its ancestor never gets pushed
+  again. Minimal repro: root `A`, `B(A)`, `S1(A)`, `S2(S1)`, `C(B)`, merge `M(C, S2)`, `limit=2`.
+  Page 1 emits `M, C`; the pending list is now `[S2, B]`; `next_cursor` was `S2` alone, so page 2
+  pushes only `S2` and `B` never appears on any page.
+- **Fix: the cursor became `"<start-sha>.<offset>"`** (`repo/commits.rs::Cursor`) — every page
+  re-walks from the same fixed start commit and skips `offset` filtered commits before collecting
+  `limit` more. This is provably lossless: it's a plain continuation of one walk, cut at different
+  points, so it can't diverge from an unpaginated walk of the same history. cgit's own `ofs=`
+  query param does the same thing.
+  - `Cursor::MAX_OFFSET = 100_000` bounds the walk a manipulated cursor can force — same rationale
+    as search/stats' scan budgets (#26/#28). Exceeding it is `400 invalid_param`, same as a
+    malformed cursor; this also means a client can't page past 100,000 filtered commits, judged an
+    acceptable trade given none of search/stats/log allow unbounded scans either.
+  - **The old bare-sha cursor format is rejected outright, not accepted as a legacy alias.** The
+    cursor is documented as opaque in `docs/API.md`, has shipped for one release cycle, and a
+    fallback path would have kept the exact bug this decision fixes reachable for anyone still
+    holding an old link.
+  - Cost changed from O(1) per page to O(page index × `limit`) — a real regression, but strictly
+    better than the O(repo size) a sort flag would force (which #33 already rejected), and
+    self-limiting: a client that pages `N` times deep pays for `N` re-walks, not the server eating
+    that cost unprompted. Each page is still absorbed by the response cache.
+  - **Rejected alternative: a frontier cursor** (encode the whole pending-list sha set at the page
+    boundary). Keeps O(page) per page, but two problems killed it: libgit2's `seen` flag — which
+    prevents a commit from being queued twice — doesn't persist across requests, so a commit whose
+    timestamp straddles a page boundary under clock skew could be emitted twice; and the frontier
+    itself needs a size cap, which reintroduces exactly this decision's drop bug once a page
+    touches enough diverging branches to exceed it.
+  - `commits::log` gained a `skip: usize` parameter; `feed.rs`'s call (fixed `FEED_ENTRY_LIMIT`,
+    never paginated) passes `0`.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (description-only:
+    `cursor`/`next_cursor` semantics changed, `CommitsPage`'s shape did not).
+  - **No web change**: `CommitLog.tsx`'s `Older` link and `logHref` already treat `next_cursor` as
+    an opaque string round-tripped through `?cursor=`, never parsed client-side.

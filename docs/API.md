@@ -60,8 +60,10 @@ axum's `DefaultBodyLimit` returns a plain-text `413`.
 
 ### Pagination (commit log)
 
-Cursor-based. Pass the response's `next_cursor` (a commit sha) as the next request's `cursor`.
-Default `limit=50`, max 100.
+Cursor-based. Pass the response's `next_cursor` verbatim as the next request's `cursor`. The
+cursor is an opaque token, not a commit sha — each page re-walks from the same fixed start commit
+and skips ahead, which is what makes pagination lossless across side branches (see the `cursor`
+row under `/commits` below, and `docs/DECISIONS.md` #37). Default `limit=50`, max 100.
 
 ## Endpoints
 
@@ -155,11 +157,13 @@ address (the gravatar approach).
 - `ref`: branch/tag/sha, defaults to HEAD. `404 ref_not_found` on resolution failure.
 - `limit`: default 50, allowed range 1–100. **0, values over 100, or non-integers are
   `400 invalid_param`** (not clamped).
-- `cursor`: pass the previous response's `next_cursor` value verbatim. When `cursor` is given,
-  `ref` is ignored and walking starts from that commit (**inclusive**). A malformed or
-  non-existent commit is `400 invalid_param` (it's an opaque token, not a 404).
-- `next_cursor`: the sha of the next page's first commit (after the `path` filter is applied).
-  `null` if there are no more.
+- `cursor`: pass the previous response's `next_cursor` value verbatim. It's an opaque token
+  encoding a fixed walk-start commit plus how many filtered commits to skip; `ref` is ignored when
+  `cursor` is given. Every page re-walks from that same start commit, so pagination matches an
+  unpaginated walk exactly — no side-branch commit pending at a page boundary is ever dropped. A
+  malformed cursor, or one whose skip count exceeds 100,000, is `400 invalid_param` (not a 404).
+  The walk cost of page *K* is proportional to `K × limit`.
+- `next_cursor`: opaque; `null` if there are no more pages after the `path` filter is applied.
 - `path`: a file or directory path. A path that doesn't exist returns an empty list, not a 404.
   A merge commit is included only when the path differs from **all** parents (an approximation of
   `git log -- <path>`'s default simplification — some side-branch commits may show up that

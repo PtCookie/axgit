@@ -196,9 +196,20 @@ async fn commits_returns_404_for_unknown_ref() {
 
 #[tokio::test]
 async fn commits_rejects_invalid_cursor() {
-    let (root, _shas) = setup_history();
+    let (root, shas) = setup_history();
 
-    for cursor in ["zzz", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"] {
+    for cursor in [
+        "zzz",
+        // The old bare-sha cursor format is no longer accepted.
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        shas[4].as_str(),
+        &format!("{}.abc", shas[4]),
+        &format!("{}.-1", shas[4]),
+        // Beyond Cursor::MAX_OFFSET (100_000).
+        &format!("{}.100001", shas[4]),
+        // Well-formed but pointing at a commit that doesn't exist.
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef.0",
+    ] {
         let uri = format!("/api/v1/repos/alpha/commits?cursor={cursor}");
         let (status, json) = common::get_json(router_for(root.path()), &uri).await;
         assert_eq!(
@@ -246,15 +257,20 @@ async fn commits_paginates_within_path_filter() {
     )
     .await;
     assert_eq!(shas_of(&json), [shas[4].as_str()]);
-    assert_eq!(json["next_cursor"], Value::String(shas[2].clone()));
+    // The cursor is now `<start-sha>.<offset>`, not the boundary commit's sha
+    // (docs/DECISIONS.md #37) — assert a cursor is present, not its literal value.
+    let cursor = json["next_cursor"]
+        .as_str()
+        .expect("expected a next_cursor")
+        .to_owned();
 
-    let uri = format!(
-        "/api/v1/repos/alpha/commits?path=a.txt&limit=1&cursor={}",
-        shas[2]
-    );
+    let uri = format!("/api/v1/repos/alpha/commits?path=a.txt&limit=1&cursor={cursor}");
     let json = get_ok(root.path(), &uri).await;
     assert_eq!(shas_of(&json), [shas[2].as_str()]);
-    assert_eq!(json["next_cursor"], Value::String(shas[0].clone()));
+    assert!(
+        json["next_cursor"].is_string(),
+        "unexpected response: {json}"
+    );
 }
 
 #[tokio::test]
@@ -363,5 +379,85 @@ async fn commits_lists_both_parents_of_a_merge() {
         ),
         (Some("merge feature"), Some(2)),
         "unexpected response: {json}"
+    );
+}
+
+/// `branchy.git`: a DAG built to test that pagination doesn't drop side-branch
+/// commits pending at a page boundary (docs/DECISIONS.md #37):
+///
+/// ```text
+/// A(root) --- B --- C           (main)
+///   \                 \
+///    S1 ------- S2 -----M       (M's parents: C, S2)
+/// ```
+///
+/// Dates are fixed (not creation order) so committer-date order — the walk's
+/// order, `commits.rs::log` sets no sort flags — visits `M, C, S2, B, S1, A`.
+/// Returns shas in that walk order.
+fn setup_branching_history() -> (TempDir, Vec<String>) {
+    let root = tempfile::tempdir().expect("failed to create fixture root");
+    let bare = common::create_bare_repo(root.path(), "branchy.git");
+    let work = tempfile::tempdir().expect("failed to create work dir");
+    let work_path = work.path();
+    common::git(
+        work_path,
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+
+    let commit = |file: &str, message: &str, date: &str| -> String {
+        std::fs::write(work_path.join(file), file).unwrap();
+        common::git(work_path, &["add", "."]);
+        common::git_output(
+            work_path,
+            &["commit", "--quiet", "-m", message],
+            &[("GIT_AUTHOR_DATE", date), ("GIT_COMMITTER_DATE", date)],
+        );
+        common::git_output(work_path, &["rev-parse", "HEAD"], &[])
+    };
+
+    let a = commit("a.txt", "feat: a (root)", "2026-07-01T10:00:00+09:00");
+    common::git(work_path, &["checkout", "--quiet", "-b", "side"]);
+    let s1 = commit("s1.txt", "feat: s1", "2026-07-01T11:00:00+09:00");
+    let s2 = commit("s2.txt", "feat: s2", "2026-07-01T13:00:00+09:00");
+    common::git(work_path, &["checkout", "--quiet", "main"]);
+    let b = commit("b.txt", "feat: b", "2026-07-01T12:00:00+09:00");
+    let c = commit("c.txt", "feat: c", "2026-07-01T14:00:00+09:00");
+    common::git_output(
+        work_path,
+        &["merge", "--no-ff", "--quiet", "-m", "merge side", "side"],
+        &[
+            ("GIT_AUTHOR_DATE", "2026-07-01T15:00:00+09:00"),
+            ("GIT_COMMITTER_DATE", "2026-07-01T15:00:00+09:00"),
+        ],
+    );
+    let m = common::git_output(work_path, &["rev-parse", "HEAD"], &[]);
+    common::git(work_path, &["push", "--quiet", "origin", "HEAD:main"]);
+
+    (root, vec![m, c, s2, b, s1, a])
+}
+
+/// Reproduces the bug DECISIONS.md #37 fixes: with the old single-sha
+/// cursor, `S2`'s sibling pending commit `B` (not an ancestor of `S2`) was
+/// silently dropped once page 2 pushed only `S2`. The offset cursor re-walks
+/// from a fixed start every page, so this must match a single unpaginated
+/// walk exactly.
+#[tokio::test]
+async fn commits_pagination_keeps_side_branch_commits() {
+    let (root, expected) = setup_branching_history();
+
+    let mut collected = Vec::new();
+    let mut uri = "/api/v1/repos/branchy/commits?limit=2".to_owned();
+    loop {
+        let json = get_ok(root.path(), &uri).await;
+        collected.extend(shas_of(&json));
+        match json["next_cursor"].as_str() {
+            Some(cursor) => uri = format!("/api/v1/repos/branchy/commits?limit=2&cursor={cursor}"),
+            None => break,
+        }
+    }
+
+    assert_eq!(
+        collected, expected,
+        "pagination must match a single unpaginated walk exactly, with no drops or duplicates"
     );
 }

@@ -36,10 +36,49 @@ pub struct CommitInfo {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CommitsPage {
     pub commits: Vec<CommitInfo>,
-    /// Sha of the first commit of the next page; `null` on the last page.
-    /// Pass it back as the `cursor` query parameter.
+    /// Opaque token for the next page; `null` on the last page. Pass it back
+    /// verbatim as the `cursor` query parameter.
     #[schema(required = true)]
     pub next_cursor: Option<String>,
+}
+
+/// Opaque pagination token: a fixed walk start plus how many filtered commits
+/// to skip before collecting `limit` more. Re-walking from a fixed `start`
+/// (rather than resuming from the boundary commit alone) is what makes
+/// pagination lossless — see `docs/DECISIONS.md` #37 for why a single-sha
+/// cursor silently dropped side-branch commits pending at a page boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cursor {
+    pub start: Oid,
+    pub offset: usize,
+}
+
+impl Cursor {
+    /// Bounds the walk a manipulated cursor can force (same rationale as
+    /// search/stats' scan budgets, `docs/DECISIONS.md` #26/#28).
+    pub const MAX_OFFSET: usize = 100_000;
+
+    /// Parses `"<full sha>.<offset>"`. Anything else — including the old
+    /// bare-sha cursor format — is `None`, which callers turn into
+    /// `400 invalid_param`.
+    pub fn parse(raw: &str) -> Option<Self> {
+        let (sha, offset) = raw.rsplit_once('.')?;
+        let oid = Oid::from_str(sha).ok()?;
+        // Round-trip check: rejects short/non-canonical hex that `Oid::from_str`
+        // would otherwise zero-pad into a valid-looking Oid.
+        if oid.to_string() != sha {
+            return None;
+        }
+        let offset = offset.parse::<usize>().ok()?;
+        if offset > Self::MAX_OFFSET {
+            return None;
+        }
+        Some(Self { start: oid, offset })
+    }
+
+    pub fn encode(&self) -> String {
+        format!("{}.{}", self.start, self.offset)
+    }
 }
 
 /// Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).
@@ -79,19 +118,26 @@ pub fn detail(repo: &Repository, commit: &Commit) -> Result<CommitDetail, ApiErr
     })
 }
 
-/// Walks history from `start` (inclusive) and returns up to `limit` commits,
-/// keeping only those touching `path` when given. libgit2's default walk order
-/// is the closest match to `git log`, so no explicit sorting is set.
+/// Walks history from `start` (inclusive), skips the first `skip` commits
+/// that pass the `path` filter, then collects up to `limit` more. libgit2's
+/// default walk order is the closest match to `git log`, so no explicit
+/// sorting is set.
+///
+/// Re-walking from the same fixed `start` on every page (instead of resuming
+/// from the boundary commit alone) is deliberate: it's what makes pagination
+/// lossless across side branches (`docs/DECISIONS.md` #37).
 pub fn log(
     repo: &Repository,
     start: Oid,
     path: Option<&Path>,
+    skip: usize,
     limit: usize,
 ) -> Result<CommitsPage, ApiError> {
     let mut revwalk = repo.revwalk()?;
     revwalk.push(start)?;
     let mut commits = Vec::new();
-    let mut next_cursor = None;
+    let mut skipped = 0usize;
+    let mut has_more = false;
     for oid in revwalk {
         let oid = oid?;
         let commit = repo.find_commit(oid)?;
@@ -100,12 +146,23 @@ pub fn log(
         {
             continue;
         }
+        if skipped < skip {
+            skipped += 1;
+            continue;
+        }
         if commits.len() == limit {
-            next_cursor = Some(oid.to_string());
+            has_more = true;
             break;
         }
         commits.push(commit_info(&commit));
     }
+    let next_cursor = has_more.then(|| {
+        Cursor {
+            start,
+            offset: skip + limit,
+        }
+        .encode()
+    });
     Ok(CommitsPage {
         commits,
         next_cursor,
@@ -166,6 +223,32 @@ fn email_hash(email: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cursor_round_trips_through_encode_and_parse() {
+        let cursor = Cursor {
+            start: Oid::from_str("0123456789abcdef0123456789abcdef01234567").unwrap(),
+            offset: 42,
+        };
+        assert_eq!(Cursor::parse(&cursor.encode()), Some(cursor));
+    }
+
+    #[test]
+    fn cursor_parse_rejects_malformed_input() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        // The old bare-sha cursor format is no longer accepted.
+        assert_eq!(Cursor::parse(sha), None);
+        assert_eq!(Cursor::parse(&format!("{sha}.abc")), None);
+        assert_eq!(Cursor::parse(&format!("{sha}.-1")), None);
+        assert_eq!(
+            Cursor::parse(&format!("{sha}.{}", Cursor::MAX_OFFSET + 1)),
+            None
+        );
+        assert!(Cursor::parse(&format!("{sha}.{}", Cursor::MAX_OFFSET)).is_some());
+        assert_eq!(Cursor::parse("zzz.0"), None);
+        // Short hex must not zero-pad into a valid Oid.
+        assert_eq!(Cursor::parse("0123.0"), None);
+    }
 
     #[test]
     fn email_hash_should_normalize_case_and_whitespace() {

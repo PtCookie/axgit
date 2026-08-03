@@ -68,7 +68,7 @@ pub async fn get_feed(
             // Unborn HEAD (empty repository) serves an entry-less feed, not 404 —
             // the repo exists and feed readers keep polling it.
             let page = match repo.head().ok().and_then(|head| head.target()) {
-                Some(oid) => commits::log(repo, oid, None, FEED_ENTRY_LIMIT)?,
+                Some(oid) => commits::log(repo, oid, None, 0, FEED_ENTRY_LIMIT)?,
                 None => CommitsPage {
                     commits: Vec::new(),
                     next_cursor: None,

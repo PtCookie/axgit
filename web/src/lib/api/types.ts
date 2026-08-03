@@ -541,8 +541,8 @@ export interface components {
     CommitsPage: {
       commits: components["schemas"]["CommitInfo"][];
       /**
-       * @description Sha of the first commit of the next page; `null` on the last page.
-       *     Pass it back as the `cursor` query parameter.
+       * @description Opaque token for the next page; `null` on the last page. Pass it back
+       *     verbatim as the `cursor` query parameter.
        */
       next_cursor: string | null;
     };
@@ -1135,8 +1135,8 @@ export interface operations {
          */
         path?: string;
         /**
-         * @description `next_cursor` from a previous page, walked from **inclusive**. Opaque:
-         *     a malformed or unknown value is `400 invalid_param`, not a 404.
+         * @description `next_cursor` from a previous page. Opaque: a malformed or unknown
+         *     value is `400 invalid_param`, not a 404.
          */
         cursor?: string;
         /**
