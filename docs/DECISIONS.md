@@ -151,9 +151,9 @@ libraries instead:
 - Each range includes the commit `summary` (since the commit is already fetched, this costs almost
   nothing extra, and it saves the frontend from calling the commit detail API once per range while
   drawing the blame gutter).
-- Rename/copy tracking (the equivalent of `git blame --follow`) is not implemented — only
-  within-file line moves are attributed, per libgit2's default. This is separate from commit
-  detail/diff's rename detection (an existing policy predating #8).
+- Rename/copy tracking: see #36 — the premise stated here originally (that libgit2 doesn't follow
+  renames) turned out to be wrong; whole-file renames were tracked internally all along, just not
+  surfaced in the response.
 
 ## #15 OpenAPI spec generated from code via utoipa
 
@@ -1112,3 +1112,34 @@ the API 404'd.
   `shellFor` rewrite, answering a real `308` instead of rewriting `req.url`.
 - No API contract change — `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**`
   (beyond the new module) all untouched; this is static-fallback behavior, not an `/api/v1` route.
+
+## #36 blame rename tracking (corrects #14's premise)
+
+ROADMAP.md had carried "`git blame --follow` (rename tracking)" as an unrevisited candidate since
+blame was built (#14/#20), on the assumption that libgit2's default blame has no rename tracking
+at all.
+
+- **That assumption was wrong.** libgit2's `blame_git.c::find_origin` runs its own rename-detecting
+  diff (`git_diff_find_similar` with `GIT_DIFF_FIND_RENAMES`) between a commit and each parent
+  while walking blame — the same default-threshold similarity match `git blame` itself uses. This
+  was verified directly: a small C program linked against the system's libgit2 1.9.6 was compared
+  against `git blame --porcelain` across three histories (plain rename, rename + edit in the same
+  commit — including a move into a subdirectory, and a multi-hop rename chain a→b→c). All three
+  matched line-for-line, including which commit each range attributes to and the `orig_path`
+  chain. So no exec fallback was needed to get rename tracking working — it already worked; it just
+  wasn't surfaced in the response.
+- **What's genuinely unsupported**: line-level move/copy tracking (`git blame -M`/`-C` — lines that
+  moved within a file, or were copied from another file). libgit2's `GIT_BLAME_TRACK_COPIES_*` blame
+  option flags exist in the header but are explicitly documented upstream as "not yet implemented."
+  This is the part that would actually require an exec (`git blame --line-porcelain`) fallback, and
+  it's still not implemented — this decision only closes the whole-file-rename gap.
+- **`BlameRange` gained `orig_path: Option<String>`** (`api/src/repo/blame.rs`) — the path a hunk's
+  commit had at that point in history, from git2's `BlameHunk::path()`, collapsed to `None` when it
+  equals the blamed path (the common case: no rename since) or isn't valid UTF-8. Kept per-hunk
+  rather than folded into the per-commit cache (`summary`/`author`/`authored_at`), since the same
+  commit can appear under different `orig_path`s in different files.
+  `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated together (API contract
+  change).
+- **Web**: `BlameView.tsx`'s gutter cell gets a small marker next to the short sha when
+  `orig_path` is set, linking to `blameHref(repo, orig_path, sha)` (blame of the old path as of
+  that commit) — reusing the existing href helper (`web/src/lib/repo-href.ts`), no new routing.

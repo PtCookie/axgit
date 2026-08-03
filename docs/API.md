@@ -337,7 +337,7 @@ tree/blob/raw (refs longest-match, `.`/`..`/empty segments are 400, missing path
     {
       "start_line": 1, "line_count": 3, "sha": "<commit sha>",
       "summary": "feat: initial", "author": { "name": "...", "email_hash": "<sha256>" },
-      "authored_at": "2026-07-01T12:00:00+09:00"
+      "authored_at": "2026-07-01T12:00:00+09:00", "orig_path": null
     }
   ]
 }
@@ -351,8 +351,12 @@ tree/blob/raw (refs longest-match, `.`/`..`/empty segments are 400, missing path
 - `summary` is `null` for non-UTF-8 commit messages, `authored_at` is `null` for
   unrepresentable timestamps (same rules as the commit log). `author.email_hash` follows the same
   rule as the commit log (sha256 of the trimmed, lowercased email).
-- No rename/copy tracking — only lines moved within the same file are attributed to their
-  original commit, per libgit2's default.
+- **Whole-file renames are tracked**, the same way `git blame` follows them by default (libgit2
+  runs its own rename-similarity diff internally). A range attributed to a commit where the file
+  still had a different path gets `orig_path` set to that path; `orig_path` is `null` when the
+  path is unchanged (or not valid UTF-8). Line-level move/copy tracking (`git blame -M`/`-C`) is
+  **not** supported — libgit2's equivalent flags are reserved but unimplemented upstream, so this
+  would need an exec fallback.
 - Implemented via **git2 `Repository::blame_file`** (not exec) — the path never touches a command
   line, and ARCHITECTURE.md already lists blame as git2's responsibility. If it proves slow on
   large histories, a `git blame --line-porcelain` exec fallback is a candidate for later (not

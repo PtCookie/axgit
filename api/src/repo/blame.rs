@@ -25,6 +25,12 @@ pub struct BlameRange {
     pub author: CommitAuthor,
     #[schema(required = true)]
     pub authored_at: Option<String>,
+    /// Path the lines had in the attributed commit, when the file has since
+    /// been renamed — `None` when unchanged (or when the path is not valid
+    /// UTF-8). Only whole-file renames are tracked; libgit2 follows them the
+    /// same way `git blame` does by default.
+    #[schema(required = true)]
+    pub orig_path: Option<String>,
 }
 
 /// Response of the blame endpoint (docs/API.md).
@@ -103,6 +109,14 @@ pub fn blame_file(repo: &Repository, commit: &Commit, path: &str) -> Result<Blam
             .clone();
         let line_count = hunk.lines_in_hunk();
         lines += line_count;
+        // `hunk.path()` is the hunk's path *at the attributed commit*; it
+        // equals the blamed path unless a rename happened since, so only
+        // surface it when it differs.
+        let orig_path = hunk
+            .path()
+            .and_then(|p| p.to_str())
+            .filter(|p| *p != path)
+            .map(str::to_owned);
         ranges.push(BlameRange {
             start_line: hunk.final_start_line(),
             line_count,
@@ -110,6 +124,7 @@ pub fn blame_file(repo: &Repository, commit: &Commit, path: &str) -> Result<Blam
             summary,
             author,
             authored_at,
+            orig_path,
         });
     }
     ranges.sort_by_key(|range| range.start_line);
@@ -167,6 +182,26 @@ mod tests {
         assert_eq!(info.ranges[1].start_line, 2);
         assert_eq!(info.ranges[1].line_count, 1);
         assert_eq!(info.ranges[1].sha, child.to_string());
+    }
+
+    #[test]
+    fn blame_file_should_report_orig_path_across_a_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files(&repo, None, &[("a.txt", "one\ntwo\n")]);
+        // `commit_files` builds each tree from scratch, so dropping "a.txt"
+        // and adding "b.txt" with the same content is a whole-file rename
+        // from git's diff-similarity perspective.
+        let renamed = commit_files(&repo, Some(root), &[("b.txt", "one\ntwo\n")]);
+        let child = commit_files(&repo, Some(renamed), &[("b.txt", "one\nTWO\n")]);
+        let commit = repo.find_commit(child).unwrap();
+
+        let info = blame_file(&repo, &commit, "b.txt").unwrap();
+        assert_eq!(info.ranges.len(), 2);
+        assert_eq!(info.ranges[0].sha, root.to_string());
+        assert_eq!(info.ranges[0].orig_path.as_deref(), Some("a.txt"));
+        assert_eq!(info.ranges[1].sha, child.to_string());
+        assert_eq!(info.ranges[1].orig_path, None);
     }
 
     #[test]

@@ -1565,7 +1565,8 @@
           "sha",
           "summary",
           "author",
-          "authored_at"
+          "authored_at",
+          "orig_path"
         ],
         "properties": {
           "start_line": {
@@ -1596,6 +1597,13 @@
               "string",
               "null"
             ]
+          },
+          "orig_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Path the lines had in the attributed commit, when the file has since\nbeen renamed — `None` when unchanged (or when the path is not valid\nUTF-8). Only whole-file renames are tracked; libgit2 follows them the\nsame way `git blame` does by default."
           }
         }
       },

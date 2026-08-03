@@ -82,18 +82,58 @@ async fn blame_should_split_ranges_by_commit_with_metadata() {
     assert_eq!(ranges[0]["author"]["name"], "Test Author");
     assert_eq!(ranges[0]["author"]["email_hash"], AUTHOR_EMAIL_HASH);
     assert_eq!(ranges[0]["authored_at"], "2026-07-01T12:00:00+09:00");
+    assert_eq!(ranges[0]["orig_path"], Value::Null);
 
     assert_eq!(ranges[1]["start_line"], 2);
     assert_eq!(ranges[1]["line_count"], 1);
     assert_eq!(ranges[1]["sha"], *second_sha);
     assert_eq!(ranges[1]["summary"], "fix: update a");
     assert_eq!(ranges[1]["authored_at"], "2026-07-01T13:00:00+09:00");
+    assert_eq!(ranges[1]["orig_path"], Value::Null);
 
     assert_eq!(ranges[2]["start_line"], 3);
     assert_eq!(ranges[2]["line_count"], 1);
     assert_eq!(ranges[2]["sha"], *third_sha);
     assert_eq!(ranges[2]["summary"], "feat: extend a");
     assert_eq!(ranges[2]["authored_at"], "2026-07-01T14:00:00+09:00");
+    assert_eq!(ranges[2]["orig_path"], Value::Null);
+}
+
+/// `git mv` + a follow-up edit, mirroring the common "rename, then touch a
+/// line later" history shape. `common::commit_history` can't express a
+/// rename (it only ever writes files, never moves them), so this builds the
+/// history directly against a cloned work tree.
+#[tokio::test]
+async fn blame_should_report_orig_path_across_a_rename() {
+    let root = tempfile::tempdir().unwrap();
+    let bare = common::create_bare_repo(root.path(), "renamed.git");
+    let work = tempfile::tempdir().unwrap();
+    common::git(
+        work.path(),
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+
+    std::fs::write(work.path().join("old.txt"), "one\ntwo\n").unwrap();
+    let root_sha = common::commit_all(work.path(), "feat: add old.txt");
+    common::git(work.path(), &["mv", "old.txt", "new.txt"]);
+    let rename_sha = common::commit_all(work.path(), "chore: rename to new.txt");
+    std::fs::write(work.path().join("new.txt"), "one\nTWO\n").unwrap();
+    let edit_sha = common::commit_all(work.path(), "fix: update new.txt");
+    common::git(work.path(), &["push", "--quiet", "origin", "HEAD:main"]);
+
+    let body = get_ok(root.path(), "/api/v1/repos/renamed/blame/main/new.txt").await;
+    let ranges = body["ranges"].as_array().unwrap();
+    assert_eq!(ranges.len(), 2, "unexpected ranges: {ranges:?}");
+
+    assert_eq!(ranges[0]["sha"], root_sha);
+    assert_eq!(ranges[0]["orig_path"], "old.txt");
+
+    assert_eq!(ranges[1]["sha"], edit_sha);
+    assert_eq!(ranges[1]["orig_path"], Value::Null);
+
+    // The rename-only commit contributes no lines of its own — it never
+    // appears as a range's `sha` (matches `git blame`'s behavior).
+    assert!(ranges.iter().all(|range| range["sha"] != rename_sha));
 }
 
 #[tokio::test]

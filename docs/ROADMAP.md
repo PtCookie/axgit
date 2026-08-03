@@ -655,17 +655,28 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     pairing as `shellFor`/`shell_for`.
   - No API contract change — this is static-fallback behavior, not an `/api/v1` route.
 
+- **Blame rename tracking** (DECISIONS.md #36), closing the `git blame --follow` candidate below.
+  Turned out to already work: libgit2's blame runs its own rename-similarity diff internally, and
+  a direct comparison against `git blame --porcelain` across three histories (plain rename,
+  rename + edit in the same commit, and a multi-hop rename chain) matched exactly — the ROADMAP
+  candidate's premise ("no rename tracking without an exec fallback") was wrong. The only real gap
+  was that the response threw the information away. `BlameRange` gained `orig_path: Option<String>`
+  (`api/src/repo/blame.rs`), set from git2's `BlameHunk::path()` whenever it differs from the
+  blamed path; `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated for the
+  contract change. `BlameView.tsx`'s gutter now shows a small marker linking to the pre-rename
+  path's blame at that commit (`blameHref`, already existed). Line-level move/copy tracking
+  (`git blame -M`/`-C`) remains genuinely unsupported by libgit2 and would need an exec fallback —
+  not attempted here.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), and the build-chunk-size,
-ref-badge, and cgit-compatibility candidates above are all now resolved. Pick the next piece of
-work from the candidates below, or from a fresh request.
+ref-badge, cgit-compatibility, and blame-rename candidates above are all now resolved. Pick the
+next piece of work from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
-- `git blame --follow` (rename tracking) — noted as a possible follow-up when blame was built
-  (DECISIONS.md #14/#20), never revisited.
 - `git grep`/`git log` exec fallbacks for search/stats if either proves too slow on a large
   repository — both left this escape hatch for themselves (DECISIONS.md #26/#28).
 - Commit log's `path` filter walk can be slow on paths that change rarely across a long history
