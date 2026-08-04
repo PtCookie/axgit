@@ -693,7 +693,10 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), and the build-chunk-size,
 ref-badge, cgit-compatibility, blame-rename, and commit-log-pagination candidates above are all now
-resolved. Pick the next piece of work from the candidates below, or from a fresh request.
+resolved. Pick the next piece of work from the candidates below, or from a fresh request. A full
+audit against upstream cgit's feature surface (`cmd.c`'s 21 commands, every `cgitrc.5.txt` option)
+turned up further gaps and a few deliberate divergences worth recording — see the two sections
+after Candidates.
 
 ### Candidates (not urgent, no particular order)
 
@@ -709,3 +712,142 @@ resolved. Pick the next piece of work from the candidates below, or from a fresh
   immutable caching like commit detail/diff/blame — deferred because it would change the API.md
   contract ("sha appears in the URL path"); same follow-up already noted for the moka cache
   rollout.
+
+### cgit parity gaps (from a cgit feature audit)
+
+Found by walking cgit's `cmd.c` dispatch table (21 commands) and `cgitrc.5.txt`'s full option list
+against axgit's routes and pages. Not urgent, no particular order — pick from here the same way as
+the candidates above. Items that turned out to be merged, or built differently on purpose, are
+recorded separately below instead of listed as gaps.
+
+- **Diff and patch output** — the largest gap found. cgit has no analogue of axgit's single
+  first-parent-only structured diff; it exposes:
+  - Arbitrary two-revision diff (`cmd=diff`, `id=`/`id2=`, `ui-diff.c`) — no `/diff` endpoint, no
+    comparison page, no `diff` tab, no `(diff)` link on parent rows exists in axgit today.
+  - Raw patch output: `cmd=patch` (format-patch style, supports a commit range, `ui-patch.c`) and
+    `cmd=rawdiff` (plain-text unified diff) — useful for `git am`; axgit only has structured JSON
+    diff (`repo/diff.rs`).
+  - Diff display options: context line count (`context=`, 1–10/15/20/…/40), ignore-whitespace
+    (`ignorews=`), side-by-side diff (`dt=1`, `side-by-side-diffs`, `ui-ssdiff.c`, with intra-line
+    LCS highlighting), stat-only (`dt=2`). `GET /commits/{sha}/diff` only takes `path=`; context is
+    pinned to libgit2's default of 3.
+- **Log**
+  - Rename-following in the path filter (`follow=1`, `enable-follow-links`) — blame already follows
+    renames (#36); log is the remaining piece. cgit's `handle_rename()` rewrites the link's path
+    too.
+  - Author / committer / revision-range search (`qt=author|committer|range`) — `/search` only has
+    `content|path|message`. cgit's `range` mode accepts rev-list expressions, rejecting any token
+    starting with `-`.
+  - Expand full commit message in the log (`showmsg=1`) — shows the full message plus git notes in
+    a second row.
+  - Files / Lines changed columns (`enable-log-filecount`, `enable-log-linecount`).
+- **Tags and refs**
+  - Dedicated tag detail page + API (`cmd=tag`, `ui-tag.c`) — tag message body, tagger, target
+    object kind, download link. `/refs` only surfaces the annotation's first line.
+  - Per-tag archive download links on the refs page (cgit's Download column,
+    `print_tag_downloads()`).
+  - Remote branches (`enable-remote-branches`) — `/refs` lists local branches and tags only; a
+    mirror repository could have remotes worth showing.
+  - Object links for non-commit refs (`cgit_object_link`).
+- **Tree and blob**
+  - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
+    `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
+  - Symlink target display (`name -> target`, linked through the normalized path) — currently
+    linked as a plain blob.
+  - Per-row action links in the tree listing (log / raw / blame) — axgit only has these on the blob
+    page (`BlobView.tsx`'s Raw/Blame/History).
+  - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
+  - Hex dump view for binary blobs (`<table class='bin-blob'>`, 32 bytes/row + ascii) — axgit shows
+    only a binary notice and a Raw link.
+  - Fetching a blob directly by object id (`blob?id=<oid>`) — `/raw` requires a ref and path.
+- **Archive** — format coverage: cgit supports `tar`, `tar.gz`, `tar.bz2`, `tar.lz`, `tar.xz`,
+  `tar.zst`, `zip` (piping tar through external compressors); axgit has `tar.gz` and `zip` only.
+- **Feed and discovery**
+  - Atom parameters: branch (`h=`), path filter, `all=1` (all refs), item count
+    (`max-atom-items`) — `/feed.atom` is fixed at HEAD, 20 entries.
+  - `<head>` Atom discovery (`<link rel="alternate" type="application/atom+xml">`) and the
+    clone-URL `<link rel="vcs-git">` — neither is in `web/src/layouts/Layout.astro`.
+  - `robots.txt` — cgit ships one disallowing `/*/snapshot/*` and `/*/blame/*`. `web/public/` only
+    has favicons, so crawlers can hit archive/blame/search freely.
+  - The feed's `rel="alternate"` still points at the API commit URL (flagged as provisional in
+    `docs/API.md`) — should become the web UI's `/{repo}/commit/{sha}`.
+- **Repository index**
+  - Column sorting (`s=name|desc|owner|idle|section`, `repository-sort=age|name`) — axgit is fixed
+    to name order plus the client-side `?q=` filter; cgit's `idle` sort is descending.
+  - Per-row quick links (summary / log / tree buttons, `enable-index-links`).
+  - Site-level readme / title / description (`root-readme`, `root-title`, `root-desc`).
+  - `hide` / `ignore` repo flags — hidden-but-reachable-by-direct-path vs. not reachable at all;
+    fits naturally alongside the `[cgit]`/`[axgit]` config-section invariant.
+  - `homepage` (cgit gives it a dedicated nav tab), and a configured `defbranch` (axgit only derives
+    it from HEAD).
+- **Stats**
+  - `path=` pathspec filter — `/stats` only takes `ref`/`period`/`limit`.
+  - An `Others (N)` row aggregating authors past the limit — axgit just truncates.
+- **Commit page**
+  - Git notes display (cgit renders them via `format_display_notes()` on both the commit page and
+    `showmsg` log rows) — `CommitDetail` has no field for them.
+  - Tree link, per-parent `(diff)` link, and patch/archive download links on the commit page —
+    `CommitView.tsx` only links parents to their own commit pages.
+
+### cgit parity notes (merged or deliberately different — not planned)
+
+Not gaps — recorded so a future session doesn't rediscover these as missing and try to rebuild
+them. Grouped by why the difference exists.
+
+**Merged into one axgit feature**
+
+- cgit's `about` page → the body column of `/{repo}` summary (#21, #31). cgit's summary page also
+  lists branches/tags/recent-log; axgit shows counts only and defers to the Refs/Log tabs.
+- cgit's `plain` + `blob` → one `/raw/{ref}/{path...}`.
+- cgit's three log search modes (`qt=grep|author|committer`) plus index search → one
+  `/search?type=` and a single Search tab (#26, #27) — cgit's own search UI presents them as one
+  box with a type selector too, which is the explicit rationale.
+- cgit's `snapshot` → the equivalently-named `/archive` (naming only). The filename-guesses-the-ref
+  DWIM behavior is not reproduced (#35).
+- Caching: cgit's on-disk slots + pure TTL → an in-process moka cache with a HEAD/agefile
+  validator plus ETag (#6). cgit serves stale responses until the TTL lapses even after a push; no
+  analogue of `ls_cache` is needed.
+
+**Built differently on purpose**
+
+- Stats window anchored on the resolved commit's authordate rather than request time (for
+  immutable caching), and 12 buckets + a bar chart instead of a 4-bucket table (#28, #29).
+- Commit graph drawn as one inline SVG per row; no cgit-style `|\`/`|/` filler rows (#33).
+- The log walk is left unsorted (no analogue of `commit-sort=date|topo`) — deliberate, to avoid
+  O(repo size) per page (#33).
+- No "Newer" pagination link — same choice as cgit's own pager UX (#18).
+- axgit caps diffs at 1000 lines/file and 300 files; cgit has no diff size cap at all.
+- Email addresses are never exposed in any response (only `email_hash`) — stricter than cgit's
+  `noplainemail`.
+
+**Replaced / no analogue planned**
+
+- cgit's filter system (`about-filter`, `source-filter`, `commit-filter`, `email-filter`,
+  `owner-filter`, exec + lua backends) → built-in client-side rendering: Shiki, react-markdown,
+  DiceBear (#11). Consequence: **reStructuredText and man pages render as plain text**, and
+  Gravatar is replaced by locally generated identicons.
+- Dumb HTTP clone (`HEAD`/`info`/`objects` commands, `enable-http-clone`) → Smart HTTP upload-pack
+  (#13). cgit has no Smart HTTP at all; the dumb protocol is not planned.
+- `auth-filter` and per-repo auth — no analogue; authentication/authorization is out of scope
+  entirely.
+- Push — permanently excluded by the read-only invariant (cgit has no push either;
+  `git-receive-pack` is 403).
+- CGI/config-shape options with no analogue: `virtual-root`, `include`, macro expansion,
+  `embedded`/`noheader`/`header`/`footer`/`head-include`, `css`/`js`/`logo`,
+  `scan-path`/`project-list`/`strict-export`/`scan-hidden-path`/`remove-suffix`/
+  `section-from-path`, `mimetype.*`/`mimetype-file`, `enable-html-serving`, `case-sensitive-sort`,
+  and the various `max-*` display caps. axgit's config surface is env vars plus each repo's
+  `[cgit]`/`[axgit]` section, and repos always live one level under the root.
+- cgit's shipped `cgit.js` live relative-age refresh → static relative time is enough.
+- cgit URL compatibility only covers the shapes in #35 — `tree/{path}?id=`, `plain/`, `atom/`, and
+  `snapshot/` are deliberately not mapped.
+
+**Not gaps (to avoid re-flagging)**
+
+- Commit GPG signatures: cgit doesn't display or verify them either
+  (`parsing.c::cgit_parse_commit` discards the `gpgsig` header). Snapshot `.asc` notes
+  (`refs/notes/signatures/<fmt>`) are an unrelated feature and git-compose doesn't produce them, so
+  this stays unplanned too.
+- File-content search: cgit doesn't have it. axgit's `/search?type=content` is ahead here.
+- Stats graphs: cgit's stats page is a plain numbers table, with no commits-vs-lines toggle either.
+- Octopus-merge diffs: cgit shows no diff at all once a commit has 3+ parents.
