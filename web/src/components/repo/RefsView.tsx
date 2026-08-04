@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { getRefs, getRepo } from "@/lib/api/repos";
+import { getRefs } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
+import { useDefaultBranch } from "@/lib/default-branch";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { compareHref } from "@/lib/repo-href";
 import { repoFromPathname } from "@/lib/repo-param";
@@ -35,7 +36,10 @@ export function RefsViewSkeleton() {
 export default function RefsView({ repo }: RefsViewProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const [state, setState] = useState<State>({ status: "loading" });
-  const [defaultBranch, setDefaultBranch] = useState<string | null>(null);
+  // Powers each row's "Compare" link only — `RefsInfo` itself carries no
+  // default-branch field, so it's fetched separately here (see the hook's
+  // own doc comment for the "decoration, not required data" rule).
+  const defaultBranch = useDefaultBranch(resolvedRepo);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,29 +58,6 @@ export default function RefsView({ repo }: RefsViewProps) {
           status: "error",
           error: error instanceof ApiError ? error : new ApiError("internal", "unknown error", 0),
         });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [resolvedRepo]);
-
-  useEffect(() => {
-    // Powers each row's "Compare" link only — `RefsInfo` itself carries no
-    // default-branch field, so it's fetched separately here. Decoration, not
-    // required data: a failure is silent and just leaves the Compare column
-    // empty, same rule as `useCommitRefs` (DECISIONS.md #34) and `DiffView`'s
-    // own `getRefs` call for its revision datalist.
-    let cancelled = false;
-
-    getRepo(resolvedRepo)
-      .then((summary) => {
-        if (!cancelled) {
-          setDefaultBranch(summary.default_branch);
-        }
-      })
-      .catch(() => {
-        /* decoration only */
       });
 
     return () => {

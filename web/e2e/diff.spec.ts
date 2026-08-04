@@ -75,7 +75,8 @@ test("navigates from the summary to the diff tab, showing the idle picker", asyn
   await page.getByRole("link", { name: "Diff" }).click();
 
   await expect(page).toHaveURL("/git-compose/diff");
-  await expect(page.getByText("Pick two revisions to compare.")).toBeVisible();
+  await expect(page.getByText("Pick a revision to compare against main.")).toBeVisible();
+  await expect(page.getByLabel("Compare to revision")).toHaveValue("main");
 });
 
 // A link click navigating via `<ClientRouter />` (docs/DECISIONS.md #24) never

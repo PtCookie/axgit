@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
 import { comparePatchUrl, compareRawDiffUrl, getDiff, getRefs } from "@/lib/api/repos";
 import type { RefsInfo, RevDiff } from "@/lib/api/schemas";
+import { useDefaultBranch } from "@/lib/default-branch";
 import { diffApiParams, type DiffViewMode, parseDiffOptions } from "@/lib/diff-options";
 import { compareHref } from "@/lib/repo-href";
 import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
@@ -74,6 +75,27 @@ export default function DiffView({
   const hasComparison = resolvedFrom !== undefined || resolvedTo !== undefined;
   const [state, setState] = useState<State>(() => (hasComparison ? { status: "loading" } : { status: "idle" }));
   const [refs, setRefs] = useState<RefsInfo>(NO_REFS);
+
+  // Prefills the idle picker's `to` field only — never fetched once a
+  // comparison is already in progress. Decoration, not required data: see
+  // `useDefaultBranch`'s own doc comment.
+  const defaultBranch = useDefaultBranch(resolvedRepo, !hasComparison);
+  const toInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Imperative, not `defaultValue`/`key`: the form is deliberately
+    // uncontrolled (plain `method="get"`, works without JS — #39), and React
+    // ignores a changed `defaultValue` on re-render, so an async value would
+    // never reach the input that way. A `key` remount would show it, but
+    // would also wipe out anything the visitor already typed while the fetch
+    // was in flight and steal focus. Only fill an untouched field — checked
+    // against the installed `@base-ui/react` Input source: it forwards this
+    // ref straight onto the native `<input>` and keeps no React state for an
+    // uncontrolled value, so reading/writing `.value` here is safe.
+    if (defaultBranch && toInputRef.current && toInputRef.current.value === "") {
+      toInputRef.current.value = defaultBranch;
+    }
+  }, [defaultBranch]);
 
   useEffect(() => {
     // Populates the revision datalist only — decoration, never blocks the
@@ -162,6 +184,7 @@ export default function DiffView({
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">To</span>
           <Input
+            ref={toInputRef}
             name="to"
             list={REVISIONS_LIST_ID}
             defaultValue={resolvedTo ?? ""}
@@ -198,7 +221,11 @@ export default function DiffView({
         )}
       </form>
 
-      {state.status === "idle" && <p className="text-muted-foreground text-sm">Pick two revisions to compare.</p>}
+      {state.status === "idle" && (
+        <p className="text-muted-foreground text-sm">
+          {defaultBranch ? `Pick a revision to compare against ${defaultBranch}.` : "Pick two revisions to compare."}
+        </p>
+      )}
 
       {state.status === "loading" && <DiffViewSkeleton />}
 

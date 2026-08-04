@@ -4,12 +4,13 @@ import { page } from "vitest/browser";
 
 import DiffView from "@/components/repo/DiffView";
 import { ApiError } from "@/lib/api/client";
-import { getDiff, getRefs } from "@/lib/api/repos";
-import type { RefsInfo, RevDiff } from "@/lib/api/schemas";
+import { getDiff, getRefs, getRepo } from "@/lib/api/repos";
+import type { RefsInfo, RepoSummary, RevDiff } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", () => ({
   getDiff: vi.fn(),
   getRefs: vi.fn(),
+  getRepo: vi.fn(),
   // Link-only builders (never fetched) — real implementations.
   compareRawDiffUrl: (name: string, params: Record<string, unknown>) =>
     `/api/v1/repos/${name}/rawdiff?${new URLSearchParams(params as Record<string, string>).toString()}`,
@@ -19,8 +20,22 @@ vi.mock("@/lib/api/repos", () => ({
 
 const mockedGetDiff = vi.mocked(getDiff);
 const mockedGetRefs = vi.mocked(getRefs);
+const mockedGetRepo = vi.mocked(getRepo);
 
 const NO_REFS: RefsInfo = { branches: [], tags: [] };
+
+const SUMMARY: RepoSummary = {
+  name: "git-compose",
+  section: "infra",
+  owner: "PtCookie",
+  description: "Compose project of Git server",
+  default_branch: "main",
+  last_modified: "2026-07-24T13:06:00+09:00",
+  head: "abc123def456",
+  branch_count: 1,
+  tag_count: 1,
+  clone_url: "git@git.ptcookie.net:git-compose.git",
+};
 
 const FROM_SHA = "aaa000111222aaa000111222aaa000111222aaa";
 const TO_SHA = "bbb333444555bbb333444555bbb333444555bbb";
@@ -67,17 +82,41 @@ describe("DiffView", () => {
     mockedGetDiff.mockReset();
     mockedGetRefs.mockReset();
     mockedGetRefs.mockResolvedValue(NO_REFS);
+    mockedGetRepo.mockReset();
+    // Powers the idle `to` prefill only — most tests don't care about the
+    // value, so default it here and override per test where it matters
+    // (same convention as RefsView.test.tsx's default-branch mock).
+    mockedGetRepo.mockResolvedValue(SUMMARY);
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it("shows the revision picker and an idle message when neither side is given", async () => {
+  it("prefills `to` with the default branch and names it in the idle message", async () => {
+    render(<DiffView repo="git-compose" />);
+
+    await expect.element(page.getByText("Pick a revision to compare against main.")).toBeVisible();
+    await expect.element(page.getByLabelText("Compare to revision")).toHaveValue("main");
+    expect(mockedGetDiff).not.toHaveBeenCalled();
+  });
+
+  it("shows the generic idle message and leaves `to` empty when the default-branch fetch fails", async () => {
+    mockedGetRepo.mockRejectedValue(new ApiError("internal", "boom", 500));
     render(<DiffView repo="git-compose" />);
 
     await expect.element(page.getByText("Pick two revisions to compare.")).toBeVisible();
+    await expect.element(page.getByLabelText("Compare to revision")).toHaveValue("");
     expect(mockedGetDiff).not.toHaveBeenCalled();
+  });
+
+  it("does not fetch the default branch once a comparison is already given", async () => {
+    mockedGetDiff.mockResolvedValue(REV_DIFF);
+    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
+
+    await expect.element(page.getByText("one")).toBeVisible();
+    await expect.element(page.getByLabelText("Compare to revision")).toHaveValue(TO_SHA);
+    expect(mockedGetRepo).not.toHaveBeenCalled();
   });
 
   it("forwards from/to to the api and renders the resulting diff", async () => {

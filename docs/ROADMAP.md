@@ -728,11 +728,13 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     string; `lib/diff/merge-tokens.ts` slices both at each other's boundaries so one pass of spans
     carries both, rather than nesting one inside the other.
   - Deferred (see Candidates): stat-only mode (`dt=2`), a "Compare" entry point from the refs page,
-    and prefilling the idle compare page's `to` from the repo's default branch.
+    and prefilling the idle compare page's `to` from the repo's default branch. The latter two were
+    both closed below (#40, #41).
 
 - **"Compare" entry point on the `/{repo}/refs` page** (DECISIONS.md #40), closing one of the two
   candidates the diff/patch work above deferred (the other, prefilling the idle compare page's
-  `to` from the default branch, is still open). Web-only, no API contract change. Finalized design:
+  `to` from the default branch, was closed next as #41). Web-only, no API contract change.
+  Finalized design:
   - `RefsInfo` (`GET /refs`) has no default-branch field, so `RefsView.tsx` fetches `getRepo(repo)`
     in a second, independent effect purely to get `default_branch` for building each row's link —
     decoration, not required data: a failure is silent and just leaves the new Compare column
@@ -750,13 +752,32 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     for the same reason: a table full of same-named "Compare" links is both an a11y-tree ambiguity
     and a guaranteed Playwright strict-mode failure.
 
+- **Idle `/{repo}/diff` page prefills `to` from the default branch** (DECISIONS.md #41), closing
+  the diff/patch work's last remaining candidate. Web-only, no API contract change. Finalized
+  design:
+  - Prefills `to`, not `from` — mirrors the api's own default comparison direction
+    (`docs/API.md`'s `to` defaults to `HEAD`, `from` defaults to `to`'s first parent). No
+    auto-fetch: `state` stays `"idle"`, only the input's value and the idle copy
+    ("Pick a revision to compare against {branch}.") change, so `/{repo}/diff` with no query
+    params still means "nothing requested yet."
+  - **New `web/src/lib/default-branch.ts::useDefaultBranch(repo, enabled)`** — `RefsView.tsx`'s
+    `getRepo` effect from #40 extracted into a shared hook once `DiffView` became a second caller
+    (`useCommitRefs`'s precedent, #34). `DiffView` passes `enabled: !hasComparison` so a page that
+    already has a comparison makes no extra request.
+  - **The prefill assigns the input's `.value` imperatively via a ref**, not `defaultValue`/`key` —
+    the form is deliberately uncontrolled (#39), so a changed `defaultValue` on re-render is a
+    no-op, and a `key` remount would also wipe out in-flight manual typing and steal focus.
+    Verified against the installed `@base-ui/react` `Input` source that this is safe (no React
+    state backs an uncontrolled value); the effect only fires when the field is still empty, so
+    manual input is never clobbered.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), the build-chunk-size,
 ref-badge, cgit-compatibility, blame-rename, and commit-log-pagination candidates are all resolved,
-and diff/patch output (above) closed the largest cgit parity gap. Pick the next piece of work from
-the candidates below, or from a fresh request.
+and diff/patch output (#38/#39) plus its two follow-up candidates (#40, #41) closed the largest
+cgit parity gap. Pick the next piece of work from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -778,9 +799,6 @@ the candidates below, or from a fresh request.
   choice, not an API gap — unless the payload size of fetching unused hunks ever becomes a real
   complaint, in which case the right shape is `?stat=1` on `GET /diff` (omitting `hunks` **and**
   bypassing `MAX_DIFF_FILES`, since a capped stat view defeats the point).
-- The idle `/{repo}/diff` page (no `from`/`to` yet) could prefill `to` from `getRepo(repo)
-  .default_branch` instead of showing a fully bare picker — costs one extra fetch on that path
-  only, dropped to keep the compare-page commit smaller.
 
 ### cgit parity gaps (from a cgit feature audit)
 

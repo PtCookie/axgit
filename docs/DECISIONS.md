@@ -1321,3 +1321,30 @@ logic changes.
   reasoning to #39's commit-parent `(diff)` links: a table full of identically-named "Compare"
   links is an accessibility-tree ambiguity as well as a guaranteed Playwright strict-mode failure.
 - No new route, so `shellFor`/`shell_for`/`RepoNav.astro` are untouched; no API contract change.
+
+## #41 Idle compare page prefills `to` from the default branch; `useDefaultBranch` extracted
+
+Closed the other candidate #39 deferred (#40 closed the first). Web-only, no API contract change.
+
+- **Prefills `to`, not `from`** — mirrors the api's own default direction (`docs/API.md`: `to`
+  defaults to `HEAD`, `from` defaults to `to`'s first parent). This makes that default visible
+  rather than inventing a new comparison direction of its own.
+- **No auto-fetch.** `/{repo}/diff` with no query params still means "idle" — only the `to`
+  input's value and the idle copy change; `state` stays `"idle"` until a `Compare` submit.
+  `useDefaultBranch` is only enabled while idle, so a page that already has a comparison makes no
+  extra request.
+- **`web/src/lib/default-branch.ts::useDefaultBranch`** — extracted out of `RefsView.tsx`'s
+  `getRepo` effect (added in #40) once `DiffView` became a second caller, following
+  `useCommitRefs`'s (#34) precedent for "decoration fetch as a shared hook": `null` while loading,
+  on failure, for an empty repository, or when disabled; failures are silent.
+- **The prefill is imperative (a ref), not `defaultValue`/`key`.** The form is deliberately
+  uncontrolled (plain `method="get"`, works without JS, #39), and React ignores a changed
+  `defaultValue` on re-render, so the async default branch would never reach the input that way. A
+  `key` remount would show it, but would also discard anything the visitor already typed while the
+  fetch was in flight, and steal focus. Verified safe against the installed `@base-ui/react`
+  `Input` source: uncontrolled, it renders a native `<input defaultValue>` with no React state for
+  the value (only `dirty`/`filled` data-attributes, which require a `Field.Root` this form doesn't
+  use) and forwards the ref straight onto the input element. The effect only assigns when the
+  field's current value is still `""`, so it never clobbers manual input, and the existing e2e
+  `fill()`-then-submit test stays race-free.
+- No new route, so `shellFor`/`shell_for`/`RepoNav.astro` are untouched.
