@@ -688,15 +688,55 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     semantics changed, `CommitsPage`'s shape did not). No web change — `CommitLog.tsx` already
     treats `next_cursor` as an opaque string.
 
+- **Diff and patch output** (DECISIONS.md #38/#39), closing the largest cgit parity gap below.
+  Eight staged commits, api then web:
+  - `context=`/`ignorews=` added to the existing per-commit diff (`repo/diff.rs::DiffParams`,
+    generalizing `build_diff` off trees rather than a `Commit` so every entry point below could
+    share it).
+  - `GET /diff?from=&to=` — arbitrary two-revision diff, a strict superset of the per-commit diff
+    (`?to=X` alone reproduces `GET /commits/X/diff` byte-for-byte, asserted directly). Query
+    params, not path segments — a ref may contain `/`, and axum's wildcard segments are already
+    percent-decoded so `%2F` and a literal `/` are indistinguishable there.
+  - `GET /rawdiff` (plain unified diff, `git2::Diff::print`) and `GET /patch` (format-patch mbox
+    series, `git2::Email::from_diff`) — in-process, not exec (`git format-patch`/`git diff` would
+    be a second diff engine that can disagree with libgit2's rename detection and indent
+    heuristics). Neither applies the JSON diffs' 1000-line/300-file caps — a truncated patch is a
+    corrupt one; `/patch`'s commit-count axis is capped instead (100), rejecting an oversized range
+    rather than silently shortening it. `/patch` is a narrow, documented exception to "email
+    addresses are never exposed" (DECISIONS.md #8) — `git am` cannot preserve authorship without a
+    real `From:` header, and the identical data is already served unauthenticated via Smart HTTP
+    clone; mitigated with `X-Robots-Tag: noindex, nofollow`. Both round-trip tested through a real
+    `git am`/`git apply --check`.
+  - Web: `CommitView.tsx`'s diff rendering extracted into `components/repo/diff/` (`DiffFileList`,
+    `DiffFile`, `UnifiedHunk`, `DiffStatTable`) so the compare page and side-by-side view could
+    reuse it instead of duplicating it; `lib/diff-options.ts` centralizes the `view`/`context`/
+    `ignorews` URL↔object rules shared by both pages.
+  - `/{repo}/diff` compare page (`DiffView.tsx`) + a `Diff` tab + `(diff)` links on the commit
+    page's parent rows — the three-places-at-once route rule (`web/src/pages/`,
+    `lib/shell.ts::shellFor`, `api/src/shell.rs::shell_for`). cgit's own two-revision shape
+    (`cmd=diff&id=&id2=`) now redirects onto this page instead of the single-commit view.
+  - Side-by-side view: `lib/diff/pair-lines.ts` (cgit's `ui-ssdiff.c` algorithm — deletions/
+    additions collected separately and paired index-for-index, so an unbalanced run doesn't drop
+    lines) and `lib/diff/intraline.ts` (prefix/suffix trim, then a budget-capped word-level LCS,
+    hand-rolled rather than a dependency — consistent with Shiki's own JS-engine choice,
+    DECISIONS.md #19).
+  - Shiki highlighting in diffs (`lib/diff/file-highlights.ts`): each file's shown lines are
+    reconstructed per side (context+deletion / context+addition) into one string and tokenized
+    once — far less likely to mis-highlight a multi-line construct than tokenizing every line in
+    isolation — then mapped back to each `Line` by object identity. In split view, Shiki's
+    foreground color and the intra-line background are two independent segmentations of the same
+    string; `lib/diff/merge-tokens.ts` slices both at each other's boundaries so one pass of spans
+    carries both, rather than nesting one inside the other.
+  - Deferred (see Candidates): stat-only mode (`dt=2`), a "Compare" entry point from the refs page,
+    and prefilling the idle compare page's `to` from the repo's default branch.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
-stays permanently excluded, not deferred, by the read-only invariant), and the build-chunk-size,
-ref-badge, cgit-compatibility, blame-rename, and commit-log-pagination candidates above are all now
-resolved. Pick the next piece of work from the candidates below, or from a fresh request. A full
-audit against upstream cgit's feature surface (`cmd.c`'s 21 commands, every `cgitrc.5.txt` option)
-turned up further gaps and a few deliberate divergences worth recording — see the two sections
-after Candidates.
+stays permanently excluded, not deferred, by the read-only invariant), the build-chunk-size,
+ref-badge, cgit-compatibility, blame-rename, and commit-log-pagination candidates are all resolved,
+and diff/patch output (above) closed the largest cgit parity gap. Pick the next piece of work from
+the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -712,6 +752,18 @@ after Candidates.
   immutable caching like commit detail/diff/blame — deferred because it would change the API.md
   contract ("sha appears in the URL path"); same follow-up already noted for the moka cache
   rollout.
+- Diff stat-only mode (cgit's `dt=2`) — for a single commit already covered by the uncapped
+  diffstat on `GET /commits/{sha}`; for the two-revision compare page, `GET /diff`'s `diffstat`
+  field already carries everything a stat-only view needs, so this is a client-side rendering
+  choice, not an API gap — unless the payload size of fetching unused hunks ever becomes a real
+  complaint, in which case the right shape is `?stat=1` on `GET /diff` (omitting `hunks` **and**
+  bypassing `MAX_DIFF_FILES`, since a capped stat view defeats the point).
+- A "Compare" entry point from the `/{repo}/refs` page (e.g. comparing a branch against the default
+  branch) — the compare page today is only reachable via the `Diff` tab (bare) or a commit's
+  `(diff)` parent links.
+- The idle `/{repo}/diff` page (no `from`/`to` yet) could prefill `to` from `getRepo(repo)
+  .default_branch` instead of showing a fully bare picker — costs one extra fetch on that path
+  only, dropped to keep the compare-page commit smaller.
 
 ### cgit parity gaps (from a cgit feature audit)
 
@@ -720,17 +772,6 @@ against axgit's routes and pages. Not urgent, no particular order — pick from 
 the candidates above. Items that turned out to be merged, or built differently on purpose, are
 recorded separately below instead of listed as gaps.
 
-- **Diff and patch output** — the largest gap found. cgit has no analogue of axgit's single
-  first-parent-only structured diff; it exposes:
-  - Arbitrary two-revision diff (`cmd=diff`, `id=`/`id2=`, `ui-diff.c`) — no `/diff` endpoint, no
-    comparison page, no `diff` tab, no `(diff)` link on parent rows exists in axgit today.
-  - Raw patch output: `cmd=patch` (format-patch style, supports a commit range, `ui-patch.c`) and
-    `cmd=rawdiff` (plain-text unified diff) — useful for `git am`; axgit only has structured JSON
-    diff (`repo/diff.rs`).
-  - Diff display options: context line count (`context=`, 1–10/15/20/…/40), ignore-whitespace
-    (`ignorews=`), side-by-side diff (`dt=1`, `side-by-side-diffs`, `ui-ssdiff.c`, with intra-line
-    LCS highlighting), stat-only (`dt=2`). `GET /commits/{sha}/diff` only takes `path=`; context is
-    pinned to libgit2's default of 3.
 - **Log**
   - Rename-following in the path filter (`follow=1`, `enable-follow-links`) — blame already follows
     renames (#36); log is the remaining piece. cgit's `handle_rename()` rewrites the link's path
@@ -786,8 +827,8 @@ recorded separately below instead of listed as gaps.
 - **Commit page**
   - Git notes display (cgit renders them via `format_display_notes()` on both the commit page and
     `showmsg` log rows) — `CommitDetail` has no field for them.
-  - Tree link, per-parent `(diff)` link, and patch/archive download links on the commit page —
-    `CommitView.tsx` only links parents to their own commit pages.
+  - Archive download links on the commit page (Tree link, per-parent `(diff)` link, and patch/raw
+    diff links were closed alongside the rest of the diff/patch work, see Done).
 
 ### cgit parity notes (merged or deliberately different — not planned)
 
@@ -816,7 +857,9 @@ them. Grouped by why the difference exists.
 - The log walk is left unsorted (no analogue of `commit-sort=date|topo`) — deliberate, to avoid
   O(repo size) per page (#33).
 - No "Newer" pagination link — same choice as cgit's own pager UX (#18).
-- axgit caps diffs at 1000 lines/file and 300 files; cgit has no diff size cap at all.
+- axgit caps the *structured JSON* diffs at 1000 lines/file and 300 files; cgit has no diff size
+  cap at all. `GET /rawdiff` and `GET /patch` (#37) match cgit here — no cap on either, since a
+  truncated patch would be a corrupt one.
 - Email addresses are never exposed in any response (only `email_hash`) — stricter than cgit's
   `noplainemail`.
 

@@ -1,6 +1,8 @@
 import type { Hunk, Line } from "@/lib/api/schemas";
+import type { HighlightedLine } from "@/lib/format/highlight";
+import TokenSpans from "@/components/repo/diff/TokenSpans";
 
-function DiffLineRow({ line }: { line: Line }) {
+function DiffLineRow({ line, tokens }: { line: Line; tokens?: HighlightedLine }) {
   const background =
     line.origin === "+"
       ? "bg-green-500/10 dark:bg-green-500/20"
@@ -16,13 +18,21 @@ function DiffLineRow({ line }: { line: Line }) {
         {line.new_lineno ?? ""}
       </td>
       <td className="w-4 shrink-0 text-center font-mono select-none">{line.origin}</td>
-      <td className="font-mono whitespace-pre">{line.content}</td>
+      <td className="font-mono whitespace-pre">{tokens ? <TokenSpans tokens={tokens} /> : line.content}</td>
     </tr>
   );
 }
 
+interface UnifiedHunkProps {
+  hunk: Hunk;
+  /** `Line` object identity → Shiki tokens, from `highlightFileDiff` — a
+   *  missing entry (unsupported language, still loading, or highlighting
+   *  skipped for an over-threshold file) falls back to plain text. */
+  highlights?: Map<Line, HighlightedLine> | null;
+}
+
 /** One hunk rendered as a 4-column unified diff table (lineno × 2, origin, content). */
-export default function UnifiedHunk({ hunk }: { hunk: Hunk }) {
+export default function UnifiedHunk({ hunk, highlights }: UnifiedHunkProps) {
   return (
     <table className="w-full border-collapse text-sm">
       <tbody>
@@ -33,7 +43,7 @@ export default function UnifiedHunk({ hunk }: { hunk: Hunk }) {
         </tr>
         {hunk.lines.map((line, index) => (
           // eslint-disable-next-line @eslint-react/no-array-index-key -- lines have no stable identity
-          <DiffLineRow key={index} line={line} />
+          <DiffLineRow key={index} line={line} tokens={highlights?.get(line)} />
         ))}
       </tbody>
     </table>

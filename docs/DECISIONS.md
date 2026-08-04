@@ -1244,3 +1244,54 @@ three decisions that cut against or sit next to existing invariants.
   slash-replacing logic archive downloads already use, instead of a second implementation.
 - API contract change — `docs/API.md`, `docs/openapi.json`, and `web/src/lib/api/types.ts` all
   updated together; two new operations (`EXPECTED_OPERATIONS` in `api/tests/openapi_test.rs`).
+
+## #39 Compare page, side-by-side view, and Shiki highlighting in diffs
+
+The web half of the "diff and patch output" cgit-parity work (#38), landed as four more staged
+commits: shared diff-rendering extraction, display options + patch/rawdiff links on the commit
+page, the `/{repo}/diff` compare page, side-by-side view, and finally syntax highlighting. No API
+contract change in any of these — all four consume endpoints #1/#2/#38 already expose.
+
+- **`/{repo}/diff` is a real route, not a query param on an existing page** — a `Diff` tab plus
+  `shellFor`/`shell_for` (the three-places-at-once rule, CLAUDE.md). The alternative (folding
+  compare into the commit page behind a query flag) was rejected: a comparison between two
+  arbitrary revisions isn't "a commit," and reusing the commit shell would mean every commit-page
+  assumption (a single `sha`, a `parent`) has to become conditional. cgit's own two-revision shape
+  (`cmd=diff&id=&id2=`) is remapped here instead of onto the single-commit view — `id`/`id2` never
+  collide with the compare page's own `from`/`to` query keys, checked directly in
+  `cgit_compat.rs`/`cgit-compat.ts` rather than assumed safe.
+- **The `(diff)` link on a commit's parent row needs its own accessible name.** Once a page can
+  have both a `Diff` tab (name "Diff") and one `(diff)` link per parent, a same-or-overlapping
+  accessible name for all of them is an accessibility-tree ambiguity as well as a guaranteed
+  Playwright strict-mode failure. Each `(diff)` link's name is `Diff against parent <sha>`
+  (`aria-label`, not the visible text) — the same treatment given to the commit page's new `Tree`
+  link, which otherwise collides with the `Tree` tab's own name.
+- **Side-by-side pairing reuses cgit's `ui-ssdiff.c` algorithm**: consecutive deletions and
+  additions are collected separately and paired index-for-index once the run ends, rather than
+  assuming a hunk alternates `-`/`+` one-for-one — a 3-deletion/1-addition block becomes one paired
+  row plus two `{ new: null }` rows instead of silently dropping two deleted lines.
+- **Intra-line highlighting is hand-rolled (`lib/diff/intraline.ts`), not a dependency.** Three
+  tiers — common prefix/suffix trim, then a budget-capped (250,000 char-product) word-level LCS,
+  then a whole-middle-changed fallback past that budget — cover the common cases at a fraction of
+  the size of `diff`/`diff-match-patch`. Consistent with #19's choice of Shiki's JS-regex engine
+  specifically to avoid a large payload for a diff-adjacent feature; shipping a diff library here
+  would undercut that same rationale.
+- **Shiki highlighting reconstructs each file's shown lines per side, not per line.** `context +
+  deletion` and `context + addition` are each joined into one string and tokenized once
+  (`lib/diff/file-highlights.ts`), then mapped back to their originating `Line` object by identity
+  — a multi-line construct (an unterminated string, a block comment) is far less likely to be
+  mis-highlighted with surrounding context than tokenizing every line in isolation. Only the lines
+  actually present in the diff are included, so a hunk boundary can still land mid-construct; that
+  residual inaccuracy is accepted rather than fetching and tokenizing the full blob for both sides
+  of every file in a diff.
+- **Shiki's foreground color and the intra-line background are composed, not nested.** Both are
+  independent segmentations of the same line; `lib/diff/merge-tokens.ts` slices each at the other's
+  boundaries so a single pass of `<span>`s carries both `style` (Shiki) and a `changed` flag
+  (intra-line), rather than trying to render one segmentation's spans nested inside the other's.
+- **Added/deleted files always render unified, regardless of the page's chosen view.** A wholly new
+  or removed file has nothing on one side either way — an entire empty split column is pure waste,
+  and cgit doesn't have a "split" concept for these either.
+- Verified against a real end-to-end run (fixture repo, built `web/dist`, `cargo run`, a real
+  browser) in addition to the mocked component/e2e tests — the split view's intra-line spans and
+  Shiki's per-token color were checked to actually compose correctly on screen, not just assumed
+  from the two algorithms' unit tests in isolation.

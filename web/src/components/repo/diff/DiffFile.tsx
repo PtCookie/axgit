@@ -1,6 +1,10 @@
-import type { FileDiff } from "@/lib/api/schemas";
+import { useEffect, useState } from "react";
+
+import type { FileDiff, Line } from "@/lib/api/schemas";
 import type { DiffViewMode } from "@/lib/diff-options";
+import { highlightFileDiff } from "@/lib/diff/file-highlights";
 import { renamePathLabel, STATUS_CLASS, STATUS_LABEL } from "@/lib/format/diff-status";
+import type { HighlightedLine } from "@/lib/format/highlight";
 import SplitHunk from "@/components/repo/diff/SplitHunk";
 import UnifiedHunk from "@/components/repo/diff/UnifiedHunk";
 
@@ -19,6 +23,23 @@ export default function DiffFile({ file, index, view }: DiffFileProps) {
   // regardless of the page's chosen view (cgit does the same).
   const effectiveView: DiffViewMode = file.status === "added" || file.status === "deleted" ? "unified" : view;
 
+  // `null` until highlighting resolves (or if the language isn't supported)
+  // — every hunk renders plain text in the meantime, then swaps in tokens,
+  // same "no loading flash" pattern as `CodeBlock`.
+  const [highlights, setHighlights] = useState<Map<Line, HighlightedLine> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    highlightFileDiff(file).then((result) => {
+      if (!cancelled) {
+        setHighlights(result);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+
   return (
     <details open id={`diff-${index + 1}`} className="border-border rounded-md border">
       <summary className="bg-muted/50 cursor-pointer px-3 py-2 font-mono text-sm">
@@ -34,9 +55,9 @@ export default function DiffFile({ file, index, view }: DiffFileProps) {
           <>
             {file.hunks.map((hunk) =>
               effectiveView === "split" ? (
-                <SplitHunk key={hunk.header} hunk={hunk} />
+                <SplitHunk key={hunk.header} hunk={hunk} highlights={highlights} />
               ) : (
-                <UnifiedHunk key={hunk.header} hunk={hunk} />
+                <UnifiedHunk key={hunk.header} hunk={hunk} highlights={highlights} />
               ),
             )}
             {file.truncated && (
