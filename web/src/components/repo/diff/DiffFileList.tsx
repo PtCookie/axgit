@@ -1,4 +1,5 @@
 import type { FileDiff } from "@/lib/api/schemas";
+import type { DiffViewMode } from "@/lib/diff-options";
 import DiffFile from "@/components/repo/diff/DiffFile";
 
 interface DiffFileListProps {
@@ -6,10 +7,11 @@ interface DiffFileListProps {
    *  per-commit diff and the two-revision diff — both cap the same way). */
   truncated: boolean;
   files: FileDiff[];
+  view: DiffViewMode;
 }
 
 /** The full list of per-file diffs for a commit or a two-revision comparison. */
-export default function DiffFileList({ truncated, files }: DiffFileListProps) {
+export default function DiffFileList({ truncated, files, view }: DiffFileListProps) {
   return (
     <div className="space-y-3">
       {truncated && (
@@ -18,7 +20,7 @@ export default function DiffFileList({ truncated, files }: DiffFileListProps) {
         </p>
       )}
       {files.map((file, index) => (
-        <DiffFile key={file.path} file={file} index={index} />
+        <DiffFile key={file.path} file={file} index={index} view={view} />
       ))}
     </div>
   );

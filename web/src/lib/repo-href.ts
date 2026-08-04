@@ -41,16 +41,12 @@ export function logHref(repo: string, params: { ref?: string; path?: string; cur
 
 /** Builds a `/{repo}/commit/{sha}` href, optionally carrying the current diff
  *  display options forward — so following a parent-commit link keeps the
- *  same context/ignore-whitespace choice instead of silently resetting it.
- *  `view` isn't accepted: unified vs. split isn't meaningful to carry across
- *  a navigation to a *different* commit's diff the way context/ignorews are. */
-export function commitHref(
-  repo: string,
-  sha: string,
-  options: Partial<Pick<DiffOptions, "context" | "ignorews">> = {},
-): string {
+ *  same context/ignore-whitespace/view choice instead of silently resetting
+ *  it, and `DiffOptionsBar`'s view pill on the commit page can build its own
+ *  "same commit, different view" href through this same function. */
+export function commitHref(repo: string, sha: string, options: Partial<DiffOptions> = {}): string {
   const query = diffOptionsQuery({
-    view: "unified",
+    view: options.view ?? "unified",
     context: options.context ?? DEFAULT_CONTEXT,
     ignorews: options.ignorews ?? false,
   });

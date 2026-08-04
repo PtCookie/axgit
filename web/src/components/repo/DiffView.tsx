@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import { comparePatchUrl, compareRawDiffUrl, getDiff, getRefs } from "@/lib/api/repos";
 import type { RefsInfo, RevDiff } from "@/lib/api/schemas";
-import { diffApiParams, parseDiffOptions } from "@/lib/diff-options";
+import { diffApiParams, type DiffViewMode, parseDiffOptions } from "@/lib/diff-options";
 import { compareHref } from "@/lib/repo-href";
 import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import DiffFileList from "@/components/repo/diff/DiffFileList";
@@ -27,12 +27,13 @@ interface DiffViewProps {
    * evaluated there.
    */
   repo?: string;
-  /** `from`/`to`/`path`/`context`/`ignorews` follow the same "prop
+  /** `from`/`to`/`path`/`view`/`context`/`ignorews` follow the same "prop
    *  overrides, `location` is the default source" pattern as `repo` — see
    *  `CommitView`/`SearchView`. */
   from?: string;
   to?: string;
   path?: string;
+  view?: DiffViewMode;
   context?: number;
   ignorews?: boolean;
 }
@@ -54,6 +55,7 @@ export default function DiffView({
   from: fromProp,
   to: toProp,
   path: pathProp,
+  view: viewProp,
   context: contextProp,
   ignorews: ignorewsProp,
 }: DiffViewProps) {
@@ -62,9 +64,10 @@ export default function DiffView({
   const resolvedTo = toProp ?? paramFromSearch("to", window.location.search);
   const resolvedPath = pathProp ?? paramFromSearch("path", window.location.search);
   const urlOptions = parseDiffOptions(window.location.search);
+  const resolvedView = viewProp ?? urlOptions.view;
   const resolvedContext = contextProp ?? urlOptions.context;
   const resolvedIgnorews = ignorewsProp ?? urlOptions.ignorews;
-  const options = { view: "unified" as const, context: resolvedContext, ignorews: resolvedIgnorews };
+  const options = { view: resolvedView, context: resolvedContext, ignorews: resolvedIgnorews };
 
   // Neither side given: nothing to compare yet, same "idle" shape as
   // SearchView before a query is entered.
@@ -226,9 +229,21 @@ export default function DiffView({
 
           <DiffStatTable stat={state.diff.diffstat} />
 
-          <DiffOptionsBar options={options} extraParams={extraFormParams} />
+          <DiffOptionsBar
+            options={options}
+            extraParams={extraFormParams}
+            hrefFor={(patch) =>
+              compareHref(resolvedRepo, {
+                from: resolvedFrom,
+                to: resolvedTo,
+                path: resolvedPath,
+                ...options,
+                ...patch,
+              })
+            }
+          />
 
-          <DiffFileList truncated={state.diff.truncated} files={state.diff.files} />
+          <DiffFileList truncated={state.diff.truncated} files={state.diff.files} view={resolvedView} />
         </>
       )}
     </div>

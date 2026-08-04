@@ -156,3 +156,35 @@ test("the (diff) link on a commit's parent leads to the compare page", async ({ 
   await expect(page).toHaveURL(`/git-compose/diff?from=${FROM_SHA}&to=${COMMIT_SHA}`);
   await expect(page.getByText("Comparing")).toBeVisible();
 });
+
+test("toggling unified/split updates the URL and the rendered table shape", async ({ page }) => {
+  await page.route("**/api/v1/repos/git-compose", async (route) => {
+    await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/readme*", async (route) => {
+    await route.fulfill({ status: 404, json: NO_README });
+  });
+  await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
+    await route.fulfill({ json: REFS });
+  });
+  await page.route("**/api/v1/repos/git-compose/diff*", async (route) => {
+    await route.fulfill({ json: REV_DIFF });
+  });
+
+  await page.goto(`/git-compose/diff?from=${FROM_SHA}&to=${TO_SHA}`);
+  await expect(page.getByRole("link", { name: "Unified" })).toHaveAttribute("aria-current", "page");
+  // Unified: one origin-character column between the two line-number columns.
+  await expect(page.getByRole("cell", { name: "-", exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Split" }).click();
+
+  await expect(page).toHaveURL(`/git-compose/diff?from=${FROM_SHA}&to=${TO_SHA}&view=split`);
+  await expect(page.getByRole("link", { name: "Split" })).toHaveAttribute("aria-current", "page");
+  // Split: the deleted line and the added line render in the same row,
+  // each in its own column — both visible at once, unlike unified's single
+  // interleaved column.
+  await expect(page.getByRole("cell", { name: "two", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "three", exact: true })).toBeVisible();
+  // The origin-character column is dropped in split view.
+  await expect(page.getByRole("cell", { name: "-", exact: true })).not.toBeVisible();
+});

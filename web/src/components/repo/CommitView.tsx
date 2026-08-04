@@ -4,7 +4,7 @@ import { ApiError } from "@/lib/api/client";
 import { commitPatchUrl, commitRawDiffUrl, getCommit, getCommitDiff } from "@/lib/api/repos";
 import type { CommitAuthor, CommitDetail, CommitDiff } from "@/lib/api/schemas";
 import { useCommitRefs } from "@/lib/commit-refs";
-import { diffApiParams, parseDiffOptions } from "@/lib/diff-options";
+import { diffApiParams, type DiffViewMode, parseDiffOptions } from "@/lib/diff-options";
 import { linkify } from "@/lib/format/linkify";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { commitHref, compareHref, treeHref } from "@/lib/repo-href";
@@ -30,8 +30,10 @@ interface CommitViewProps {
    */
   repo?: string;
   sha?: string;
-  /** `context`/`ignorews` follow the same "prop overrides, `location` is the
-   *  default source" pattern as `repo`/`sha` — see `SearchView`. */
+  /** `view`/`context`/`ignorews` follow the same "prop overrides,
+   *  `location` is the default source" pattern as `repo`/`sha` — see
+   *  `SearchView`. */
+  view?: DiffViewMode;
   context?: number;
   ignorews?: boolean;
 }
@@ -68,13 +70,20 @@ function AuthorLine({ label, author, at }: { label: string; author: CommitAuthor
   );
 }
 
-export default function CommitView({ repo, sha, context: contextProp, ignorews: ignorewsProp }: CommitViewProps) {
+export default function CommitView({
+  repo,
+  sha,
+  view: viewProp,
+  context: contextProp,
+  ignorews: ignorewsProp,
+}: CommitViewProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const resolvedSha = sha ?? commitShaFromPathname(window.location.pathname);
   const urlOptions = parseDiffOptions(window.location.search);
+  const resolvedView = viewProp ?? urlOptions.view;
   const resolvedContext = contextProp ?? urlOptions.context;
   const resolvedIgnorews = ignorewsProp ?? urlOptions.ignorews;
-  const options = { view: "unified" as const, context: resolvedContext, ignorews: resolvedIgnorews };
+  const options = { view: resolvedView, context: resolvedContext, ignorews: resolvedIgnorews };
   const [state, setState] = useState<State>({ status: "loading" });
   const refsBySha = useCommitRefs(resolvedRepo);
 
@@ -205,9 +214,12 @@ export default function CommitView({ repo, sha, context: contextProp, ignorews: 
 
       <DiffStatTable stat={detail.diffstat} />
 
-      <DiffOptionsBar options={options} />
+      <DiffOptionsBar
+        options={options}
+        hrefFor={(patch) => commitHref(resolvedRepo, detail.sha, { ...options, ...patch })}
+      />
 
-      <DiffFileList truncated={diff.truncated} files={diff.files} />
+      <DiffFileList truncated={diff.truncated} files={diff.files} view={resolvedView} />
     </div>
   );
 }
