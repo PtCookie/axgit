@@ -243,7 +243,7 @@ export interface paths {
      *
      *     Includes the author's name and email in `From:` headers — required for
      *     `git am` to preserve authorship, and the one axgit response that exposes a
-     *     plain email address (docs/DECISIONS.md #37). Marked `noindex, nofollow`.
+     *     plain email address (docs/DECISIONS.md #38). Marked `noindex, nofollow`.
      */
     get: operations["get_patch"];
     put?: never;

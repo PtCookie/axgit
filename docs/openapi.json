@@ -898,7 +898,7 @@
           "diff"
         ],
         "summary": "Format-patch series",
-        "description": "`git format-patch`-style mbox series for the commit range `(from, to]` —\n`from` **excluded**, the opposite convention from `/diff`/`/rawdiff`.\nEvery commit is diffed against its own first parent, including merges\n(`git format-patch` itself skips merges; every other axgit diff is\nfirst-parent, so this endpoint stays consistent with those instead).\nRejects (`400`) rather than truncates a range over\n[`crate::repo::diff::MAX_PATCH_COMMITS`] commits. For `git am`.\n\nIncludes the author's name and email in `From:` headers — required for\n`git am` to preserve authorship, and the one axgit response that exposes a\nplain email address (docs/DECISIONS.md #37). Marked `noindex, nofollow`.",
+        "description": "`git format-patch`-style mbox series for the commit range `(from, to]` —\n`from` **excluded**, the opposite convention from `/diff`/`/rawdiff`.\nEvery commit is diffed against its own first parent, including merges\n(`git format-patch` itself skips merges; every other axgit diff is\nfirst-parent, so this endpoint stays consistent with those instead).\nRejects (`400`) rather than truncates a range over\n[`crate::repo::diff::MAX_PATCH_COMMITS`] commits. For `git am`.\n\nIncludes the author's name and email in `From:` headers — required for\n`git am` to preserve authorship, and the one axgit response that exposes a\nplain email address (docs/DECISIONS.md #38). Marked `noindex, nofollow`.",
         "operationId": "get_patch",
         "parameters": [
           {
