@@ -102,6 +102,24 @@ pub struct CommitDiff {
     pub files: Vec<FileDiff>,
 }
 
+/// Two-revision diff of `GET /api/v1/repos/{repo}/diff` (docs/API.md). A
+/// plain tree-to-tree comparison (`git diff <from> <to>`), not a merge-base
+/// `...` diff.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RevDiff {
+    /// Resolved full sha of the old side. `null` only when `from` was omitted
+    /// and `to` is a root commit (the old side is then the empty tree).
+    #[schema(required = true)]
+    pub from: Option<String>,
+    /// Resolved full sha of the new side.
+    pub to: String,
+    /// `true` when files beyond [`MAX_DIFF_FILES`] were omitted.
+    pub truncated: bool,
+    /// The full, uncapped file list — same rule as the commit diffstat.
+    pub diffstat: DiffStat,
+    pub files: Vec<FileDiff>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FileDiff {
     #[serde(flatten)]
@@ -155,26 +173,7 @@ pub struct Line {
 /// a commit (docs/API.md) and must not vary with a display toggle.
 pub fn diffstat(repo: &Repository, commit: &Commit) -> Result<DiffStat, ApiError> {
     let (old_tree, new_tree) = commit_trees(commit)?;
-    let diff = build_diff(
-        repo,
-        old_tree.as_ref(),
-        Some(&new_tree),
-        &DiffParams::default(),
-    )?;
-    let mut files = Vec::with_capacity(diff.deltas().len());
-    let (mut total_additions, mut total_deletions) = (0, 0);
-    for idx in 0..diff.deltas().len() {
-        let (_, file) = load_file(&diff, idx)?;
-        total_additions += file.additions;
-        total_deletions += file.deletions;
-        files.push(file);
-    }
-    Ok(DiffStat {
-        files_changed: files.len(),
-        total_additions,
-        total_deletions,
-        files,
-    })
+    diffstat_for_trees(repo, old_tree.as_ref(), Some(&new_tree))
 }
 
 /// Structured diff against the first parent, honoring `params`. A `path` the
@@ -196,16 +195,74 @@ pub fn commit_diff(
     })
 }
 
+/// Two-revision diff honoring `params`. `from: None` means `to`'s first
+/// parent (the empty tree for a root commit) — so
+/// `rev_diff(repo, None, &c, p)` and `commit_diff(repo, &c, p)` produce
+/// identical `files`, which is asserted in the integration tests.
+pub fn rev_diff(
+    repo: &Repository,
+    from: Option<&Commit>,
+    to: &Commit,
+    params: &DiffParams<'_>,
+) -> Result<RevDiff, ApiError> {
+    let (old_tree, from_sha) = match from {
+        Some(commit) => (Some(commit.tree()?), Some(commit.id().to_string())),
+        None => (
+            first_parent_tree(to)?,
+            to.parent_id(0).ok().map(|id| id.to_string()),
+        ),
+    };
+    let new_tree = to.tree()?;
+    let diff = build_diff(repo, old_tree.as_ref(), Some(&new_tree), params)?;
+    let (files, truncated) = render_files(&diff)?;
+    let diffstat = diffstat_for_trees(repo, old_tree.as_ref(), Some(&new_tree))?;
+    Ok(RevDiff {
+        from: from_sha,
+        to: to.id().to_string(),
+        truncated,
+        diffstat,
+        files,
+    })
+}
+
 /// The (old, new) tree pair a commit diffs against — its first parent, or the
 /// empty tree (`None`) for a root commit.
 fn commit_trees<'r>(commit: &Commit<'r>) -> Result<(Option<Tree<'r>>, Tree<'r>), ApiError> {
-    let new_tree = commit.tree()?;
-    let old_tree = if commit.parent_count() > 0 {
-        Some(commit.parent(0)?.tree()?)
+    Ok((first_parent_tree(commit)?, commit.tree()?))
+}
+
+/// A commit's first-parent tree, or `None` for a root commit (the empty tree).
+fn first_parent_tree<'r>(commit: &Commit<'r>) -> Result<Option<Tree<'r>>, ApiError> {
+    if commit.parent_count() > 0 {
+        Ok(Some(commit.parent(0)?.tree()?))
     } else {
-        None
-    };
-    Ok((old_tree, new_tree))
+        Ok(None)
+    }
+}
+
+/// Uncapped diffstat between two trees, always with default display options
+/// — shared by the commit diffstat and the two-revision diff's `diffstat`
+/// field, neither of which should vary with a hunk-display toggle.
+fn diffstat_for_trees(
+    repo: &Repository,
+    old_tree: Option<&Tree<'_>>,
+    new_tree: Option<&Tree<'_>>,
+) -> Result<DiffStat, ApiError> {
+    let diff = build_diff(repo, old_tree, new_tree, &DiffParams::default())?;
+    let mut files = Vec::with_capacity(diff.deltas().len());
+    let (mut total_additions, mut total_deletions) = (0, 0);
+    for idx in 0..diff.deltas().len() {
+        let (_, file) = load_file(&diff, idx)?;
+        total_additions += file.additions;
+        total_deletions += file.deletions;
+        files.push(file);
+    }
+    Ok(DiffStat {
+        files_changed: files.len(),
+        total_additions,
+        total_deletions,
+        files,
+    })
 }
 
 /// Tree-to-tree diff with rename detection and `params`' display options

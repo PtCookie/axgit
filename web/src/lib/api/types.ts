@@ -177,6 +177,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/repos/{repo}/diff": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Two-revision diff
+     * @description Arbitrary two-revision diff (`git diff <from> <to>`), the same structured
+     *     shape as the per-commit diff plus an uncapped `diffstat`. `?to=X` alone
+     *     (no `from`) produces `files` identical to `GET /commits/X/diff`. `from`
+     *     and `to` accept anything `resolve_commit` does — branch, tag, sha, or a
+     *     `revparse_single` expression such as `main~1`.
+     */
+    get: operations["get_rev_diff"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/repos/{repo}/feed.atom": {
     parameters: {
       query?: never;
@@ -729,6 +753,25 @@ export interface components {
     };
     ReposResponse: {
       repos: components["schemas"]["RepoInfo"][];
+    };
+    /**
+     * @description Two-revision diff of `GET /api/v1/repos/{repo}/diff` (docs/API.md). A
+     *     plain tree-to-tree comparison (`git diff <from> <to>`), not a merge-base
+     *     `...` diff.
+     */
+    RevDiff: {
+      /**
+       * @description Resolved full sha of the old side. `null` only when `from` was omitted
+       *     and `to` is a root commit (the old side is then the empty tree).
+       */
+      from: string | null;
+      /** @description Resolved full sha of the new side. */
+      to: string;
+      /** @description `true` when files beyond [`MAX_DIFF_FILES`] were omitted. */
+      truncated: boolean;
+      /** @description The full, uncapped file list — same rule as the commit diffstat. */
+      diffstat: components["schemas"]["DiffStat"];
+      files: components["schemas"]["FileDiff"][];
     };
     /**
      * @description Requested search variant, echoed back in the response's `type` field.
@@ -1312,6 +1355,91 @@ export interface operations {
         };
       };
       /** @description `repo_not_found`, `ref_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_rev_diff: {
+    parameters: {
+      query?: {
+        /**
+         * @description Old side of the comparison (`git diff <from> <to>` — not a merge-base
+         *     `...` diff). Defaults to `to`'s first parent (the empty tree for a
+         *     root commit).
+         * @example main
+         */
+        from?: string;
+        /**
+         * @description New side of the comparison. Defaults to `HEAD`.
+         * @example feature/x
+         */
+        to?: string;
+        /**
+         * @description Restrict the diff to one file (literal match, no globbing). A path
+         *     neither side touched yields `files: []`, not a 404.
+         */
+        path?: string;
+        /**
+         * @description Context lines around each change. Parsed manually so an invalid value
+         *     yields the JSON `invalid_param` envelope instead of axum's plain-text
+         *     400. Never clamped.
+         * @example 3
+         */
+        context?: number;
+        /**
+         * @description Ignore whitespace-only changes (`git diff --ignore-all-space`).
+         * @example 1
+         */
+        ignorews?: boolean;
+      };
+      header?: never;
+      path: {
+        /**
+         * @description Repository name without the `.git` suffix
+         * @example git-compose
+         */
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Two-revision diff. Immutable caching only when every side given resolves to the exact requested string as a full sha. */
+      200: {
+        headers: {
+          /** @description `no-cache`, or `public, max-age=31536000, immutable` */
+          "Cache-Control"?: string;
+          /** @description Validator-derived; absent when immutable */
+          ETag?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RevDiff"];
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `invalid_param` — bad `context` or `ignorews` */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description `repo_not_found`, `ref_not_found` (names the offending side) */
       404: {
         headers: {
           [name: string]: unknown;

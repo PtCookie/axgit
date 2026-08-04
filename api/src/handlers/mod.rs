@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod commits;
+pub mod diff;
 pub mod feed;
 pub mod files;
 pub mod repos;

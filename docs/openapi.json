@@ -708,6 +708,129 @@
         }
       }
     },
+    "/api/v1/repos/{repo}/diff": {
+      "get": {
+        "tags": [
+          "diff"
+        ],
+        "summary": "Two-revision diff",
+        "description": "Arbitrary two-revision diff (`git diff <from> <to>`), the same structured\nshape as the per-commit diff plus an uncapped `diffstat`. `?to=X` alone\n(no `from`) produces `files` identical to `GET /commits/X/diff`. `from`\nand `to` accept anything `resolve_commit` does — branch, tag, sha, or a\n`revparse_single` expression such as `main~1`.",
+        "operationId": "get_rev_diff",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Old side of the comparison (`git diff <from> <to>` — not a merge-base\n`...` diff). Defaults to `to`'s first parent (the empty tree for a\nroot commit).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "New side of the comparison. Defaults to `HEAD`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "feature/x"
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Restrict the diff to one file (literal match, no globbing). A path\nneither side touched yields `files: []`, not a 404.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "context",
+            "in": "query",
+            "description": "Context lines around each change. Parsed manually so an invalid value\nyields the JSON `invalid_param` envelope instead of axum's plain-text\n400. Never clamped.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 0
+            },
+            "example": 3
+          },
+          {
+            "name": "ignorews",
+            "in": "query",
+            "description": "Ignore whitespace-only changes (`git diff --ignore-all-space`).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "example": "1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Two-revision diff. Immutable caching only when every side given resolves to the exact requested string as a full sha.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent when immutable"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevDiff"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — bad `context` or `ignorews`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found` (names the offending side)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/repos/{repo}/feed.atom": {
       "get": {
         "tags": [
@@ -2384,6 +2507,44 @@
           }
         }
       },
+      "RevDiff": {
+        "type": "object",
+        "description": "Two-revision diff of `GET /api/v1/repos/{repo}/diff` (docs/API.md). A\nplain tree-to-tree comparison (`git diff <from> <to>`), not a merge-base\n`...` diff.",
+        "required": [
+          "from",
+          "to",
+          "truncated",
+          "diffstat",
+          "files"
+        ],
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Resolved full sha of the old side. `null` only when `from` was omitted\nand `to` is a root commit (the old side is then the empty tree)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Resolved full sha of the new side."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "`true` when files beyond [`MAX_DIFF_FILES`] were omitted."
+          },
+          "diffstat": {
+            "$ref": "#/components/schemas/DiffStat",
+            "description": "The full, uncapped file list — same rule as the commit diffstat."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileDiff"
+            }
+          }
+        }
+      },
       "SearchKind": {
         "type": "string",
         "description": "Requested search variant, echoed back in the response's `type` field.",
@@ -2591,6 +2752,10 @@
     {
       "name": "commits",
       "description": "Commit log, detail, and structured diff"
+    },
+    {
+      "name": "diff",
+      "description": "Two-revision diff, raw unified diff, and format-patch output"
     },
     {
       "name": "files",

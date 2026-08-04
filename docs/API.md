@@ -259,6 +259,36 @@ as diffstat entries.
   file, since libgit2 recomputes line stats from the whitespace-ignoring patch too. Any other value
   is `400 invalid_param`.
 
+### `GET /api/v1/repos/{repo}/diff?from=&to=&path=&context=&ignorews=`
+
+Arbitrary two-revision diff — `git diff <from> <to>`, a plain tree-to-tree comparison, **not** a
+merge-base `A...B` diff. Same file/hunk/line shape as the per-commit diff, plus an uncapped
+`diffstat` (the full file list, same rule as commit detail's).
+
+```json
+{
+  "from": "<full sha | null>",
+  "to": "<full sha>",
+  "truncated": false,
+  "diffstat": { "files": [ /* DiffStatFile, uncapped */ ], "files_changed": 1, "total_additions": 1, "total_deletions": 1 },
+  "files": [ /* same FileDiff shape as the per-commit diff */ ]
+}
+```
+
+- `from`: old side of the comparison. Defaults to `to`'s first parent (the empty tree for a root
+  commit, in which case `from` is `null`). Accepts anything `resolve_commit` does: branch, tag,
+  sha, or a `revparse_single` expression (`main~1`, `v1.0^{}`). `404 ref_not_found` naming the
+  value on resolution failure.
+- `to`: new side. Defaults to `HEAD`. Same acceptance/error rules as `from`.
+- Both `from` and `to` are echoed back **resolved to their full sha** — not the requested string —
+  so a symbolic `from`/`to` can be linked to its own commit page.
+- `?to=X` alone (no `from`) produces `files` byte-identical to `GET /commits/X/diff` with the same
+  `path`/`context`/`ignorews`: this endpoint is a strict superset of the per-commit diff.
+- `path`, `context`, `ignorews`: same rules as the per-commit diff.
+- **Immutable caching** requires every side actually present in the request to resolve to itself as
+  a full sha string; an omitted `from` inherits whatever `to` resolved to (so `?to=<full sha>` alone
+  is immutable, `?from=<full sha>&to=<full sha>` is immutable, `?to=main` is not).
+
 ### `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
 
 Directory listing. Since `{ref}` may contain `/` (branch/tag names), the boundary with the path is
