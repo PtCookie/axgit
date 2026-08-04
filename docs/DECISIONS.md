@@ -1189,3 +1189,58 @@ ancestor of the next page's cursor.
     `cursor`/`next_cursor` semantics changed, `CommitsPage`'s shape did not).
   - **No web change**: `CommitLog.tsx`'s `Older` link and `logHref` already treat `next_cursor` as
     an opaque string round-tripped through `?cursor=`, never parsed client-side.
+
+## #38 raw patch and rawdiff: in-process git2, not exec; email exception on `/patch`
+
+Part of the "diff and patch output" cgit-parity work (ROADMAP.md), alongside `GET /diff` (#2-rev
+diff) and `context=`/`ignorews=` (#1). Two new endpoints, `GET /rawdiff` and `GET /patch`, needed
+three decisions that cut against or sit next to existing invariants.
+
+- **`git2::Diff::print`/`Email::from_diff` in-process, not `git format-patch`/`git diff` exec.**
+  The #2/#12/#13 hybrid policy reserves exec for heavy streaming operations libgit2 has no
+  equivalent for (archive, upload-pack); it doesn't apply here; libgit2 has both operations
+  natively. Exec'ing git would also introduce a **second diff engine** disagreeing with the first:
+  git's rename detection and libgit2's `find_similar(None)` aren't guaranteed to agree, and git's
+  `diff.indentHeuristic` has defaulted on since 2.14 while libgit2's `GIT_DIFF_INDENT_HEURISTIC`
+  defaults off. Two engines would mean the structured JSON diff and its `.patch` link on the same
+  page could show different file lists or hunk boundaries — a correctness bug, not a style choice.
+  Staying in-process also means `/rawdiff` and `/patch` inherit `cached_response`'s response cache,
+  `ETag`, and immutable `Cache-Control` for free, rather than reimplementing archive's
+  resolve → ETag-short-circuit → spawn → reaper → stream path for an operation that doesn't need
+  streaming. `repo/diff.rs::build_diff` is the single git2 diff chokepoint every entry point
+  (commit diff, two-revision diff, rawdiff, and each commit in a patch series) now shares.
+- **No line/file caps on `/rawdiff` or `/patch`**, unlike the structured JSON diffs' `MAX_DIFF_FILES`
+  (300) / `MAX_FILE_DIFF_LINES` (1000). Those caps exist to bound a browser-rendered payload; a
+  patch with hunks silently dropped is a *corrupt* patch that fails or misapplies under `git
+  apply`/`git am`, defeating the endpoint's reason to exist. `/patch`'s commit-*count* axis is
+  bounded instead (`MAX_PATCH_COMMITS = 100`) — but by **rejecting** an oversized range with `400
+  invalid_param` rather than truncating it, since a silently-shortened series would still apply
+  cleanly and just quietly corrupt history. `raw` already carries the same unbounded-body exposure
+  with no reported problems; if `/rawdiff` ever needs one, the natural next step is the same
+  exec+stream escape hatch ROADMAP already reserves for search/stats/log, not a cap.
+- **`from` means the opposite thing on `/rawdiff` vs. `/patch`.** On `/diff`/`/rawdiff`, `from` is
+  the other side of a two-dot tree comparison (`git diff <from> <to>`), matching `GET /diff` (#2).
+  On `/patch`, `from` is the **excluded** start of a commit range (`git format-patch <from>..<to>`).
+  This matches git's own two conventions exactly, but it is the single most confusable part of the
+  API surface — spelled out with a worked example in `docs/API.md` rather than left implicit.
+  `/patch` also diffs every commit in its range against its own first parent, including merges;
+  `git format-patch` itself skips merges, but every other diff in this API is first-parent, so
+  `/patch` stays consistent with axgit's own convention instead of git's.
+- **`/patch` is a deliberate, narrow exception to "email addresses are never exposed"** (#8).
+  `git am` cannot preserve authorship without a real `From: Name <email>` header — that's the
+  endpoint's entire reason to exist, so redacting the address (e.g. `<redacted@invalid>`) would
+  produce a patch that applies but records the wrong author, which defeats the point as
+  thoroughly as capping the size would. The exception is narrow: nothing new is actually
+  disclosed, since the identical data is already served, unauthenticated, by `git clone` over
+  Smart HTTP (#13) — every commit's plaintext author email is inside every packfile. What changes
+  is *harvesting economics*: a plaintext address sitting behind a plain `GET` is crawler-trivial in
+  a way a git pack is not. Mitigated with `X-Robots-Tag: noindex, nofollow` on the response (one
+  header) and `Content-Disposition: inline; filename="..."`; the pre-existing `robots.txt` gap
+  (ROADMAP.md parity notes) remains the more complete fix and is left as a candidate. Every other
+  response (`/repos`, `/commits`, `/diff`, etc.) keeps `email_hash` only — this exception is scoped
+  to `/patch` alone.
+- **`sanitize_component`** moved from `handlers/archive.rs` to `handlers/mod.rs` (unit tests moved
+  with it) so `/patch`'s `Content-Disposition` filename can reuse the exact ASCII-safe
+  slash-replacing logic archive downloads already use, instead of a second implementation.
+- API contract change — `docs/API.md`, `docs/openapi.json`, and `web/src/lib/api/types.ts` all
+  updated together; two new operations (`EXPECTED_OPERATIONS` in `api/tests/openapi_test.rs`).

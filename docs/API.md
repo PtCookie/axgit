@@ -289,6 +289,41 @@ merge-base `A...B` diff. Same file/hunk/line shape as the per-commit diff, plus 
   a full sha string; an omitted `from` inherits whatever `to` resolved to (so `?to=<full sha>` alone
   is immutable, `?from=<full sha>&to=<full sha>` is immutable, `?to=main` is not).
 
+### `GET /api/v1/repos/{repo}/rawdiff?from=&to=&path=&context=&ignorews=`
+
+Plain unified diff (`text/plain; charset=utf-8`) between two revisions, for `git apply`. Same
+`from`/`to`/`path`/`context`/`ignorews` semantics as `GET /diff` — a two-dot tree comparison, not a
+merge-base `...` diff.
+
+- **No size limit** — unlike the structured JSON diffs, `MAX_FILE_DIFF_LINES`/`MAX_DIFF_FILES` do
+  not apply here: a truncated patch would be a corrupt one, which defeats the endpoint's purpose.
+- `X-Content-Type-Options: nosniff` is always set (repository content is untrusted input).
+- Caching rules (immutable vs. `ETag`) are identical to `GET /diff`.
+
+### `GET /api/v1/repos/{repo}/patch?from=&to=&path=`
+
+`git format-patch`-style mbox series (`text/plain; charset=utf-8`) for the commit range
+`(from, to]`, for `git am`.
+
+- **`from` is excluded** — the opposite of `/diff`/`/rawdiff`'s `from`, which is the *other side* of
+  a tree comparison. `from` omitted renders a single patch for `to` alone (`(from, to]` with an
+  implicit empty `from` is just `{to}`).
+- Every commit in the range is diffed against its **own first parent**, including merges. `git
+  format-patch` itself skips merge commits entirely; axgit stays consistent with every other diff
+  in this API (all first-parent) instead of matching that behavior.
+- `path` restricts every commit's diff in the series to one file, same rule as elsewhere.
+- **No `context`/`ignorews`** — format-patch output is meant to be applied, not read, so display
+  options don't apply; any such query params are silently ignored, like any stray param elsewhere.
+- **Capped, not truncated**, at 100 commits: a range exceeding the limit is `400 invalid_param`
+  rather than a silently shortened (and therefore misleading) series.
+- Includes the commit author's **name and a plain email address** in each patch's `From:` header —
+  required for `git am` to preserve authorship. This is the **one exception** to "email addresses
+  are never exposed" (docs/DECISIONS.md #8): the same data is already served, unauthenticated, by
+  `git clone` over Smart HTTP, so nothing new is disclosed; what changes is that a GET response is
+  easier to crawl than a pack. Mitigated with `Content-Disposition: inline; filename="..."` and
+  `X-Robots-Tag: noindex, nofollow`; see docs/DECISIONS.md #38.
+- Caching rules (immutable vs. `ETag`) are identical to `GET /diff`.
+
 ### `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
 
 Directory listing. Since `{ref}` may contain `/` (branch/tag names), the boundary with the path is

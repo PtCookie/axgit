@@ -224,6 +224,36 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/repos/{repo}/patch": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Format-patch series
+     * @description `git format-patch`-style mbox series for the commit range `(from, to]` —
+     *     `from` **excluded**, the opposite convention from `/diff`/`/rawdiff`.
+     *     Every commit is diffed against its own first parent, including merges
+     *     (`git format-patch` itself skips merges; every other axgit diff is
+     *     first-parent, so this endpoint stays consistent with those instead).
+     *     Rejects (`400`) rather than truncates a range over
+     *     [`crate::repo::diff::MAX_PATCH_COMMITS`] commits. For `git am`.
+     *
+     *     Includes the author's name and email in `From:` headers — required for
+     *     `git am` to preserve authorship, and the one axgit response that exposes a
+     *     plain email address (docs/DECISIONS.md #37). Marked `noindex, nofollow`.
+     */
+    get: operations["get_patch"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/repos/{repo}/raw/{ref}/{path}": {
     parameters: {
       query?: never;
@@ -239,6 +269,29 @@ export interface paths {
      *     either way). `{ref}`/`{path}` split as for the tree endpoint.
      */
     get: operations["get_raw"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/repos/{repo}/rawdiff": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Raw unified diff
+     * @description Plain unified diff between two revisions (`git diff <from> <to>`, the same
+     *     two-dot semantics as `GET /diff` — not a merge-base `...` diff), for
+     *     `git apply`. **No line/file caps** — unlike the structured diffs, a
+     *     truncated patch would be a corrupt one.
+     */
+    get: operations["get_rawdiff"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1496,6 +1549,83 @@ export interface operations {
       };
     };
   };
+  get_patch: {
+    parameters: {
+      query?: {
+        /**
+         * @description Start of the commit range, **excluded** (`git format-patch
+         *     <from>..<to>`) — unlike `from` on `/diff`/`/rawdiff`, which names the
+         *     other side of a tree comparison. Omitted renders a single patch for
+         *     `to` alone.
+         * @example main
+         */
+        from?: string;
+        /**
+         * @description End of the range (inclusive). Defaults to `HEAD`.
+         * @example feature/x
+         */
+        to?: string;
+        /** @description Restrict every commit's diff to one file (literal match, no globbing). */
+        path?: string;
+      };
+      header?: never;
+      path: {
+        /**
+         * @description Repository name without the `.git` suffix
+         * @example git-compose
+         */
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description mbox-format patch series, no size limit. Immutable caching only when every side given resolves to the exact requested string as a full sha. */
+      200: {
+        headers: {
+          /** @description `no-cache`, or `public, max-age=31536000, immutable` */
+          "Cache-Control"?: string;
+          /** @description `inline; filename="{repo}-{safe_to}.patch"` */
+          "Content-Disposition"?: string;
+          /** @description Validator-derived; absent when immutable */
+          ETag?: string;
+          /** @description Always `nosniff` */
+          "X-Content-Type-Options"?: string;
+          /** @description Always `noindex, nofollow` */
+          "X-Robots-Tag"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "text/plain": string;
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `invalid_param` — commit range exceeds the patch-count limit */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description `repo_not_found`, `ref_not_found` (names the offending side) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   get_raw: {
     parameters: {
       query?: never;
@@ -1553,6 +1683,93 @@ export interface operations {
         };
       };
       /** @description `repo_not_found`, `ref_not_found`, `path_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_rawdiff: {
+    parameters: {
+      query?: {
+        /**
+         * @description Old side of the comparison (`git diff <from> <to>` — not a merge-base
+         *     `...` diff). Defaults to `to`'s first parent (the empty tree for a
+         *     root commit).
+         * @example main
+         */
+        from?: string;
+        /**
+         * @description New side of the comparison. Defaults to `HEAD`.
+         * @example feature/x
+         */
+        to?: string;
+        /**
+         * @description Restrict the diff to one file (literal match, no globbing). A path
+         *     neither side touched yields `files: []`, not a 404.
+         */
+        path?: string;
+        /**
+         * @description Context lines around each change. Parsed manually so an invalid value
+         *     yields the JSON `invalid_param` envelope instead of axum's plain-text
+         *     400. Never clamped.
+         * @example 3
+         */
+        context?: number;
+        /**
+         * @description Ignore whitespace-only changes (`git diff --ignore-all-space`).
+         * @example 1
+         */
+        ignorews?: boolean;
+      };
+      header?: never;
+      path: {
+        /**
+         * @description Repository name without the `.git` suffix
+         * @example git-compose
+         */
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Plain unified diff, no size limit. Immutable caching only when every side given resolves to the exact requested string as a full sha. */
+      200: {
+        headers: {
+          /** @description `no-cache`, or `public, max-age=31536000, immutable` */
+          "Cache-Control"?: string;
+          /** @description Validator-derived; absent when immutable */
+          ETag?: string;
+          /** @description Always `nosniff` */
+          "X-Content-Type-Options"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "text/plain": string;
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `invalid_param` — bad `context` or `ignorews` */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description `repo_not_found`, `ref_not_found` (names the offending side) */
       404: {
         headers: {
           [name: string]: unknown;

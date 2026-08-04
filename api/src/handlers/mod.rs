@@ -28,6 +28,9 @@ pub(crate) const NO_CACHE_CONTROL: &str = "no-cache";
 
 pub(crate) const JSON_CONTENT_TYPE: &str = "application/json";
 pub(crate) const ATOM_CONTENT_TYPE: &str = "application/atom+xml; charset=utf-8";
+/// Raw unified diff and format-patch bodies — repository content is
+/// untrusted, so callers pair this with `X-Content-Type-Options: nosniff`.
+pub(crate) const TEXT_PLAIN_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
 
 pub(crate) const DEFAULT_LIMIT: usize = 50;
 pub(crate) const MAX_LIMIT: usize = 100;
@@ -81,6 +84,19 @@ pub(crate) fn clean_path(raw: Option<&str>) -> Option<PathBuf> {
     raw.map(|path| path.trim_matches('/'))
         .filter(|path| !path.is_empty())
         .map(PathBuf::from)
+}
+
+/// Replaces everything outside `[A-Za-z0-9._-]` with `-` (`feature/x` →
+/// `feature-x`). The result is ASCII-safe for a `Content-Disposition`
+/// filename (no RFC 6266 escaping needed) and for the archive prefix.
+pub(crate) fn sanitize_component(component: &str) -> String {
+    component
+        .chars()
+        .map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '.' | '_' | '-' => c,
+            _ => '-',
+        })
+        .collect()
 }
 
 /// Serves one per-repo endpoint through the response cache
@@ -355,5 +371,12 @@ mod tests {
             "\"94739392266bcbd2a4dcc7e02f57b7cf4ba7ec02-1753000000.42\""
         );
         assert_ne!(validator_etag(&unborn), validator_etag(&with_head));
+    }
+
+    #[test]
+    fn sanitize_component_should_keep_safe_chars_only() {
+        assert_eq!(sanitize_component("feature/x"), "feature-x");
+        assert_eq!(sanitize_component("v1.0_rc-2"), "v1.0_rc-2");
+        assert_eq!(sanitize_component("한글 \"quote\""), "----quote-");
     }
 }

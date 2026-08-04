@@ -15,7 +15,8 @@ use tokio::process::Command;
 use tokio_util::io::ReaderStream;
 
 use super::{
-    IMMUTABLE_CACHE_CONTROL, NO_CACHE_CONTROL, if_none_match, not_modified, validator_etag,
+    IMMUTABLE_CACHE_CONTROL, NO_CACHE_CONTROL, if_none_match, not_modified, sanitize_component,
+    validator_etag,
 };
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::{meta, open, resolve};
@@ -67,19 +68,6 @@ fn parse_archive_target(rest: &str) -> Result<(&str, ArchiveFormat), ApiError> {
         )));
     }
     Ok((refname, format))
-}
-
-/// Replaces everything outside `[A-Za-z0-9._-]` with `-` (`feature/x` →
-/// `feature-x`). The result is ASCII-safe for the `Content-Disposition`
-/// filename (no RFC 6266 escaping needed) and the archive prefix.
-fn sanitize_component(component: &str) -> String {
-    component
-        .chars()
-        .map(|c| match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '.' | '_' | '-' => c,
-            _ => '-',
-        })
-        .collect()
 }
 
 /// Source archive
@@ -236,12 +224,5 @@ mod tests {
                 "rest {rest:?} was not rejected"
             );
         }
-    }
-
-    #[test]
-    fn sanitize_component_should_keep_safe_chars_only() {
-        assert_eq!(sanitize_component("feature/x"), "feature-x");
-        assert_eq!(sanitize_component("v1.0_rc-2"), "v1.0_rc-2");
-        assert_eq!(sanitize_component("한글 \"quote\""), "----quote-");
     }
 }

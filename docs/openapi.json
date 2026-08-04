@@ -892,6 +892,124 @@
         }
       }
     },
+    "/api/v1/repos/{repo}/patch": {
+      "get": {
+        "tags": [
+          "diff"
+        ],
+        "summary": "Format-patch series",
+        "description": "`git format-patch`-style mbox series for the commit range `(from, to]` —\n`from` **excluded**, the opposite convention from `/diff`/`/rawdiff`.\nEvery commit is diffed against its own first parent, including merges\n(`git format-patch` itself skips merges; every other axgit diff is\nfirst-parent, so this endpoint stays consistent with those instead).\nRejects (`400`) rather than truncates a range over\n[`crate::repo::diff::MAX_PATCH_COMMITS`] commits. For `git am`.\n\nIncludes the author's name and email in `From:` headers — required for\n`git am` to preserve authorship, and the one axgit response that exposes a\nplain email address (docs/DECISIONS.md #37). Marked `noindex, nofollow`.",
+        "operationId": "get_patch",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Start of the commit range, **excluded** (`git format-patch\n<from>..<to>`) — unlike `from` on `/diff`/`/rawdiff`, which names the\nother side of a tree comparison. Omitted renders a single patch for\n`to` alone.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "End of the range (inclusive). Defaults to `HEAD`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "feature/x"
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Restrict every commit's diff to one file (literal match, no globbing).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "mbox-format patch series, no size limit. Immutable caching only when every side given resolves to the exact requested string as a full sha.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable`"
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`inline; filename=\"{repo}-{safe_to}.patch\"`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent when immutable"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `nosniff`"
+              },
+              "X-Robots-Tag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `noindex, nofollow`"
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — commit range exceeds the patch-count limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found` (names the offending side)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/repos/{repo}/raw/{ref}/{path}": {
       "get": {
         "tags": [
@@ -978,6 +1096,135 @@
           },
           "404": {
             "description": "`repo_not_found`, `ref_not_found`, `path_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repos/{repo}/rawdiff": {
+      "get": {
+        "tags": [
+          "diff"
+        ],
+        "summary": "Raw unified diff",
+        "description": "Plain unified diff between two revisions (`git diff <from> <to>`, the same\ntwo-dot semantics as `GET /diff` — not a merge-base `...` diff), for\n`git apply`. **No line/file caps** — unlike the structured diffs, a\ntruncated patch would be a corrupt one.",
+        "operationId": "get_rawdiff",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Old side of the comparison (`git diff <from> <to>` — not a merge-base\n`...` diff). Defaults to `to`'s first parent (the empty tree for a\nroot commit).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "New side of the comparison. Defaults to `HEAD`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "feature/x"
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Restrict the diff to one file (literal match, no globbing). A path\nneither side touched yields `files: []`, not a 404.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "context",
+            "in": "query",
+            "description": "Context lines around each change. Parsed manually so an invalid value\nyields the JSON `invalid_param` envelope instead of axum's plain-text\n400. Never clamped.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 0
+            },
+            "example": 3
+          },
+          {
+            "name": "ignorews",
+            "in": "query",
+            "description": "Ignore whitespace-only changes (`git diff --ignore-all-space`).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "example": "1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plain unified diff, no size limit. Immutable caching only when every side given resolves to the exact requested string as a full sha.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`, or `public, max-age=31536000, immutable`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; absent when immutable"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `nosniff`"
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — bad `context` or `ignorews`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found` (names the offending side)",
             "content": {
               "application/json": {
                 "schema": {

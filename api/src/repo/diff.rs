@@ -7,7 +7,10 @@
 
 use std::path::Path;
 
-use git2::{Commit, Delta, Diff, DiffDelta, DiffOptions, Patch, Repository, Tree};
+use git2::{
+    Commit, Delta, Diff, DiffDelta, DiffFormat, DiffOptions, Email, EmailCreateOptions, Patch,
+    Repository, Sort, Tree,
+};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -26,6 +29,11 @@ pub const DEFAULT_CONTEXT: u32 = 3;
 /// Upper bound on the `context=` query param. Keeps the cache-key value space
 /// finite and stops a huge value from rendering whole files as one hunk.
 pub const MAX_CONTEXT: u32 = 100;
+/// Upper bound on the number of commits `format_patch` will render as one
+/// series. cgit has no analogue (no `patch` endpoint at all); a half-applied,
+/// silently-truncated patch series is worse than an error, so this rejects
+/// rather than truncates.
+pub const MAX_PATCH_COMMITS: usize = 100;
 
 /// Display options every diff entry point threads through to `DiffOptions`.
 /// `Copy` so handlers can move it into the `cached_response` closure freely.
@@ -223,6 +231,109 @@ pub fn rev_diff(
         diffstat,
         files,
     })
+}
+
+/// Plain unified diff between two revisions (`cmd=rawdiff`), honoring
+/// `params`. **No caps**: unlike the JSON diffs, a truncated patch would be a
+/// corrupt one, defeating the endpoint's purpose (`git apply`/`git am`).
+pub fn raw_diff(
+    repo: &Repository,
+    from: Option<&Commit>,
+    to: &Commit,
+    params: &DiffParams<'_>,
+) -> Result<Vec<u8>, ApiError> {
+    let old_tree = match from {
+        Some(commit) => Some(commit.tree()?),
+        None => first_parent_tree(to)?,
+    };
+    let new_tree = to.tree()?;
+    let diff = build_diff(repo, old_tree.as_ref(), Some(&new_tree), params)?;
+    let mut out = Vec::new();
+    diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
+        // 'F' (file header) and 'H' (hunk header) lines already carry their
+        // full text; only the three content origins need the prefix
+        // char libgit2 deliberately excludes from `content()` re-added.
+        if matches!(line.origin(), ' ' | '+' | '-') {
+            out.push(line.origin() as u8);
+        }
+        out.extend_from_slice(line.content());
+        true
+    })?;
+    Ok(out)
+}
+
+/// `git format-patch`-style mbox series for the commit range `(from, to]`
+/// (`cmd=patch`) — `from` is *excluded*, unlike `raw_diff`'s `from`, which is
+/// the other side of a tree comparison. `from: None` renders a single patch
+/// for `to` alone. Every commit is diffed against its own first parent
+/// (including merges), consistent with the rest of this module rather than
+/// `git format-patch`'s default of skipping merges entirely.
+///
+/// Deliberately **not capped or truncated** past [`MAX_PATCH_COMMITS`]: a
+/// silently-shortened series would apply cleanly and corrupt history, so an
+/// oversized range is rejected outright.
+pub fn format_patch(
+    repo: &Repository,
+    from: Option<&Commit>,
+    to: &Commit,
+    path: Option<&Path>,
+) -> Result<Vec<u8>, ApiError> {
+    // `from: None` is a single patch for `to` alone, not "walk to the root" —
+    // there is nothing to hide, so a revwalk isn't the right tool at all.
+    let oids = match from {
+        None => vec![to.id()],
+        Some(from) => {
+            let mut revwalk = repo.revwalk()?;
+            // Topological (children before parents) with time as a tiebreak
+            // — default `Sort::NONE` is documented as implementation-defined,
+            // and pure time sorting is unreliable when commits share a
+            // timestamp (common in fixtures, possible in real history from a
+            // fast rebase/import). Reversed below to the oldest -> newest
+            // series order `git format-patch` produces.
+            revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)?;
+            revwalk.push(to.id())?;
+            revwalk.hide(from.id())?;
+            let mut oids = Vec::new();
+            for oid in revwalk {
+                oids.push(oid?);
+                if oids.len() > MAX_PATCH_COMMITS {
+                    return Err(ApiError::InvalidParam(format!(
+                        "commit range exceeds the {MAX_PATCH_COMMITS}-commit patch limit"
+                    )));
+                }
+            }
+            oids.reverse();
+            oids
+        }
+    };
+
+    let total = oids.len();
+    let mut out = Vec::new();
+    let diff_params = DiffParams {
+        path,
+        ..DiffParams::default()
+    };
+    for (idx, oid) in oids.iter().enumerate() {
+        let commit = repo.find_commit(*oid)?;
+        let old_tree = first_parent_tree(&commit)?;
+        let new_tree = commit.tree()?;
+        let diff = build_diff(repo, old_tree.as_ref(), Some(&new_tree), &diff_params)?;
+        let commit_id = commit.id();
+        let summary = commit.summary_bytes().unwrap_or_default();
+        let body = commit.body_bytes().unwrap_or_default();
+        let email = Email::from_diff(
+            &diff,
+            idx + 1,
+            total,
+            &commit_id,
+            summary,
+            body,
+            &commit.author(),
+            &mut EmailCreateOptions::new(),
+        )?;
+        out.extend_from_slice(email.as_slice());
+    }
+    Ok(out)
 }
 
 /// The (old, new) tree pair a commit diffs against — its first parent, or the

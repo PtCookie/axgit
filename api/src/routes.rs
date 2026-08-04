@@ -31,6 +31,8 @@ pub fn build_router(state: AppState) -> Router {
             get(commits::get_commit_diff),
         )
         .route("/repos/{repo}/diff", get(diff::get_rev_diff))
+        .route("/repos/{repo}/rawdiff", get(diff::get_rawdiff))
+        .route("/repos/{repo}/patch", get(diff::get_patch))
         // ref/path boundary inside the wildcard is resolved per request by
         // longest-ref matching (branch names may contain `/`), so a single
         // catch-all per view — see `repo::resolve::resolve_ref_path`.
