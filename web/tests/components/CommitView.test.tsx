@@ -11,6 +11,10 @@ vi.mock("@/lib/api/repos", () => ({
   getCommit: vi.fn(),
   getCommitDiff: vi.fn(),
   getRefs: vi.fn(),
+  // Link-only builders (never fetched) — real implementations, so the
+  // rendered hrefs reflect the actual URL shape rather than a stub.
+  commitPatchUrl: (name: string, sha: string) => `/api/v1/repos/${name}/patch?to=${sha}`,
+  commitRawDiffUrl: (name: string, sha: string) => `/api/v1/repos/${name}/rawdiff?to=${sha}`,
 }));
 
 const mockedGetCommit = vi.mocked(getCommit);
@@ -95,7 +99,7 @@ describe("CommitView", () => {
     await expect.element(page.getByText("three")).toBeVisible();
 
     expect(mockedGetCommit).toHaveBeenCalledWith("git-compose", DETAIL.sha);
-    expect(mockedGetCommitDiff).toHaveBeenCalledWith("git-compose", DETAIL.sha);
+    expect(mockedGetCommitDiff).toHaveBeenCalledWith("git-compose", DETAIL.sha, {});
   });
 
   it("shows a binary-file message instead of hunks", async () => {
@@ -188,5 +192,30 @@ describe("CommitView", () => {
 
     await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
     expect(page.getByRole("alert").elements().length).toBe(0);
+  });
+
+  it("forwards context and ignorews to the diff API", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    mockedGetCommitDiff.mockResolvedValue(DIFF);
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} context={10} ignorews={true} />);
+
+    await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
+    expect(mockedGetCommitDiff).toHaveBeenCalledWith("git-compose", DETAIL.sha, { context: 10, ignorews: 1 });
+  });
+
+  it("links to the tree, raw diff, and patch views for this commit", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    mockedGetCommitDiff.mockResolvedValue(DIFF);
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+
+    await expect
+      .element(page.getByRole("link", { name: "Tree" }))
+      .toHaveAttribute("href", `/git-compose/tree?ref=${DETAIL.sha}`);
+    await expect
+      .element(page.getByRole("link", { name: "Raw diff" }))
+      .toHaveAttribute("href", `/api/v1/repos/git-compose/rawdiff?to=${DETAIL.sha}`);
+    await expect
+      .element(page.getByRole("link", { name: "Patch" }))
+      .toHaveAttribute("href", `/api/v1/repos/git-compose/patch?to=${DETAIL.sha}`);
   });
 });

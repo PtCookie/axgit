@@ -1,4 +1,5 @@
 import { encodePath, encodeSegment } from "@/lib/api/path";
+import { DEFAULT_CONTEXT, type DiffOptions, diffOptionsQuery } from "@/lib/diff-options";
 
 /** Appends `?ref=` when a non-default ref is selected — shared by every
  *  href builder below (`?ref=`-only ref selection, DECISIONS.md #18). */
@@ -36,6 +37,25 @@ export function logHref(repo: string, params: { ref?: string; path?: string; cur
   }
   const query = search.toString();
   return `/${encodeSegment(repo)}/log${query ? `?${query}` : ""}`;
+}
+
+/** Builds a `/{repo}/commit/{sha}` href, optionally carrying the current diff
+ *  display options forward — so following a parent-commit link keeps the
+ *  same context/ignore-whitespace choice instead of silently resetting it.
+ *  `view` isn't accepted: unified vs. split isn't meaningful to carry across
+ *  a navigation to a *different* commit's diff the way context/ignorews are. */
+export function commitHref(
+  repo: string,
+  sha: string,
+  options: Partial<Pick<DiffOptions, "context" | "ignorews">> = {},
+): string {
+  const query = diffOptionsQuery({
+    view: "unified",
+    context: options.context ?? DEFAULT_CONTEXT,
+    ignorews: options.ignorews ?? false,
+  });
+  const search = new URLSearchParams(query).toString();
+  return `/${encodeSegment(repo)}/commit/${encodeSegment(sha)}${search ? `?${search}` : ""}`;
 }
 
 /** Builds a `/{repo}/blame/{path}` href. Same non-empty-`path` rule as

@@ -72,9 +72,31 @@ export function getCommit(name: string, sha: string): Promise<CommitDetail> {
   return apiFetch<CommitDetail>(`/repos/${encodeSegment(name)}/commits/${encodeSegment(sha)}`);
 }
 
-export function getCommitDiff(name: string, sha: string, path?: string): Promise<CommitDiff> {
-  const query = buildQuery({ path });
+export interface DiffQueryParams {
+  path?: string;
+  context?: number;
+  ignorews?: number;
+}
+
+export function getCommitDiff(name: string, sha: string, params: DiffQueryParams = {}): Promise<CommitDiff> {
+  const query = buildQuery(params);
   return apiFetch<CommitDiff>(`/repos/${encodeSegment(name)}/commits/${encodeSegment(sha)}/diff${query}`);
+}
+
+/** Link-only (never `fetch`ed by the client), same pattern as `rawUrl` — a
+ *  `git format-patch`-style series for this commit alone (`from` omitted),
+ *  for `git am`. Doesn't take `context`/`ignorews`: the api ignores them on
+ *  `/patch`, since a patch meant to be applied has no display options. */
+export function commitPatchUrl(name: string, sha: string): string {
+  return apiUrl(`/repos/${encodeSegment(name)}/patch?to=${encodeSegment(sha)}`);
+}
+
+/** Link-only (never `fetch`ed by the client) — plain unified diff against the
+ *  commit's first parent, honoring the same display options as the
+ *  structured diff above. */
+export function commitRawDiffUrl(name: string, sha: string, params: DiffQueryParams = {}): string {
+  const query = buildQuery({ ...params, to: sha });
+  return apiUrl(`/repos/${encodeSegment(name)}/rawdiff${query}`);
 }
 
 export function getTree(name: string, ref: string | undefined, path: string): Promise<TreeListing> {

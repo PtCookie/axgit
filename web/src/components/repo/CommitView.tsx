@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { encodeSegment } from "@/lib/api/path";
-import { getCommit, getCommitDiff } from "@/lib/api/repos";
+import { commitPatchUrl, commitRawDiffUrl, getCommit, getCommitDiff } from "@/lib/api/repos";
 import type { CommitAuthor, CommitDetail, CommitDiff } from "@/lib/api/schemas";
 import { useCommitRefs } from "@/lib/commit-refs";
+import { diffApiParams, parseDiffOptions } from "@/lib/diff-options";
 import { linkify } from "@/lib/format/linkify";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
+import { commitHref, treeHref } from "@/lib/repo-href";
 import { commitShaFromPathname, repoFromPathname } from "@/lib/repo-param";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
 import RefBadges from "@/components/repo/RefBadges";
 import DiffFileList from "@/components/repo/diff/DiffFileList";
+import DiffOptionsBar from "@/components/repo/diff/DiffOptionsBar";
 import DiffStatTable from "@/components/repo/diff/DiffStatTable";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -28,6 +30,10 @@ interface CommitViewProps {
    */
   repo?: string;
   sha?: string;
+  /** `context`/`ignorews` follow the same "prop overrides, `location` is the
+   *  default source" pattern as `repo`/`sha` — see `SearchView`. */
+  context?: number;
+  ignorews?: boolean;
 }
 
 /** Also rendered statically into the page shell as the island's
@@ -62,16 +68,23 @@ function AuthorLine({ label, author, at }: { label: string; author: CommitAuthor
   );
 }
 
-export default function CommitView({ repo, sha }: CommitViewProps) {
+export default function CommitView({ repo, sha, context: contextProp, ignorews: ignorewsProp }: CommitViewProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const resolvedSha = sha ?? commitShaFromPathname(window.location.pathname);
+  const urlOptions = parseDiffOptions(window.location.search);
+  const resolvedContext = contextProp ?? urlOptions.context;
+  const resolvedIgnorews = ignorewsProp ?? urlOptions.ignorews;
+  const options = { view: "unified" as const, context: resolvedContext, ignorews: resolvedIgnorews };
   const [state, setState] = useState<State>({ status: "loading" });
   const refsBySha = useCommitRefs(resolvedRepo);
 
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([getCommit(resolvedRepo, resolvedSha), getCommitDiff(resolvedRepo, resolvedSha)])
+    Promise.all([
+      getCommit(resolvedRepo, resolvedSha),
+      getCommitDiff(resolvedRepo, resolvedSha, diffApiParams(options)),
+    ])
       .then(([detail, diff]) => {
         if (!cancelled) {
           setState({ status: "data", detail, diff });
@@ -90,7 +103,7 @@ export default function CommitView({ repo, sha }: CommitViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [resolvedRepo, resolvedSha]);
+  }, [resolvedRepo, resolvedSha, resolvedContext, resolvedIgnorews]);
 
   if (state.status === "loading") {
     return <CommitViewSkeleton />;
@@ -106,7 +119,6 @@ export default function CommitView({ repo, sha }: CommitViewProps) {
   }
 
   const { detail, diff } = state;
-  const commitHref = (parentSha: string) => `/${encodeSegment(resolvedRepo)}/commit/${encodeSegment(parentSha)}`;
 
   return (
     <div className="space-y-6">
@@ -131,7 +143,11 @@ export default function CommitView({ repo, sha }: CommitViewProps) {
               <dt className="text-muted-foreground">Parents</dt>
               <dd className="space-x-2 font-mono">
                 {detail.parents.map((parent) => (
-                  <a key={parent} className="underline" href={commitHref(parent)}>
+                  <a
+                    key={parent}
+                    className="underline"
+                    href={commitHref(resolvedRepo, parent, { context: resolvedContext, ignorews: resolvedIgnorews })}
+                  >
                     {parent.slice(0, 12)}
                   </a>
                 ))}
@@ -144,6 +160,20 @@ export default function CommitView({ repo, sha }: CommitViewProps) {
             This is a merge commit — the diff below is shown against the first parent only.
           </p>
         )}
+        <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <a className="hover:text-foreground hover:underline" href={treeHref(resolvedRepo, "", detail.sha)}>
+            Tree
+          </a>
+          <a
+            className="hover:text-foreground hover:underline"
+            href={commitRawDiffUrl(resolvedRepo, detail.sha, diffApiParams(options))}
+          >
+            Raw diff
+          </a>
+          <a className="hover:text-foreground hover:underline" href={commitPatchUrl(resolvedRepo, detail.sha)}>
+            Patch
+          </a>
+        </div>
       </div>
 
       {detail.message && (
@@ -153,6 +183,8 @@ export default function CommitView({ repo, sha }: CommitViewProps) {
       )}
 
       <DiffStatTable stat={detail.diffstat} />
+
+      <DiffOptionsBar options={options} />
 
       <DiffFileList truncated={diff.truncated} files={diff.files} />
     </div>
