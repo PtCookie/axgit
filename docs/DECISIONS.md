@@ -1295,3 +1295,29 @@ contract change in any of these — all four consume endpoints #1/#2/#38 already
   browser) in addition to the mocked component/e2e tests — the split view's intra-line spans and
   Shiki's per-token color were checked to actually compose correctly on screen, not just assumed
   from the two algorithms' unit tests in isolation.
+
+## #40 "Compare" entry point on the refs page: two independent directions, `getRepo` as decoration
+
+Closed one of the two candidates #39 deferred (the other, prefilling the idle compare page's `to`
+from the default branch, is unchanged). Web-only — `RefsView.tsx` is the only file with real
+logic changes.
+
+- **`getRepo(repo)` is fetched in its own effect, parallel to and independent of `RefsView`'s
+  existing `getRefs` fetch**, purely to read `default_branch` — `RefsInfo` has no such field. This
+  is decoration, not required data: a failure never touches the page's loading/error state, it just
+  leaves the new Compare column's cells empty. Same rule already applied to `useCommitRefs` (#34)
+  and to `DiffView`'s own parallel `getRefs` call for its revision datalist — not a new pattern,
+  a third application of one.
+- **Branches and tags compare in opposite directions.** Branches: `from={default_branch}`,
+  `to={branch.name}` — "what does this branch have that the default doesn't." Tags:
+  `from={tag.name}`, `to={default_branch}` — "what's landed since this tag." A tag almost always
+  points at an ancestor of the default branch, so using the branches' direction for tags too would
+  make most tag comparisons show an empty or backwards-looking diff, forcing a `Swap` click every
+  time. Both reuse the existing `compareHref` (`lib/repo-href.ts`) unchanged.
+- The default branch's own branch row gets no Compare link (self-comparison is always empty) — an
+  em dash, matching the tables' existing missing-value convention, rather than a link to a diff
+  that's guaranteed to render nothing.
+- **Each link's accessible name is `Compare {from} with {to}`, via `aria-label`** — identical
+  reasoning to #39's commit-parent `(diff)` links: a table full of identically-named "Compare"
+  links is an accessibility-tree ambiguity as well as a guaranteed Playwright strict-mode failure.
+- No new route, so `shellFor`/`shell_for`/`RepoNav.astro` are untouched; no API contract change.

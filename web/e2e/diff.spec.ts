@@ -20,7 +20,7 @@ const TO_SHA = "bbb333444555bbb333444555bbb333444555bbb";
 
 const REFS = {
   branches: [{ name: "main", target: TO_SHA, committed_at: "2026-07-24T13:06:00+09:00" }],
-  tags: [],
+  tags: [{ name: "v1.0.0", target: FROM_SHA, annotation: "First release", tagged_at: "2026-01-01T00:00:00+09:00" }],
 };
 
 const REV_DIFF = {
@@ -187,4 +187,27 @@ test("toggling unified/split updates the URL and the rendered table shape", asyn
   await expect(page.getByRole("cell", { name: "three", exact: true })).toBeVisible();
   // The origin-character column is dropped in split view.
   await expect(page.getByRole("cell", { name: "-", exact: true })).not.toBeVisible();
+});
+
+test("the refs page's Compare links lead to the diff page (branch and tag rows)", async ({ page }) => {
+  await page.route("**/api/v1/repos/git-compose", async (route) => {
+    await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
+    await route.fulfill({ json: REFS });
+  });
+  await page.route("**/api/v1/repos/git-compose/diff*", async (route) => {
+    await route.fulfill({ json: REV_DIFF });
+  });
+
+  await page.goto("/git-compose/refs");
+
+  // The default branch (`main`, from `SUMMARY.default_branch`) has no
+  // Compare link on its own row — only `—`.
+  await expect(page.getByRole("link", { name: "Compare main with main" })).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Compare v1.0.0 with main" }).click();
+
+  await expect(page).toHaveURL("/git-compose/diff?from=v1.0.0&to=main");
+  await expect(page.getByText("Comparing")).toBeVisible();
 });

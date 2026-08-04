@@ -730,6 +730,26 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - Deferred (see Candidates): stat-only mode (`dt=2`), a "Compare" entry point from the refs page,
     and prefilling the idle compare page's `to` from the repo's default branch.
 
+- **"Compare" entry point on the `/{repo}/refs` page** (DECISIONS.md #40), closing one of the two
+  candidates the diff/patch work above deferred (the other, prefilling the idle compare page's
+  `to` from the default branch, is still open). Web-only, no API contract change. Finalized design:
+  - `RefsInfo` (`GET /refs`) has no default-branch field, so `RefsView.tsx` fetches `getRepo(repo)`
+    in a second, independent effect purely to get `default_branch` for building each row's link —
+    decoration, not required data: a failure is silent and just leaves the new Compare column
+    empty, following #34/#21's precedent (`useCommitRefs`, `ReadmeView`'s 404 handling) and
+    `DiffView`'s own parallel `getRefs` fetch for its revision datalist.
+  - **Comparison direction is opposite between the two tables**, both built with the existing
+    `compareHref` (`lib/repo-href.ts`, already used by the diff page/commit parent links): Branches
+    link `from={default_branch}` `to={branch.name}` ("what's only on this branch"); Tags link
+    `from={tag.name}` `to={default_branch}` ("what's landed since this tag"). Picking one direction
+    for both would leave a tag's comparison showing an empty/reversed diff most of the time.
+  - The default branch's own row has no Compare link (comparing a ref to itself is always empty) —
+    an em dash, same as the tables' existing missing-value cells.
+  - Each link's accessible name is `Compare {from} with {to}` (`aria-label`, not the visible
+    "Compare" text) — same treatment #39 gave the commit page's per-parent `(diff)` links, needed
+    for the same reason: a table full of same-named "Compare" links is both an a11y-tree ambiguity
+    and a guaranteed Playwright strict-mode failure.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
@@ -758,9 +778,6 @@ the candidates below, or from a fresh request.
   choice, not an API gap — unless the payload size of fetching unused hunks ever becomes a real
   complaint, in which case the right shape is `?stat=1` on `GET /diff` (omitting `hunks` **and**
   bypassing `MAX_DIFF_FILES`, since a capped stat view defeats the point).
-- A "Compare" entry point from the `/{repo}/refs` page (e.g. comparing a branch against the default
-  branch) — the compare page today is only reachable via the `Diff` tab (bare) or a commit's
-  `(diff)` parent links.
 - The idle `/{repo}/diff` page (no `from`/`to` yet) could prefill `to` from `getRepo(repo)
   .default_branch` instead of showing a fully bare picker — costs one extra fetch on that path
   only, dropped to keep the compare-page commit smaller.

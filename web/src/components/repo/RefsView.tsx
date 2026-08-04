@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { getRefs } from "@/lib/api/repos";
+import { getRefs, getRepo } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
+import { compareHref } from "@/lib/repo-href";
 import { repoFromPathname } from "@/lib/repo-param";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -34,6 +35,7 @@ export function RefsViewSkeleton() {
 export default function RefsView({ repo }: RefsViewProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const [state, setState] = useState<State>({ status: "loading" });
+  const [defaultBranch, setDefaultBranch] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +54,29 @@ export default function RefsView({ repo }: RefsViewProps) {
           status: "error",
           error: error instanceof ApiError ? error : new ApiError("internal", "unknown error", 0),
         });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedRepo]);
+
+  useEffect(() => {
+    // Powers each row's "Compare" link only — `RefsInfo` itself carries no
+    // default-branch field, so it's fetched separately here. Decoration, not
+    // required data: a failure is silent and just leaves the Compare column
+    // empty, same rule as `useCommitRefs` (DECISIONS.md #34) and `DiffView`'s
+    // own `getRefs` call for its revision datalist.
+    let cancelled = false;
+
+    getRepo(resolvedRepo)
+      .then((summary) => {
+        if (!cancelled) {
+          setDefaultBranch(summary.default_branch);
+        }
+      })
+      .catch(() => {
+        /* decoration only */
       });
 
     return () => {
@@ -87,6 +112,7 @@ export default function RefsView({ repo }: RefsViewProps) {
                 <TableHead>Name</TableHead>
                 <TableHead>Commit</TableHead>
                 <TableHead>Committed</TableHead>
+                <TableHead>Compare</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -101,6 +127,19 @@ export default function RefsView({ repo }: RefsViewProps) {
                       </span>
                     ) : (
                       "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {defaultBranch === null ? null : branch.name === defaultBranch ? (
+                      "—"
+                    ) : (
+                      <a
+                        className="hover:underline"
+                        aria-label={`Compare ${defaultBranch} with ${branch.name}`}
+                        href={compareHref(resolvedRepo, { from: defaultBranch, to: branch.name })}
+                      >
+                        Compare
+                      </a>
                     )}
                   </TableCell>
                 </TableRow>
@@ -122,6 +161,7 @@ export default function RefsView({ repo }: RefsViewProps) {
                 <TableHead>Commit</TableHead>
                 <TableHead>Message</TableHead>
                 <TableHead>Tagged</TableHead>
+                <TableHead>Compare</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -135,6 +175,17 @@ export default function RefsView({ repo }: RefsViewProps) {
                       <span title={formatAbsoluteTime(tag.tagged_at)}>{formatRelativeTime(tag.tagged_at)}</span>
                     ) : (
                       "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {defaultBranch === null ? null : (
+                      <a
+                        className="hover:underline"
+                        aria-label={`Compare ${tag.name} with ${defaultBranch}`}
+                        href={compareHref(resolvedRepo, { from: tag.name, to: defaultBranch })}
+                      >
+                        Compare
+                      </a>
                     )}
                   </TableCell>
                 </TableRow>
