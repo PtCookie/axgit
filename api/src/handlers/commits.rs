@@ -1,17 +1,17 @@
 //! Handlers for `/repos/{repo}/commits` and the per-commit endpoints.
 
-use std::path::PathBuf;
-
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::{JSON_CONTENT_TYPE, cached_response, parse_limit};
+use super::{
+    JSON_CONTENT_TYPE, cached_response, clean_path, parse_context, parse_flag, parse_limit,
+};
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::commits::{CommitDetail, CommitsPage};
-use crate::repo::diff::CommitDiff;
+use crate::repo::diff::{CommitDiff, DiffParams};
 use crate::repo::{commits, diff, resolve};
 use crate::state::AppState;
 
@@ -32,13 +32,6 @@ pub struct CommitsQuery {
     /// envelope instead of axum's plain-text 400. Never clamped.
     #[param(value_type = Option<u32>, minimum = 1, maximum = 100, example = 50)]
     limit: Option<String>,
-}
-
-/// Tree lookups need a relative path without empty segments at the ends.
-fn clean_path(raw: Option<&str>) -> Option<PathBuf> {
-    raw.map(|path| path.trim_matches('/'))
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
 }
 
 /// Commit log
@@ -171,6 +164,15 @@ pub struct DiffQuery {
     /// Restrict the diff to one file (literal match, no globbing). A path that
     /// this commit did not touch yields `files: []`, not a 404.
     path: Option<String>,
+    /// Context lines around each change. Parsed manually so an invalid value
+    /// yields the JSON `invalid_param` envelope instead of axum's plain-text
+    /// 400. Never clamped.
+    #[param(value_type = Option<u32>, minimum = 0, maximum = 100, example = 3)]
+    context: Option<String>,
+    /// Ignore whitespace-only changes (`git diff --ignore-all-space`). Line
+    /// `content` is unaffected — only which lines/hunks are shown changes.
+    #[param(value_type = Option<bool>, example = "1")]
+    ignorews: Option<String>,
 }
 
 /// Structured commit diff
@@ -195,6 +197,7 @@ pub struct DiffQuery {
             ),
         ),
         (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 400, description = "`invalid_param` — bad `context` or `ignorews`", body = ErrorResponse),
         (status = 404, description = "`repo_not_found`, `ref_not_found`", body = ErrorResponse),
     ),
 )]
@@ -205,7 +208,9 @@ pub async fn get_commit_diff(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let path = clean_path(query.path.as_deref());
-    let params = format!("sha={sha}&path={path:?}");
+    let context = parse_context(query.context.as_deref())?;
+    let ignore_whitespace = parse_flag(query.ignorews.as_deref(), "ignorews")?;
+    let params = format!("sha={sha}&path={path:?}&context={context}&ws={ignore_whitespace}");
     cached_response(
         &state,
         &name,
@@ -215,7 +220,12 @@ pub async fn get_commit_diff(
         &headers,
         move |repo| {
             let commit = resolve::resolve_commit(repo, &sha)?;
-            let commit_diff = diff::commit_diff(repo, &commit, path.as_deref())?;
+            let diff_params = DiffParams {
+                path: path.as_deref(),
+                context,
+                ignore_whitespace,
+            };
+            let commit_diff = diff::commit_diff(repo, &commit, &diff_params)?;
             Ok((sha == commit_diff.sha, serde_json::to_vec(&commit_diff)?))
         },
     )

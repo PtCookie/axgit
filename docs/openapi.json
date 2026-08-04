@@ -632,6 +632,29 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "context",
+            "in": "query",
+            "description": "Context lines around each change. Parsed manually so an invalid value\nyields the JSON `invalid_param` envelope instead of axum's plain-text\n400. Never clamped.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 0
+            },
+            "example": 3
+          },
+          {
+            "name": "ignorews",
+            "in": "query",
+            "description": "Ignore whitespace-only changes (`git diff --ignore-all-space`). Line\n`content` is unaffected — only which lines/hunks are shown changes.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "example": "1"
           }
         ],
         "responses": {
@@ -661,6 +684,16 @@
           },
           "304": {
             "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — bad `context` or `ignorews`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "`repo_not_found`, `ref_not_found`",

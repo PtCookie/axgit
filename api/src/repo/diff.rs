@@ -7,18 +7,48 @@
 
 use std::path::Path;
 
-use git2::{Commit, Delta, Diff, DiffDelta, DiffOptions, Patch, Repository};
+use git2::{Commit, Delta, Diff, DiffDelta, DiffOptions, Patch, Repository, Tree};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::error::ApiError;
 
 /// Per-file cap on rendered diff lines. Hunks are dropped whole once the cap
-/// would be crossed — a hunk is never cut in the middle.
+/// would be crossed — a hunk is never cut in the middle. Applies to the
+/// structured JSON diffs only: the raw patch/rawdiff endpoints render in full.
 pub const MAX_FILE_DIFF_LINES: usize = 1000;
-/// Cap on files rendered by the diff endpoint. The diffstat has no cap, so the
-/// full file list stays available on the commit detail response.
+/// Cap on files rendered by the diff endpoints (JSON only, see above). The
+/// diffstat has no cap, so the full file list stays available on the commit
+/// detail response.
 pub const MAX_DIFF_FILES: usize = 300;
+/// libgit2's own default, and what plain `git diff` uses.
+pub const DEFAULT_CONTEXT: u32 = 3;
+/// Upper bound on the `context=` query param. Keeps the cache-key value space
+/// finite and stops a huge value from rendering whole files as one hunk.
+pub const MAX_CONTEXT: u32 = 100;
+
+/// Display options every diff entry point threads through to `DiffOptions`.
+/// `Copy` so handlers can move it into the `cached_response` closure freely.
+#[derive(Debug, Clone, Copy)]
+pub struct DiffParams<'a> {
+    /// Literal single-path restriction; glob matching is not part of the contract.
+    pub path: Option<&'a Path>,
+    pub context: u32,
+    /// cgit `ignorews=1` → libgit2 `GIT_DIFF_IGNORE_WHITESPACE`
+    /// (`git diff --ignore-all-space`). Line `content` is still the original
+    /// bytes — libgit2 only ignores whitespace when deciding what changed.
+    pub ignore_whitespace: bool,
+}
+
+impl Default for DiffParams<'_> {
+    fn default() -> Self {
+        Self {
+            path: None,
+            context: DEFAULT_CONTEXT,
+            ignore_whitespace: false,
+        }
+    }
+}
 
 /// How a file changed between the two trees. Rename detection runs with
 /// libgit2 defaults (renames only, 50% similarity).
@@ -120,9 +150,17 @@ pub struct Line {
     pub new_lineno: Option<u32>,
 }
 
-/// Diffstat against the first parent, covering every changed file.
+/// Diffstat against the first parent, covering every changed file. Always
+/// uses default display options — the diffstat is the canonical file list for
+/// a commit (docs/API.md) and must not vary with a display toggle.
 pub fn diffstat(repo: &Repository, commit: &Commit) -> Result<DiffStat, ApiError> {
-    let diff = build_diff(repo, commit, None)?;
+    let (old_tree, new_tree) = commit_trees(commit)?;
+    let diff = build_diff(
+        repo,
+        old_tree.as_ref(),
+        Some(&new_tree),
+        &DiffParams::default(),
+    )?;
     let mut files = Vec::with_capacity(diff.deltas().len());
     let (mut total_additions, mut total_deletions) = (0, 0);
     for idx in 0..diff.deltas().len() {
@@ -139,20 +177,70 @@ pub fn diffstat(repo: &Repository, commit: &Commit) -> Result<DiffStat, ApiError
     })
 }
 
-/// Structured diff against the first parent, optionally limited to `path`.
-/// A path absent from the commit's changes yields an empty file list, not an
-/// error — same contract as the log endpoint's `path` filter.
+/// Structured diff against the first parent, honoring `params`. A `path` the
+/// commit's changes don't touch yields an empty file list, not an error —
+/// same contract as the log endpoint's `path` filter.
 pub fn commit_diff(
     repo: &Repository,
     commit: &Commit,
-    path: Option<&Path>,
+    params: &DiffParams<'_>,
 ) -> Result<CommitDiff, ApiError> {
-    let diff = build_diff(repo, commit, path)?;
+    let (old_tree, new_tree) = commit_trees(commit)?;
+    let diff = build_diff(repo, old_tree.as_ref(), Some(&new_tree), params)?;
+    let (files, truncated) = render_files(&diff)?;
+    Ok(CommitDiff {
+        sha: commit.id().to_string(),
+        parent: commit.parent_id(0).ok().map(|id| id.to_string()),
+        truncated,
+        files,
+    })
+}
+
+/// The (old, new) tree pair a commit diffs against — its first parent, or the
+/// empty tree (`None`) for a root commit.
+fn commit_trees<'r>(commit: &Commit<'r>) -> Result<(Option<Tree<'r>>, Tree<'r>), ApiError> {
+    let new_tree = commit.tree()?;
+    let old_tree = if commit.parent_count() > 0 {
+        Some(commit.parent(0)?.tree()?)
+    } else {
+        None
+    };
+    Ok((old_tree, new_tree))
+}
+
+/// Tree-to-tree diff with rename detection and `params`' display options
+/// applied. `None` on either side is the empty tree.
+fn build_diff<'r>(
+    repo: &'r Repository,
+    old_tree: Option<&Tree<'_>>,
+    new_tree: Option<&Tree<'_>>,
+    params: &DiffParams<'_>,
+) -> Result<Diff<'r>, ApiError> {
+    let mut opts = DiffOptions::new();
+    if let Some(path) = params.path {
+        // Literal single-path restriction; glob matching is not part of the
+        // API contract.
+        opts.pathspec(path);
+        opts.disable_pathspec_match(true);
+    }
+    opts.context_lines(params.context);
+    if params.ignore_whitespace {
+        opts.ignore_whitespace(true);
+    }
+    let mut diff = repo.diff_tree_to_tree(old_tree, new_tree, Some(&mut opts))?;
+    // libgit2 defaults: renames only (no copies), 50% similarity.
+    diff.find_similar(None)?;
+    Ok(diff)
+}
+
+/// Runs the [`MAX_DIFF_FILES`]/[`MAX_FILE_DIFF_LINES`] render loop shared by
+/// every JSON diff entry point. Returns `(files, truncated)`.
+fn render_files(diff: &Diff<'_>) -> Result<(Vec<FileDiff>, bool), ApiError> {
     let delta_count = diff.deltas().len();
     let rendered = delta_count.min(MAX_DIFF_FILES);
     let mut files = Vec::with_capacity(rendered);
     for idx in 0..rendered {
-        let (patch, stat) = load_file(&diff, idx)?;
+        let (patch, stat) = load_file(diff, idx)?;
         let (hunks, truncated) = match patch {
             Some(mut patch) if !stat.binary => collect_hunks(&mut patch)?,
             _ => (Vec::new(), false),
@@ -163,38 +251,7 @@ pub fn commit_diff(
             hunks,
         });
     }
-    Ok(CommitDiff {
-        sha: commit.id().to_string(),
-        parent: commit.parent_id(0).ok().map(|id| id.to_string()),
-        truncated: delta_count > MAX_DIFF_FILES,
-        files,
-    })
-}
-
-/// First-parent tree diff with rename detection; `None` old side (root commit)
-/// is the empty tree.
-fn build_diff<'r>(
-    repo: &'r Repository,
-    commit: &Commit<'_>,
-    path: Option<&Path>,
-) -> Result<Diff<'r>, ApiError> {
-    let new_tree = commit.tree()?;
-    let old_tree = if commit.parent_count() > 0 {
-        Some(commit.parent(0)?.tree()?)
-    } else {
-        None
-    };
-    let mut opts = DiffOptions::new();
-    if let Some(path) = path {
-        // Literal single-path restriction; glob matching is not part of the
-        // API contract.
-        opts.pathspec(path);
-        opts.disable_pathspec_match(true);
-    }
-    let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts))?;
-    // libgit2 defaults: renames only (no copies), 50% similarity.
-    diff.find_similar(None)?;
-    Ok(diff)
+    Ok((files, delta_count > MAX_DIFF_FILES))
 }
 
 /// Loads the patch for delta `idx` and summarizes it. The patch is returned so
@@ -427,7 +484,7 @@ mod tests {
         let root = commit_files(&repo, None, &[("big.txt", big.as_bytes())]);
         let commit = repo.find_commit(root).unwrap();
 
-        let diff = commit_diff(&repo, &commit, None).unwrap();
+        let diff = commit_diff(&repo, &commit, &DiffParams::default()).unwrap();
         let file = &diff.files[0];
         let rendered: usize = file.hunks.iter().map(|hunk| hunk.lines.len()).sum();
         // A single oversized hunk is dropped whole; the stats stay complete.
@@ -447,7 +504,7 @@ mod tests {
         let root = commit_files(&repo, None, &[("exact.txt", exact.as_bytes())]);
         let commit = repo.find_commit(root).unwrap();
 
-        let diff = commit_diff(&repo, &commit, None).unwrap();
+        let diff = commit_diff(&repo, &commit, &DiffParams::default()).unwrap();
         let file = &diff.files[0];
         let rendered: usize = file.hunks.iter().map(|hunk| hunk.lines.len()).sum();
         assert_eq!((file.truncated, rendered), (false, MAX_FILE_DIFF_LINES));
@@ -460,7 +517,7 @@ mod tests {
         let child = commit_files(&repo, Some(root), &[("a.txt", b"one\nthree\n")]);
         let commit = repo.find_commit(child).unwrap();
 
-        let diff = commit_diff(&repo, &commit, None).unwrap();
+        let diff = commit_diff(&repo, &commit, &DiffParams::default()).unwrap();
         let lines = &diff.files[0].hunks[0].lines;
         let shape: Vec<_> = lines
             .iter()
@@ -480,6 +537,73 @@ mod tests {
                 (LineOrigin::Deletion, "two", Some(2), None),
                 (LineOrigin::Addition, "three", None, Some(2)),
             ]
+        );
+    }
+
+    #[test]
+    fn commit_diff_should_widen_hunks_with_more_context() {
+        let (_dir, repo) = fixture();
+        // Two changes 8 lines apart: default context (3) keeps them as two
+        // separate hunks; context=10 pulls them into a shared hunk.
+        let mut lines: Vec<String> = (0..20).map(|i| format!("line {i}\n")).collect();
+        let root = commit_files(&repo, None, &[("a.txt", lines.join("").as_bytes())]);
+        lines[2] = "line 2 changed\n".to_owned();
+        lines[11] = "line 11 changed\n".to_owned();
+        let child = commit_files(&repo, Some(root), &[("a.txt", lines.join("").as_bytes())]);
+        let commit = repo.find_commit(child).unwrap();
+
+        let default_diff = commit_diff(&repo, &commit, &DiffParams::default()).unwrap();
+        assert_eq!(default_diff.files[0].hunks.len(), 2);
+
+        let wide_diff = commit_diff(
+            &repo,
+            &commit,
+            &DiffParams {
+                context: 10,
+                ..DiffParams::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(wide_diff.files[0].hunks.len(), 1);
+    }
+
+    #[test]
+    fn commit_diff_should_ignore_whitespace_only_changes_when_requested() {
+        let (_dir, repo) = fixture();
+        let root = commit_files(&repo, None, &[("a.txt", b"one\ntwo\n")]);
+        // Only whitespace changed on the second line.
+        let child = commit_files(&repo, Some(root), &[("a.txt", b"one\ntwo  \n")]);
+        let commit = repo.find_commit(child).unwrap();
+
+        let default_diff = commit_diff(&repo, &commit, &DiffParams::default()).unwrap();
+        assert!(
+            !default_diff.files[0].hunks.is_empty(),
+            "expected the whitespace change to be visible by default: {default_diff:?}"
+        );
+
+        let ignorews_diff = commit_diff(
+            &repo,
+            &commit,
+            &DiffParams {
+                ignore_whitespace: true,
+                ..DiffParams::default()
+            },
+        )
+        .unwrap();
+        // libgit2 still reports the file as changed (it went through
+        // find_similar/Modified), but with no visible hunks once whitespace
+        // is ignored.
+        // libgit2 recomputes line stats from the whitespace-ignoring patch
+        // too, so additions/deletions collapse to 0 along with the hunks.
+        assert_eq!(
+            (
+                ignorews_diff.files.len(),
+                ignorews_diff.files[0].hunks.len(),
+                ignorews_diff.files[0].stat.additions,
+                ignorews_diff.files[0].stat.deletions,
+            ),
+            (1, 0, 0, 0),
+            "unexpected diff with ignore_whitespace: {ignorews_diff:?}"
         );
     }
 }

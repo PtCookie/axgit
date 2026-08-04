@@ -378,6 +378,165 @@ async fn diff_should_return_404_for_unknown_sha() {
 }
 
 #[tokio::test]
+async fn context_should_widen_hunks_when_requested() {
+    let root = tempfile::tempdir().unwrap();
+    let bare = common::create_bare_repo(root.path(), "alpha.git");
+    let work = tempfile::tempdir().unwrap();
+    let work_path = work.path();
+    common::git(
+        work_path,
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+    let mut lines: Vec<String> = (0..20).map(|i| format!("line {i}\n")).collect();
+    std::fs::write(work_path.join("a.txt"), lines.join("")).unwrap();
+    commit_all(work_path, "feat: base");
+    lines[2] = "line 2 changed\n".to_owned();
+    lines[11] = "line 11 changed\n".to_owned();
+    std::fs::write(work_path.join("a.txt"), lines.join("")).unwrap();
+    let sha = commit_all(work_path, "fix: two changes");
+    common::git(work_path, &["push", "--quiet", "origin", "HEAD:main"]);
+
+    let default_json = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/commits/{sha}/diff"),
+    )
+    .await;
+    assert_eq!(
+        default_json["files"][0]["hunks"].as_array().map(Vec::len),
+        Some(2),
+        "unexpected response: {default_json}"
+    );
+
+    let wide_json = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/commits/{sha}/diff?context=10"),
+    )
+    .await;
+    assert_eq!(
+        wide_json["files"][0]["hunks"].as_array().map(Vec::len),
+        Some(1),
+        "unexpected response: {wide_json}"
+    );
+}
+
+#[tokio::test]
+async fn context_should_reject_out_of_range_and_non_numeric_values() {
+    let (root, shas) = setup();
+    for bad in ["101", "-1", "abc", ""] {
+        let (status, json) = common::get_json(
+            router_for(root.path()),
+            &format!("/api/v1/repos/alpha/commits/{}/diff?context={bad}", shas[1]),
+        )
+        .await;
+        assert_eq!(
+            (status, json["error"]["code"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("invalid_param")),
+            "context={bad:?} unexpectedly accepted: {json}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn ignorews_should_hide_whitespace_only_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let bare = common::create_bare_repo(root.path(), "alpha.git");
+    let work = tempfile::tempdir().unwrap();
+    let work_path = work.path();
+    common::git(
+        work_path,
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+    std::fs::write(work_path.join("a.txt"), "one\ntwo\n").unwrap();
+    commit_all(work_path, "feat: base");
+    std::fs::write(work_path.join("a.txt"), "one\ntwo  \n").unwrap();
+    let sha = commit_all(work_path, "style: trailing whitespace");
+    common::git(work_path, &["push", "--quiet", "origin", "HEAD:main"]);
+
+    let default_json = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/commits/{sha}/diff"),
+    )
+    .await;
+    assert!(
+        !default_json["files"][0]["hunks"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "expected the whitespace change to be visible by default: {default_json}"
+    );
+
+    let ignorews_json = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/commits/{sha}/diff?ignorews=1"),
+    )
+    .await;
+    let file = &ignorews_json["files"][0];
+    assert_eq!(
+        (
+            file["hunks"].as_array().map(Vec::len),
+            file["additions"].as_u64(),
+            file["deletions"].as_u64(),
+        ),
+        (Some(0), Some(0), Some(0)),
+        "unexpected response: {ignorews_json}"
+    );
+}
+
+#[tokio::test]
+async fn ignorews_should_reject_bad_values() {
+    let (root, shas) = setup();
+    let (status, json) = common::get_json(
+        router_for(root.path()),
+        &format!("/api/v1/repos/alpha/commits/{}/diff?ignorews=yes", shas[1]),
+    )
+    .await;
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_param")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn diff_options_should_be_part_of_the_cache_key() {
+    let root = tempfile::tempdir().unwrap();
+    let bare = common::create_bare_repo(root.path(), "alpha.git");
+    let work = tempfile::tempdir().unwrap();
+    let work_path = work.path();
+    common::git(
+        work_path,
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+    let mut lines: Vec<String> = (0..20).map(|i| format!("line {i}\n")).collect();
+    std::fs::write(work_path.join("a.txt"), lines.join("")).unwrap();
+    commit_all(work_path, "feat: base");
+    lines[2] = "line 2 changed\n".to_owned();
+    lines[11] = "line 11 changed\n".to_owned();
+    std::fs::write(work_path.join("a.txt"), lines.join("")).unwrap();
+    let sha = commit_all(work_path, "fix: two changes");
+    common::git(work_path, &["push", "--quiet", "origin", "HEAD:main"]);
+
+    // One shared router so the two requests hit the same in-process cache.
+    let router = router_for(root.path());
+    let (status_a, json_a) = common::get_json(
+        router.clone(),
+        &format!("/api/v1/repos/alpha/commits/{sha}/diff?context=3"),
+    )
+    .await;
+    let (status_b, json_b) = common::get_json(
+        router,
+        &format!("/api/v1/repos/alpha/commits/{sha}/diff?context=10"),
+    )
+    .await;
+    assert_eq!(status_a, StatusCode::OK, "unexpected response: {json_a}");
+    assert_eq!(status_b, StatusCode::OK, "unexpected response: {json_b}");
+    assert_ne!(
+        json_a, json_b,
+        "context=3 and context=10 unexpectedly hit the same cache entry"
+    );
+}
+
+#[tokio::test]
 async fn diff_should_return_404_for_unknown_repo() {
     let root = tempfile::tempdir().unwrap();
     let (status, json) = common::get_json(

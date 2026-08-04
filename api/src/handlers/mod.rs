@@ -6,6 +6,8 @@ pub mod repos;
 pub mod search;
 pub mod stats;
 
+use std::path::PathBuf;
+
 use axum::body::Bytes;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -43,6 +45,41 @@ pub(crate) fn parse_limit(raw: Option<&str>) -> Result<usize, ApiError> {
             "limit must be an integer between 1 and {MAX_LIMIT}"
         ))),
     }
+}
+
+/// Shared by every diff endpoint's `context=` param (docs/API.md). Parsed
+/// manually — see [`parse_limit`]. Never clamped.
+pub(crate) fn parse_context(raw: Option<&str>) -> Result<u32, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(crate::repo::diff::DEFAULT_CONTEXT);
+    };
+    match raw.parse::<u32>() {
+        Ok(context) if context <= crate::repo::diff::MAX_CONTEXT => Ok(context),
+        _ => Err(ApiError::InvalidParam(format!(
+            "context must be an integer between 0 and {}",
+            crate::repo::diff::MAX_CONTEXT
+        ))),
+    }
+}
+
+/// Shared boolean-flag parser for `ignorews=` and similar params: absent is
+/// `false`; `"0"`/`"false"`/`"1"`/`"true"` are accepted explicitly; anything
+/// else is `400 invalid_param`. Parsed manually — see [`parse_limit`].
+pub(crate) fn parse_flag(raw: Option<&str>, name: &str) -> Result<bool, ApiError> {
+    match raw {
+        None | Some("0") | Some("false") => Ok(false),
+        Some("1") | Some("true") => Ok(true),
+        Some(_) => Err(ApiError::InvalidParam(format!(
+            "{name} must be one of: 0, 1, true, false"
+        ))),
+    }
+}
+
+/// Tree/diff lookups need a relative path without empty segments at the ends.
+pub(crate) fn clean_path(raw: Option<&str>) -> Option<PathBuf> {
+    raw.map(|path| path.trim_matches('/'))
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
 }
 
 /// Serves one per-repo endpoint through the response cache

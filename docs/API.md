@@ -208,7 +208,7 @@ Commit detail: full message, author/committer, parents, diffstat. A superset of 
 - Binary files have `binary: true` and `additions`/`deletions` of 0.
 - `message`/`summary` are `null` for non-UTF-8 messages. The diffstat has no file count limit.
 
-### `GET /api/v1/repos/{repo}/commits/{sha}/diff?path=`
+### `GET /api/v1/repos/{repo}/commits/{sha}/diff?path=&context=&ignorews=`
 
 A unified diff structured as JSON (file → hunk → line). File-level fields follow the same rules
 as diffstat entries.
@@ -251,6 +251,13 @@ as diffstat entries.
 - Binary files get `binary: true` + `hunks: []`.
 - `path`: restricts the diff to a single file path (literal match, no glob support). A path that
   doesn't exist or wasn't changed in this commit returns `files: []`, not a 404.
+- `context`: integer `0..=100`, default `3` (libgit2's own default). Parsed manually — an invalid
+  value (out of range or non-numeric) is `400 invalid_param`, never clamped.
+- `ignorews`: `0`/`1`/`true`/`false`, default off. Maps to `git diff --ignore-all-space`. A file
+  whose only changes are whitespace still appears (`status` stays `modified`, not dropped from
+  `files`) but with `hunks: []` and `additions`/`deletions` both `0` — the same shape as a binary
+  file, since libgit2 recomputes line stats from the whitespace-ignoring patch too. Any other value
+  is `400 invalid_param`.
 
 ### `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
 

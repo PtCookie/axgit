@@ -1254,6 +1254,19 @@ export interface operations {
          *     this commit did not touch yields `files: []`, not a 404.
          */
         path?: string;
+        /**
+         * @description Context lines around each change. Parsed manually so an invalid value
+         *     yields the JSON `invalid_param` envelope instead of axum's plain-text
+         *     400. Never clamped.
+         * @example 3
+         */
+        context?: number;
+        /**
+         * @description Ignore whitespace-only changes (`git diff --ignore-all-space`). Line
+         *     `content` is unaffected — only which lines/hunks are shown changes.
+         * @example 1
+         */
+        ignorews?: boolean;
       };
       header?: never;
       path: {
@@ -1288,6 +1301,15 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description `invalid_param` — bad `context` or `ignorews` */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
       /** @description `repo_not_found`, `ref_not_found` */
       404: {
