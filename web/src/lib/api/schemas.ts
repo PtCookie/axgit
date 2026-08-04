@@ -13,6 +13,7 @@ export type CommitsPage = components["schemas"]["CommitsPage"];
 export type CommitAuthor = components["schemas"]["CommitAuthor"];
 export type CommitDetail = components["schemas"]["CommitDetail"];
 export type CommitDiff = components["schemas"]["CommitDiff"];
+export type RevDiff = components["schemas"]["RevDiff"];
 export type DiffStat = components["schemas"]["DiffStat"];
 export type DiffStatFile = components["schemas"]["DiffStatFile"];
 export type DiffStatus = components["schemas"]["DiffStatus"];

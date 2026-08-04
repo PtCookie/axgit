@@ -10,6 +10,7 @@ import type {
   RefsInfo,
   ReposResponse,
   RepoSummary,
+  RevDiff,
   SearchKind,
   SearchResults,
   StatsPeriod,
@@ -97,6 +98,36 @@ export function commitPatchUrl(name: string, sha: string): string {
 export function commitRawDiffUrl(name: string, sha: string, params: DiffQueryParams = {}): string {
   const query = buildQuery({ ...params, to: sha });
   return apiUrl(`/repos/${encodeSegment(name)}/rawdiff${query}`);
+}
+
+export interface RevDiffParams {
+  from?: string;
+  to?: string;
+  path?: string;
+  context?: number;
+  ignorews?: number;
+}
+
+/** Arbitrary two-revision diff (`GET /diff`) — `?to=X` alone (no `from`) is a
+ *  strict superset of `getCommitDiff(name, X, ...)`. */
+export function getDiff(name: string, params: RevDiffParams = {}): Promise<RevDiff> {
+  const query = buildQuery(params);
+  return apiFetch<RevDiff>(`/repos/${encodeSegment(name)}/diff${query}`);
+}
+
+/** Link-only (never `fetch`ed by the client) — plain unified diff between
+ *  `from` and `to`, same rules as `commitRawDiffUrl`. */
+export function compareRawDiffUrl(name: string, params: RevDiffParams = {}): string {
+  const query = buildQuery(params);
+  return apiUrl(`/repos/${encodeSegment(name)}/rawdiff${query}`);
+}
+
+/** Link-only (never `fetch`ed by the client) — `git format-patch`-style
+ *  series for the commit range `(from, to]`, for `git am`. No `context`/
+ *  `ignorews`: the api ignores them on `/patch` (docs/API.md). */
+export function comparePatchUrl(name: string, params: { from?: string; to?: string; path?: string } = {}): string {
+  const query = buildQuery(params);
+  return apiUrl(`/repos/${encodeSegment(name)}/patch${query}`);
 }
 
 export function getTree(name: string, ref: string | undefined, path: string): Promise<TreeListing> {

@@ -22,6 +22,10 @@ export function shellFor(pathname: string): string {
   if (segments.length === 2 && segments[1] === "log") return `/${REPO_SHELL_PARAM}/log`;
   if (segments.length === 2 && segments[1] === "search") return `/${REPO_SHELL_PARAM}/search`;
   if (segments.length === 2 && segments[1] === "stats") return `/${REPO_SHELL_PARAM}/stats`;
+  // The compare page never carries the revisions in the path (they're
+  // `?from=`/`?to=` query params, since a ref may itself contain `/`) — a
+  // bare 2-segment shape is the whole story, unlike commit's 3-segment one.
+  if (segments.length === 2 && segments[1] === "diff") return `/${REPO_SHELL_PARAM}/diff`;
   if (segments.length === 3 && segments[1] === "commit") return `/${REPO_SHELL_PARAM}/commit`;
   // tree: the path after `/tree/` is optional (empty means the root tree).
   if (segments.length >= 2 && segments[1] === "tree") return `/${REPO_SHELL_PARAM}/tree`;

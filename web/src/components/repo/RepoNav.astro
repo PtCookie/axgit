@@ -1,6 +1,6 @@
 ---
 interface Props {
-  active: "summary" | "refs" | "log" | "tree" | "search" | "stats";
+  active: "summary" | "refs" | "log" | "tree" | "search" | "stats" | "diff";
   /** Appended after the repository name to build `document.title`, e.g.
    *  " log — Axgit". Carried on `data-title-suffix` rather than read from
    *  `document.currentScript`, since `window.__axgit.fillRepoShell`
@@ -24,6 +24,7 @@ const TABS = [
   { key: "summary", sub: "", label: "Summary" },
   { key: "tree", sub: "tree", label: "Tree" },
   { key: "log", sub: "log", label: "Log" },
+  { key: "diff", sub: "diff", label: "Diff" },
   { key: "refs", sub: "refs", label: "Refs" },
   { key: "search", sub: "search", label: "Search" },
   { key: "stats", sub: "stats", label: "Stats" },
@@ -32,7 +33,7 @@ const TABS = [
 
 <div class="mb-6 space-y-3">
   <h1 class="font-heading text-2xl font-medium break-all" data-repo-name data-title-suffix={titleSuffix}></h1>
-  <nav class="border-border flex gap-4 border-b">
+  <nav class="border-border flex flex-wrap gap-4 border-b">
     {
       TABS.map((tab) => (
         <a

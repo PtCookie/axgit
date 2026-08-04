@@ -155,7 +155,11 @@ describe("CommitView", () => {
     render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect
-      .element(page.getByText("This is a merge commit — the diff below is shown against the first parent only."))
+      .element(
+        page.getByText(
+          "This is a merge commit — the diff below is shown against the first parent only. Use the (diff) links above to compare against another parent.",
+        ),
+      )
       .toBeVisible();
   });
 
@@ -203,13 +207,24 @@ describe("CommitView", () => {
     expect(mockedGetCommitDiff).toHaveBeenCalledWith("git-compose", DETAIL.sha, { context: 10, ignorews: 1 });
   });
 
+  it("links each parent to a (diff) comparison against this commit", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    mockedGetCommitDiff.mockResolvedValue(DIFF);
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+
+    const parent = DETAIL.parents[0];
+    await expect
+      .element(page.getByRole("link", { name: `Diff against parent ${parent.slice(0, 12)}` }))
+      .toHaveAttribute("href", `/git-compose/diff?from=${parent}&to=${DETAIL.sha}`);
+  });
+
   it("links to the tree, raw diff, and patch views for this commit", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
     mockedGetCommitDiff.mockResolvedValue(DIFF);
     render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect
-      .element(page.getByRole("link", { name: "Tree" }))
+      .element(page.getByRole("link", { name: "Browse the tree at this commit" }))
       .toHaveAttribute("href", `/git-compose/tree?ref=${DETAIL.sha}`);
     await expect
       .element(page.getByRole("link", { name: "Raw diff" }))

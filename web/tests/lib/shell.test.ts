@@ -77,6 +77,12 @@ describe("shellFor", () => {
     }
   });
 
+  it("maps repo diff paths to the placeholder diff shell", () => {
+    for (const path of ["/git-compose/diff", "/git-compose/diff/"]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/diff`);
+    }
+  });
+
   it("maps unmatched shapes to /404", () => {
     for (const path of [
       "/git-compose/blob",
@@ -86,6 +92,7 @@ describe("shellFor", () => {
       "/git-compose/commit",
       "/git-compose/commit/abc123/extra",
       "/git-compose/stats/extra",
+      "/git-compose/diff/extra",
       "/a/b/c",
     ]) {
       expect(shellFor(path)).toBe("/404");

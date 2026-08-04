@@ -56,6 +56,13 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
             Path::new(REPO_SHELL_PARAM).join("stats").join("index.html"),
             StatusCode::OK,
         ),
+        // The compare page never carries the revisions in the path (they're
+        // `?from=`/`?to=` query params, since a ref may itself contain `/`)
+        // — a bare 2-segment shape is the whole story, unlike commit's.
+        [_repo, "diff"] => (
+            Path::new(REPO_SHELL_PARAM).join("diff").join("index.html"),
+            StatusCode::OK,
+        ),
         [_repo, "commit", _sha] => (
             Path::new(REPO_SHELL_PARAM)
                 .join("commit")
@@ -280,6 +287,20 @@ mod tests {
     }
 
     #[test]
+    fn repo_diff_paths_map_to_the_diff_shell() {
+        for path in ["/git-compose/diff", "/git-compose/diff/"] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM).join("diff").join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
     fn unmatched_shapes_map_to_the_404_shell() {
         for path in [
             "/git-compose/blob",
@@ -289,6 +310,7 @@ mod tests {
             "/git-compose/commit",
             "/git-compose/commit/abc123/extra",
             "/git-compose/stats/extra",
+            "/git-compose/diff/extra",
             "/a/b/c",
         ] {
             assert_eq!(

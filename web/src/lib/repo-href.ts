@@ -58,6 +58,28 @@ export function commitHref(
   return `/${encodeSegment(repo)}/commit/${encodeSegment(sha)}${search ? `?${search}` : ""}`;
 }
 
+/** Builds a `/{repo}/diff` href from the given comparison + display options,
+ *  omitting anything unset/default — same "plain query-string builder"
+ *  shape as `searchHref`/`statsHref`, plus `diffOptionsQuery` for the
+ *  `view`/`context`/`ignorews` trio. */
+export function compareHref(
+  repo: string,
+  params: { from?: string; to?: string; path?: string } & Partial<DiffOptions> = {},
+): string {
+  const search = new URLSearchParams();
+  if (params.from) search.set("from", params.from);
+  if (params.to) search.set("to", params.to);
+  if (params.path) search.set("path", params.path);
+  const optionsQuery = diffOptionsQuery({
+    view: params.view ?? "unified",
+    context: params.context ?? DEFAULT_CONTEXT,
+    ignorews: params.ignorews ?? false,
+  });
+  for (const [key, value] of Object.entries(optionsQuery)) search.set(key, value);
+  const query = search.toString();
+  return `/${encodeSegment(repo)}/diff${query ? `?${query}` : ""}`;
+}
+
 /** Builds a `/{repo}/blame/{path}` href. Same non-empty-`path` rule as
  *  `blobHref`. */
 export function blameHref(repo: string, path: string, ref: string | undefined): string {

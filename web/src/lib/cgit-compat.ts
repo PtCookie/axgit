@@ -47,17 +47,26 @@ export function redirectFor(pathname: string, query: string): string | null {
 
   const sha = queryValue(query, "id");
   const validSha = sha !== undefined && looksLikeSha(sha) ? sha : undefined;
+  const sha2 = queryValue(query, "id2");
+  const validSha2 = sha2 !== undefined && looksLikeSha(sha2) ? sha2 : undefined;
   const refName = queryValue(query, "h");
 
+  const isDiff = rest.length === 1 && rest[0] === "diff";
   const isCommitOrDiff = rest.length === 1 && (rest[0] === "commit" || rest[0] === "diff");
   const isLog = rest.length === 1 && rest[0] === "log";
   const isRefs = rest.length === 1 && rest[0] === "refs";
 
   // cgit's changeset/diff/log query shapes redirect regardless of `.git` —
   // `/{repo}/commit` (2 segments) is never a valid axgit shape either way,
-  // so there's no native route to conflict with.
+  // so there's no native route to conflict with. `/{repo}/diff` *is* now a
+  // native shape (the compare page), but only once it carries `from`/`to`
+  // — cgit's own two-revision diff uses `id`/`id2` instead, so the two
+  // never collide; a bare `/{repo}/diff` with neither falls through below.
   let target: string | null = null;
-  if (isCommitOrDiff && validSha !== undefined) {
+  if (isDiff && validSha !== undefined && validSha2 !== undefined) {
+    // cgit's `id` is the new side, `id2` the old side (`ui-diff.c`).
+    target = `/${repo}/diff?from=${validSha2}&to=${validSha}`;
+  } else if (isCommitOrDiff && validSha !== undefined) {
     target = `/${repo}/commit/${validSha}`;
   } else if (isLog && refName !== undefined) {
     target = `/${repo}/log?ref=${refName}`;

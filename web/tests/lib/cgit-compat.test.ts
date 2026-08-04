@@ -20,6 +20,27 @@ describe("redirectFor", () => {
     expect(redirectFor("/axgit.git/diff/", `id=${sha}`)).toBe(`/axgit/commit/${sha}`);
   });
 
+  it("redirects the diff query shape with id and id2 to the compare page", () => {
+    const oldSha = "aaa111222333";
+    const newSha = "bbb444555666";
+    expect(redirectFor("/axgit/diff", `id=${newSha}&id2=${oldSha}`)).toBe(`/axgit/diff?from=${oldSha}&to=${newSha}`);
+    expect(redirectFor("/axgit.git/diff/", `id=${newSha}&id2=${oldSha}`)).toBe(
+      `/axgit/diff?from=${oldSha}&to=${newSha}`,
+    );
+  });
+
+  it("falls back to the commit redirect when id2 is missing or invalid", () => {
+    const sha = "abc123def456";
+    expect(redirectFor("/axgit/diff", `id=${sha}`)).toBe(`/axgit/commit/${sha}`);
+    expect(redirectFor("/axgit/diff", `id=${sha}&id2=not-a-sha`)).toBe(`/axgit/commit/${sha}`);
+  });
+
+  it("leaves the compare page's own from/to query alone", () => {
+    expect(redirectFor("/axgit/diff", "")).toBeNull();
+    expect(redirectFor("/axgit/diff", "from=main&to=feature%2Fx")).toBeNull();
+    expect(redirectFor("/axgit/diff", "to=abc123")).toBeNull();
+  });
+
   it("redirects log with h to the log page with a ref query", () => {
     expect(redirectFor("/axgit.git/log/", "h=main")).toBe("/axgit/log?ref=main");
     expect(redirectFor("/axgit/log", "h=main")).toBe("/axgit/log?ref=main");

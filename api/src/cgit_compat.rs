@@ -43,16 +43,24 @@ pub fn redirect_for(uri: &Uri) -> Option<String> {
 
     let query = uri.query().unwrap_or("");
     let sha = query_value(query, "id").filter(|value| looks_like_sha(value));
+    let sha2 = query_value(query, "id2").filter(|value| looks_like_sha(value));
     let ref_name = query_value(query, "h");
 
+    let is_diff = matches!(rest, ["diff"]);
     let is_commit_or_diff = matches!(rest, ["commit"] | ["diff"]);
     let is_log = matches!(rest, ["log"]);
     let is_refs = matches!(rest, ["refs"]);
 
     // cgit's changeset/diff/log query shapes redirect regardless of `.git` —
     // `/{repo}/commit` (2 segments) is never a valid axgit shape either way,
-    // so there's no native route to conflict with.
-    let specific = if is_commit_or_diff {
+    // so there's no native route to conflict with. `/{repo}/diff` *is* now a
+    // native shape (the compare page), but only once it carries `from`/`to`
+    // — cgit's own two-revision diff uses `id`/`id2` instead, so the two
+    // never collide; a bare `/{repo}/diff` with neither falls through below.
+    let specific = if let (true, Some(sha2), Some(sha)) = (is_diff, sha2, sha) {
+        // cgit's `id` is the new side, `id2` the old side (`ui-diff.c`).
+        Some(format!("/{repo}/diff?from={sha2}&to={sha}"))
+    } else if is_commit_or_diff {
         sha.map(|sha| format!("/{repo}/commit/{sha}"))
     } else if is_log {
         ref_name.map(|ref_name| format!("/{repo}/log?ref={ref_name}"))
@@ -138,6 +146,48 @@ mod tests {
             redirect(&format!("/axgit.git/diff/?id={sha}")),
             Some(format!("/axgit/commit/{sha}"))
         );
+    }
+
+    #[test]
+    fn diff_with_id_and_id2_redirects_to_the_compare_page() {
+        let old_sha = "aaa111222333";
+        let new_sha = "bbb444555666";
+        assert_eq!(
+            redirect(&format!("/axgit/diff?id={new_sha}&id2={old_sha}")),
+            Some(format!("/axgit/diff?from={old_sha}&to={new_sha}"))
+        );
+        assert_eq!(
+            redirect(&format!("/axgit.git/diff/?id={new_sha}&id2={old_sha}")),
+            Some(format!("/axgit/diff?from={old_sha}&to={new_sha}"))
+        );
+    }
+
+    #[test]
+    fn diff_with_id2_but_no_id_redirects_the_old_way() {
+        // Without a valid `id`, this isn't the two-revision shape — it falls
+        // back to the plain `id`-only handling (here, no redirect at all).
+        assert_eq!(redirect("/axgit/diff?id2=aaa111222333"), None);
+    }
+
+    #[test]
+    fn diff_with_id2_invalid_falls_back_to_the_commit_redirect() {
+        let sha = "abc123def456";
+        assert_eq!(
+            redirect(&format!("/axgit/diff?id={sha}&id2=not-a-sha")),
+            Some(format!("/axgit/commit/{sha}"))
+        );
+    }
+
+    #[test]
+    fn diff_with_from_and_to_is_left_alone() {
+        // The native compare page's own query shape must never be hijacked.
+        for uri in [
+            "/axgit/diff",
+            "/axgit/diff?from=main&to=feature%2Fx",
+            "/axgit/diff?to=abc123",
+        ] {
+            assert_eq!(redirect(uri), None, "uri {uri}");
+        }
     }
 
     #[test]

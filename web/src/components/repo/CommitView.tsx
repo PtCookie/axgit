@@ -7,7 +7,7 @@ import { useCommitRefs } from "@/lib/commit-refs";
 import { diffApiParams, parseDiffOptions } from "@/lib/diff-options";
 import { linkify } from "@/lib/format/linkify";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
-import { commitHref, treeHref } from "@/lib/repo-href";
+import { commitHref, compareHref, treeHref } from "@/lib/repo-href";
 import { commitShaFromPathname, repoFromPathname } from "@/lib/repo-param";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
 import RefBadges from "@/components/repo/RefBadges";
@@ -141,15 +141,31 @@ export default function CommitView({ repo, sha, context: contextProp, ignorews: 
           {detail.parents.length > 0 && (
             <>
               <dt className="text-muted-foreground">Parents</dt>
-              <dd className="space-x-2 font-mono">
+              <dd className="space-y-1 font-mono">
                 {detail.parents.map((parent) => (
-                  <a
-                    key={parent}
-                    className="underline"
-                    href={commitHref(resolvedRepo, parent, { context: resolvedContext, ignorews: resolvedIgnorews })}
-                  >
-                    {parent.slice(0, 12)}
-                  </a>
+                  <div key={parent} className="space-x-2">
+                    <a
+                      className="underline"
+                      href={commitHref(resolvedRepo, parent, {
+                        context: resolvedContext,
+                        ignorews: resolvedIgnorews,
+                      })}
+                    >
+                      {parent.slice(0, 12)}
+                    </a>
+                    <a
+                      className="text-muted-foreground hover:text-foreground text-xs"
+                      href={compareHref(resolvedRepo, {
+                        from: parent,
+                        to: detail.sha,
+                        context: resolvedContext,
+                        ignorews: resolvedIgnorews,
+                      })}
+                      aria-label={`Diff against parent ${parent.slice(0, 12)}`}
+                    >
+                      (diff)
+                    </a>
+                  </div>
                 ))}
               </dd>
             </>
@@ -157,11 +173,16 @@ export default function CommitView({ repo, sha, context: contextProp, ignorews: 
         </dl>
         {detail.parents.length > 1 && (
           <p className="text-muted-foreground text-sm">
-            This is a merge commit — the diff below is shown against the first parent only.
+            This is a merge commit — the diff below is shown against the first parent only. Use the (diff) links above
+            to compare against another parent.
           </p>
         )}
         <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          <a className="hover:text-foreground hover:underline" href={treeHref(resolvedRepo, "", detail.sha)}>
+          <a
+            className="hover:text-foreground hover:underline"
+            href={treeHref(resolvedRepo, "", detail.sha)}
+            aria-label="Browse the tree at this commit"
+          >
             Tree
           </a>
           <a
