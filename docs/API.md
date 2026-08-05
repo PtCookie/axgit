@@ -41,10 +41,12 @@ axum's `DefaultBodyLimit` returns a plain-text `413`.
 
 ### Caching headers
 
-- Responses whose URL includes a commit sha (immutable): `Cache-Control: public,
-  max-age=31536000, immutable`. Since `{sha}` may also be a branch, tag, or abbreviated sha, this
-  header is attached **only when the requested path value exactly matches the resolved commit's
-  full sha as a string**. These responses have no `ETag`.
+- **Immutable** responses get `Cache-Control: public, max-age=31536000, immutable` and no `ETag`.
+  This applies only when the request itself pins the resource to a full sha — the sha-bearing
+  value, whether it's a path segment (`{sha}`, `{ref}`) or a query parameter (`ref`, `from`/`to`),
+  must exactly match the resolved commit's full sha as a string, since it may otherwise be a
+  branch, tag, or abbreviated sha. The commit log's opaque `cursor` also qualifies: it encodes a
+  full-sha walk start. Each endpoint below states its own rule.
 - Otherwise: `ETag` + `Cache-Control: no-cache`. A matching `If-None-Match` returns **304** (no
   body, `ETag`/`Cache-Control` still attached). The ETag value is **opaque** and its format is not
   part of the contract — the server derives it from the repo's HEAD sha + agefile mtime, so it
@@ -162,7 +164,8 @@ address (the gravatar approach).
   `cursor` is given. Every page re-walks from that same start commit, so pagination matches an
   unpaginated walk exactly — no side-branch commit pending at a page boundary is ever dropped. A
   malformed cursor, or one whose skip count exceeds 100,000, is `400 invalid_param` (not a 404).
-  The walk cost of page *K* is proportional to `K × limit`.
+  The walk cost of page *K* is proportional to `K × limit`. Because the start is fixed in the
+  token, every `cursor` page is immutably cacheable (see "Caching headers").
 - `next_cursor`: opaque; `null` if there are no more pages after the `path` filter is applied.
 - `path`: a file or directory path. A path that doesn't exist returns an empty list, not a 404.
   A merge commit is included only when the path differs from **all** parents (an approximation of
@@ -172,6 +175,11 @@ address (the gravatar approach).
   `{"commits": [], "next_cursor": null}`. An explicit `ref` returns `404 ref_not_found`.
 - `summary`: the commit message's first line. `summary`/`authored_at` are `null` for non-UTF-8
   messages or corrupted timestamps.
+- **Immutable caching** when the request pins the walk start to a full sha: `cursor` always does
+  (the token encodes one), and `ref` does when it equals the resolved commit's full sha as a
+  string. Everything else — no `ref`, a symbolic `ref`, or the empty-repository page — is `ETag` +
+  `Cache-Control: no-cache`. `path` and `limit` don't affect this: for a fixed walk start the page
+  is a pure function of the request.
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}`
 

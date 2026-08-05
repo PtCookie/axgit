@@ -328,6 +328,121 @@ async fn commits_returns_404_for_missing_repo() {
 }
 
 #[tokio::test]
+async fn commits_sets_immutable_cache_for_full_sha_ref_only() {
+    let (root, shas) = setup_history();
+
+    let (status, headers, json) = common::get_json_with_headers(
+        router_for(root.path()),
+        &format!("/api/v1/repos/alpha/commits?ref={}", shas[2]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("public, max-age=31536000, immutable")
+    );
+    assert!(!headers.contains_key("etag"));
+
+    let (status, headers, json) = common::get_json_with_headers(
+        router_for(root.path()),
+        "/api/v1/repos/alpha/commits?ref=main",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("no-cache")
+    );
+    assert!(headers.contains_key("etag"));
+
+    let (status, headers, json) =
+        common::get_json_with_headers(router_for(root.path()), "/api/v1/repos/alpha/commits").await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("no-cache")
+    );
+    assert!(headers.contains_key("etag"));
+}
+
+#[tokio::test]
+async fn commits_sets_immutable_cache_for_cursor_pages() {
+    let (root, _shas) = setup_history();
+
+    let (status, headers, json) = common::get_json_with_headers(
+        router_for(root.path()),
+        "/api/v1/repos/alpha/commits?limit=2",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("no-cache")
+    );
+    assert!(headers.contains_key("etag"));
+    let cursor = json["next_cursor"]
+        .as_str()
+        .expect("expected a next_cursor")
+        .to_owned();
+
+    let (status, headers, first_page) = common::get_json_with_headers(
+        router_for(root.path()),
+        &format!("/api/v1/repos/alpha/commits?limit=2&cursor={cursor}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {first_page}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("public, max-age=31536000, immutable")
+    );
+    assert!(!headers.contains_key("etag"));
+
+    // `ref` is ignored whenever `cursor` is set — including a symbolic one —
+    // so the same page (and the same immutability) must come back regardless.
+    let (status, headers, with_ref) = common::get_json_with_headers(
+        router_for(root.path()),
+        &format!("/api/v1/repos/alpha/commits?limit=2&ref=main&cursor={cursor}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {with_ref}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("public, max-age=31536000, immutable")
+    );
+    assert!(!headers.contains_key("etag"));
+    assert_eq!(shas_of(&with_ref), shas_of(&first_page));
+}
+
+#[tokio::test]
+async fn commits_empty_repository_page_is_not_immutable() {
+    let root = tempfile::tempdir().expect("failed to create fixture root");
+    common::create_bare_repo(root.path(), "empty.git");
+
+    let (status, headers, json) =
+        common::get_json_with_headers(router_for(root.path()), "/api/v1/repos/empty/commits").await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("no-cache")
+    );
+    assert!(headers.contains_key("etag"));
+}
+
+#[tokio::test]
 async fn commits_lists_both_parents_of_a_merge() {
     let root = tempfile::tempdir().expect("failed to create fixture root");
     let bare = common::create_bare_repo(root.path(), "merged.git");

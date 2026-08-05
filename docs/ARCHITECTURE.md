@@ -59,17 +59,19 @@ A two-layer improvement on cgit's disk TTL cache:
      a push immediately while still letting a quiet repo reuse its entry until the TTL expires.
    - Looking up the validator itself (reading HEAD + stat'ing the agefile) is cheap, so it's done
      on every request.
-   - Responses whose key includes a commit sha (commit detail, diff, sha-based tree/blob) are
-     immutable, so they skip validation and go straight to the LRU — this is the only path where
-     a cache hit avoids opening the repository at all.
+   - Responses the request pins to a full sha (commit detail, diff, sha-based tree/blob/blame, a
+     full-sha `ref` on search/stats/log, and every `cursor` page of the commit log) are immutable,
+     so they skip validation and go straight to the LRU — this is the only path where a cache hit
+     avoids opening the repository at all. The TTL below still applies to them too, so a
+     validator-less entry is never pinned indefinitely.
    - Capacity is tracked by body bytes (`AXGIT_CACHE_RESPONSE_MAX_BYTES`), with a 1 MiB cap per
      entry body (so a single huge diff can't evict the whole cache). The TTL
      (`AXGIT_CACHE_RESPONSE_TTL`) acts as a staleness ceiling for changes the validator can't see
      (e.g. manual config edits).
    - Exclusions: the repo list is a scan snapshot, so it keeps using `ScanCache` (a single-value
      TTL) as-is; raw is large binary data and archive is streamed, so neither is cached.
-2. **Client-side cache** — sha-bearing URLs get `immutable`; everything else gets `ETag`
-   (validator-based) + `no-cache` + 304.
+2. **Client-side cache** — requests pinned to a full sha get `immutable`; everything else gets
+   `ETag` (validator-based) + `no-cache` + 304.
 
 The caching layer lives in a shared handler helper (`handlers/mod.rs::cached_response`), not tower
 middleware: whether a response is immutable is only known after ref resolution, params

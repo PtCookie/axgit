@@ -1348,3 +1348,47 @@ Closed the other candidate #39 deferred (#40 closed the first). Web-only, no API
   field's current value is still `""`, so it never clobbers manual input, and the existing e2e
   `fill()`-then-submit test stays race-free.
 - No new route, so `shellFor`/`shell_for`/`RepoNav.astro` are untouched.
+
+## #42 Commit log pages are immutably cached when the request pins the walk start (closes #37's follow-up)
+
+Closes the `docs/ROADMAP.md` candidate deferred alongside the moka cache rollout (#6) and again
+when #37 landed: cursor- and full-sha-`ref`-addressed commit log pages are now immutable, matching
+commit detail/diff/blame/search/stats.
+
+- **The premise for deferring this was stale.** The original justification was that promoting these
+  pages "would change the API.md contract (sha appears in the URL path)" — but `docs/API.md`
+  already documents query-param-driven immutability for `GET /diff?from=&to=` (#38), `/search?ref=`
+  (#26), and `/stats?ref=` (#28); the generic "Caching headers" bullet just hadn't been reworded to
+  match. It now reads "pins the resource to a full sha — whether a path segment or a query
+  parameter" instead of "the requested path value".
+- **Rule**: `cursor.is_some() || ref == Some(resolved_start_sha)`, computed in
+  `handlers/commits.rs::list_commits` right after `commits::log` returns. `cursor` is unconditional
+  because the token already encodes a full-sha walk start (`Cursor::parse`, #37) — `ref` is ignored
+  whenever a cursor is present, so nothing else can make the page depend on it. A bare `ref` full-sha
+  match mirrors `search.rs`/`stats.rs` exactly. The empty-repository page (no `ref`, no `cursor`)
+  stays mutable — it has no pinned start at all.
+- **Why cursor-always is sound.** `commits::log` is a pure function of the object graph reachable
+  from `start` (#37 already established this walking libgit2 1.9.6's `revwalk_next_unsorted`
+  directly: the pending list's order depends only on commit objects, not refs/HEAD/packfile
+  layout); `touches_path` only compares tree-entry oids between a commit and its parents. So for a
+  fixed `start`, the page is `f(start, offset, path, limit)` — `path`/`limit` are already in the
+  cache key and don't need to gate immutability. A cursor pointing at a GC'd or dangling commit
+  behaves exactly like `/commits/{sha}` today (`cache_test.rs`'s
+  `sha_addressed_diff_should_hit_without_touching_repo` already relies on this): a fresh compute
+  would 404/400, but an already-cached immutable entry keeps serving until TTL/eviction.
+- **Blast radius is bounded server-side.** `cache.rs::build_response_cache` puts `.time_to_live(ttl)`
+  on the whole moka cache, and immutable entries go through the same `insert` as everything else —
+  so a wrong or stale immutable body only survives one `AXGIT_CACHE_RESPONSE_TTL` window (300s
+  default) server-side, plus the byte-weigher/32 MiB cap. Only the *browser's* copy is genuinely
+  pinned for a year. The one real behavior change: today a push evicts every cursor entry via the
+  validator; afterwards, a cursor page's own body can't change from a push, so it survives until
+  TTL/LRU instead — page 1 (no `ref`/`cursor`) still invalidates on HEAD move and produces a
+  different `next_cursor`, so an active repo's paging chain still self-refreshes from the tip.
+- **No web change.** `CommitLog.tsx` already round-trips `next_cursor` as an opaque string via
+  `logHref`; the web essentially never sends a full-sha `?ref=` (ref selection is name-based, #18;
+  the only realistic path is a hand-typed URL or the cgit-compat `h=<sha>` redirect, #35), so the
+  practical win is the cursor half — the "Older →" chain's deep pages (walk cost is O(page × limit),
+  #37) stay warm across pushes and skip the repo-open/validator round trip entirely on a hit.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (description-only: the
+  `/commits` 200 response's `ETag`/`Cache-Control` header descriptions, plus a new caching bullet in
+  the endpoint's own section — `CommitsPage`'s shape did not change).

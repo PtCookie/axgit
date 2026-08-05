@@ -1254,12 +1254,12 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description One page of commits. An empty repository with no `ref` yields an empty page. */
+      /** @description One page of commits. An empty repository with no `ref` yields an empty page. Immutable caching when `cursor` is given, or when `ref` is the resolved full sha (then no `ETag`). */
       200: {
         headers: {
-          /** @description `no-cache` */
+          /** @description `no-cache`, or `public, max-age=31536000, immutable` for a `cursor` or full-sha `ref` */
           "Cache-Control"?: string;
-          /** @description Validator-derived; opaque */
+          /** @description Validator-derived; opaque. Absent on `cursor` and full-sha `ref` requests */
           ETag?: string;
           [name: string]: unknown;
         };

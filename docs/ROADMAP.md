@@ -110,9 +110,10 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - Tests: new `tests/cache_test.rs` (shares state via a cloned router — covers hit/invalidation/
     304/immutable entries). The cost of adding config fields is absorbed by centralizing
     `tests/common::test_config`/`router_for` in an earlier commit.
-  - Follow-up: cursor- and full-sha-`ref`-addressed commit pages are effectively immutable too and
-    could be promoted, but doing so would change the API.md contract ("sha appears in the URL
-    path"), so it's deferred.
+  - Follow-up, later done (DECISIONS.md #42): cursor- and full-sha-`ref`-addressed commit pages
+    were promoted to immutable caching once the "sha appears in the URL path" premise turned out to
+    already be stale (`/diff`/`/search`/`/stats` had all shipped query-param-driven immutability by
+    then).
 
 - `GET /api/v1/repos/{repo}/blame/{ref}/{path...}` — per-line-range attribution
   (`repo/blame.rs`, `handlers/files.rs::get_blame`). The last endpoint in v1 scope
@@ -771,13 +772,40 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     state backs an uncontrolled value); the effect only fires when the field is still empty, so
     manual input is never clobbered.
 
+- **Commit log pages are immutably cached when the request pins the walk start** (DECISIONS.md
+  #42), closing the follow-up the moka cache rollout (#6) and #37 both deferred. Finalized design:
+  - Rule: `cursor.is_some() || ref == Some(resolved_start_sha)`, computed in
+    `handlers/commits.rs::list_commits` right after `commits::log` returns. `cursor` always
+    qualifies — the token already encodes a full-sha walk start (#37) — and a bare `ref` qualifies
+    when it's the resolved commit's own full sha, the same test `search.rs`/`stats.rs` apply. The
+    empty-repository page (no `ref`, no `cursor`) stays mutable.
+  - **The deferral's premise had already gone stale**: `docs/API.md`'s generic caching bullet said
+    immutability required "the requested path value" to match a full sha, but `GET /diff?from=&to=`
+    (#38), `/search?ref=` (#26), and `/stats?ref=` (#28) all immutable-cache off a **query**
+    parameter already — the bullet just hadn't been rewritten to say so. It now covers path segment
+    and query parameter (and the log's `cursor`) in one sentence.
+  - Soundness rests on #37's own finding: `commits::log` is a pure function of the object graph
+    reachable from a fixed `start` (libgit2's pending list orders by commit object, not by
+    ref/HEAD/packfile state), so `path`/`limit` don't need to gate immutability — they're already in
+    the cache key. `cache.rs::build_response_cache`'s `.time_to_live(ttl)` applies to immutable
+    entries too, so a wrong/stale body only survives one `AXGIT_CACHE_RESPONSE_TTL` window
+    server-side (only the browser's copy is pinned for a year) — the real behavior change is that a
+    cursor page's cache entry now survives a push instead of being evicted by it, since its own body
+    provably can't change.
+  - No web change: `CommitLog.tsx` already round-trips `next_cursor` opaquely; the web essentially
+    never sends a full-sha `?ref=` (name-based ref selection, #18), so the practical win is the
+    cursor half — deep "Older →" pages (O(page × limit) walk cost, #37) stay warm across pushes.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (description-only: the
+    `/commits` response's header descriptions plus a new caching bullet; `CommitsPage` unchanged).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), the build-chunk-size,
-ref-badge, cgit-compatibility, blame-rename, and commit-log-pagination candidates are all resolved,
-and diff/patch output (#38/#39) plus its two follow-up candidates (#40, #41) closed the largest
-cgit parity gap. Pick the next piece of work from the candidates below, or from a fresh request.
+ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and commit-log-immutable-caching
+candidates are all resolved, and diff/patch output (#38/#39) plus its two follow-up candidates
+(#40, #41) closed the largest cgit parity gap. Pick the next piece of work from the candidates
+below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -788,11 +816,6 @@ cgit parity gap. Pick the next piece of work from the candidates below, or from 
 - `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
   revisit with the `dataviz` skill's validator if the stats page (or a future one) ever needs a
   second chart series.
-- Cursor- and full-sha-`ref`-addressed commit pages are now fully deterministic (DECISIONS.md #37
-  made every page a pure function of its start commit + offset), so they could be promoted to
-  immutable caching like commit detail/diff/blame — deferred because it would change the API.md
-  contract ("sha appears in the URL path"); same follow-up already noted for the moka cache
-  rollout.
 - Diff stat-only mode (cgit's `dt=2`) — for a single commit already covered by the uncapped
   diffstat on `GET /commits/{sha}`; for the two-revision compare page, `GET /diff`'s `diffstat`
   field already carries everything a stat-only view needs, so this is a client-side rendering

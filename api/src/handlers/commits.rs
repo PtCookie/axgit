@@ -48,10 +48,10 @@ pub struct CommitsQuery {
         CommitsQuery,
     ),
     responses(
-        (status = 200, description = "One page of commits. An empty repository with no `ref` yields an empty page.", body = CommitsPage,
+        (status = 200, description = "One page of commits. An empty repository with no `ref` yields an empty page. Immutable caching when `cursor` is given, or when `ref` is the resolved full sha (then no `ETag`).", body = CommitsPage,
             headers(
-                ("ETag" = String, description = "Validator-derived; opaque"),
-                ("Cache-Control" = String, description = "`no-cache`"),
+                ("ETag" = String, description = "Validator-derived; opaque. Absent on `cursor` and full-sha `ref` requests"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a `cursor` or full-sha `ref`"),
             ),
         ),
         (status = 304, description = "`If-None-Match` matched the current `ETag`"),
@@ -96,7 +96,8 @@ pub async fn list_commits(
             } else {
                 match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
                     Some(commit) => (commit.id(), 0),
-                    // Empty repository (unborn HEAD): an empty page, not an error.
+                    // Empty repository (unborn HEAD): an empty page, not an
+                    // error — and, having no pinned start, not immutable.
                     None => {
                         let page = CommitsPage {
                             commits: Vec::new(),
@@ -107,7 +108,17 @@ pub async fn list_commits(
                 }
             };
             let page = commits::log(repo, start, path.as_deref(), skip, limit)?;
-            Ok((false, serde_json::to_vec(&page)?))
+            // Immutable when the request itself pins the walk start to a full
+            // sha, which makes the page a pure function of the request
+            // (DECISIONS.md #42): a cursor always does — it encodes a
+            // full-sha start plus an offset (#37) — and a `ref` does when it
+            // is the resolved commit's own full sha, the same test
+            // search/stats apply. `path`/`limit` are irrelevant: for a fixed
+            // start they only select which slice is returned.
+            let start_sha = start.to_string();
+            let immutable =
+                query.cursor.is_some() || query.r#ref.as_deref() == Some(start_sha.as_str());
+            Ok((immutable, serde_json::to_vec(&page)?))
         },
     )
     .await
