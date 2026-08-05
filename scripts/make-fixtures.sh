@@ -40,11 +40,13 @@ commit "$W" "2026-07-20T10:00:00+09:00" "chore: initial commit"
 echo "services: {}" > "$W/compose.yaml"
 git -C "$W" add .
 commit "$W" "2026-07-21T09:30:00+09:00" "feat: add compose file"
+COMPOSE_SHA="$(git -C "$W" rev-parse HEAD)"
+GIT_COMMITTER_DATE="2026-07-21T10:00:00+09:00" git -C "$W" notes add -m "Reviewed-by: PtCookie" "$COMPOSE_SHA"
 echo "TLS notes" > "$W/NOTES.md"
 git -C "$W" add .
 commit "$W" "2026-07-22T18:45:00+09:00" "docs: add notes"
 GIT_COMMITTER_DATE="2026-07-22T19:00:00+09:00" git -C "$W" tag -a v1.0.0 -m "Release v1.0.0"
-git -C "$W" push --quiet "$BARE" main:main refs/tags/v1.0.0
+git -C "$W" push --quiet "$BARE" main:main refs/tags/v1.0.0 refs/notes/commits:refs/notes/commits
 mkdir -p "$BARE/info/web"
 echo "2026-07-24 13:06:00 +0900" > "$BARE/info/web/last-modified"
 

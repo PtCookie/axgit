@@ -1502,3 +1502,58 @@ change to one concern.
   together across both plain and very long dependabot-style bodies.
 - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /commits` gained `msg`,
   `CommitInfo` gained optional `body`).
+
+## #45 Git notes on the commit page (cgit's `format_display_notes()` parity)
+
+Closed the last `docs/ROADMAP.md` "Commit page" cgit-parity gap, deferred by #44. Scope is the
+commit page only — the log's `msg=1` rows stay note-free, kept as its own possible future item.
+
+- **A note is mutable state on an otherwise immutable resource.** `GET /commits/{sha}` has been
+  served immutably (`max-age=31536000`, no `ETag`) whenever `{sha}` is the resolved full sha, on
+  the premise that a fixed commit object is a pure function of its sha (#42's same reasoning). A
+  `git notes` message is not part of the commit object — it lives on a separate ref
+  (`refs/notes/commits`) and can be added, edited, or removed without the commit sha changing, so
+  that premise breaks the moment a note exists. `handlers/commits.rs::get_commit`'s immutability
+  flag is now `sha == detail.sha && detail.note.is_none()`: a note-less commit (every repository
+  git-compose produces today) behaves exactly as before; a noted commit falls back to `ETag` +
+  `no-cache` unconditionally, so it always revalidates against the repo's HEAD+agefile validator —
+  which does change on a notes push, since the post-receive hook touches the agefile on every push
+  to the repo, not just to `main`.
+  - Considered and rejected: a dedicated `GET /commits/{sha}/notes` endpoint (keeps detail's
+    immutability pure, mirrors `/diff`/`/patch`/`/rawdiff` sibling endpoints) — rejected because it
+    would cost the commit page a second parallel request for what's usually nothing, and the
+    `msg=1`/`stat=1` precedent (#43/#44) is opt-in query params, not sibling routes, for exactly
+    this "small, commonly-absent extra field" shape. Also considered a `notes=1` opt-in param
+    matching that precedent — rejected because the web always wants the note when present (there's
+    no stat-view-style reason to omit it), so an opt-in param would just make the commit page
+    request it unconditionally, adding a query string with no actual behavior choice behind it.
+  - Accepted, documented limitation: a browser that cached a commit page **before** a note was
+    added keeps serving the note-less copy for up to a year — inherent to committing to immutable
+    caching for full-sha resources at all (#42), not new here. Server-side blast radius stays
+    bounded the same way #42 reasoned for a stale immutable body: the moka entry survives one
+    `AXGIT_CACHE_RESPONSE_TTL` window (300s default) before a fresh compute picks the note up.
+- **Only the default notes ref is read** — `Repository::find_note(None, oid)`, which resolves
+  libgit2's default (`core.notesRef`, else `refs/notes/commits`). cgit additionally honors
+  `notes.displayRef`/`GIT_NOTES_DISPLAY_REF` and concatenates multiple refs; axgit reads one,
+  matching the project's general stance of not reproducing cgit's full config surface
+  (`docs/ROADMAP.md`'s "Replaced / no analogue planned" list already excludes most of cgit's
+  cgitrc-only knobs). Any lookup failure — no notes ref, no note on this commit, non-UTF-8 message,
+  an all-whitespace note — collapses to `None`, never an error: a repository with no notes ref at
+  all must not turn a working commit page into a 500.
+- **`note` is a required-but-nullable field**, not an omitted key — unlike `CommitInfo::body`
+  (#44), which is opt-in via `msg=1` and only present when there's something to show. `note` is
+  never opt-in: every `GET /commits/{sha}` response carries the key, `null` when there's nothing to
+  render, matching every other optional field on `CommitDetail` (`message`, `authored_at`, ...).
+- **Rendered as its own block**, not folded into the message `<pre>` — a left accent border
+  (`border-l-4 border-l-primary`) under a "Notes" heading, directly below the commit message and
+  above the diffstat, linkified through the same `linkify()` the message already uses (cgit's
+  `format_display_notes()` also runs plain-text `html_txt`, no markdown). Keeping it visually and
+  structurally distinct from the message matters: a note is not something the author wrote when
+  making the commit, cgit's own `notes-header`/`notes` CSS classes make the same separation, and
+  the message `<pre>`'s `{detail.message && ...}` render is untouched — a note doesn't retroactively
+  make a message block appear.
+- Fixtures: `scripts/make-fixtures.sh` attaches one note (`Reviewed-by: PtCookie`) to
+  `git-compose.git`'s `feat: add compose file` commit and pushes `refs/notes/commits` alongside
+  `main`/the tag — notes live on their own ref, so no existing fixture commit sha changed.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`CommitDetail` gained
+  `note`; the endpoint's caching description now states the extra "note-less" condition).

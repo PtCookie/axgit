@@ -29,6 +29,7 @@ const DETAIL: CommitDetail = {
   sha: "abc123def456abc123def456abc123def456abc",
   summary: "fix: update a",
   message: "fix: update a\n\nfull body\n",
+  note: null,
   author: AUTHOR,
   committer: AUTHOR,
   authored_at: "2026-07-01T14:00:00+09:00",
@@ -144,6 +145,25 @@ describe("CommitView", () => {
 
     await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
     expect(page.getByText("Parents").elements().length).toBe(0);
+  });
+
+  it("renders a Notes block when the commit has a git note", async () => {
+    mockedGetCommit.mockResolvedValue({ ...DETAIL, note: "Reviewed-by: someone\n\nLGTM" });
+    mockedGetCommitDiff.mockResolvedValue(DIFF);
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+
+    await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+    await expect.element(page.getByText("Reviewed-by: someone")).toBeVisible();
+    await expect.element(page.getByText("LGTM")).toBeVisible();
+  });
+
+  it("shows no Notes block when the commit has no git note", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    mockedGetCommitDiff.mockResolvedValue(DIFF);
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+
+    await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
+    expect(page.getByRole("heading", { name: "Notes" }).elements().length).toBe(0);
   });
 
   it("notes that the diff is against the first parent for a merge commit", async () => {

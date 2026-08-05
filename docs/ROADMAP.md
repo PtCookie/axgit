@@ -858,6 +858,25 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /commits` gained
     `msg`, `CommitInfo` gained optional `body`).
 
+- **Git notes on the commit page** (DECISIONS.md #45), closing the "Commit page" cgit-parity gap
+  around `git notes` (cgit's `format_display_notes()`), deferred by #44. Scope is the commit page
+  only — the log's `msg=1` rows stay note-free. Finalized design:
+  - `GET /commits/{sha}` gained a required-but-nullable `note` field, read off the repository's
+    default notes ref (`Repository::find_note(None, sha)`) — `null` for no note, no notes ref, a
+    non-utf8 message, or an all-whitespace note. Only the default ref is read; cgit's
+    `notes.displayRef` multi-ref concatenation has no analogue.
+  - A noted commit can no longer be served with the immutable `Cache-Control`: a note can change
+    without the commit sha changing, so `get_commit`'s immutability rule became
+    `sha == detail.sha && detail.note.is_none()`. Every repository git-compose produces today has
+    no notes, so this is a no-op in practice; a noted commit falls back to `ETag` + `no-cache`.
+  - `CommitView.tsx` renders the note in its own bordered "Notes" block below the commit message,
+    linkified the same way the message already is — deliberately not folded into the message
+    `<pre>`, matching cgit's own `notes-header`/`notes` CSS separation.
+  - `scripts/make-fixtures.sh` attaches one note to `git-compose.git` so the caching split is
+    reachable end-to-end without a manual `git notes add`.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`CommitDetail` gained
+    `note`; the endpoint's caching description states the extra "note-less" condition).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
@@ -865,8 +884,10 @@ stays permanently excluded, not deferred, by the read-only invariant), the build
 ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and commit-log-immutable-caching
 candidates are all resolved, diff/patch output (#38/#39) plus its three follow-up candidates (#40,
 #41, #43) closed the largest cgit parity gap, the feed's alternate link plus a `robots.txt` closed
-two more of the "Feed and discovery" gaps, and log message expansion (#44) closed the last item
-under "Log". Pick the next piece of work from the candidates below, or from a fresh request.
+two more of the "Feed and discovery" gaps, log message expansion (#44) closed the last item under
+"Log", and git notes on the commit page (#45) closed the `git notes` item under "Commit page"
+(archive download links on the commit page remain open there). Pick the next piece of work from the
+candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -935,8 +956,6 @@ recorded separately below instead of listed as gaps.
   - `path=` pathspec filter — `/stats` only takes `ref`/`period`/`limit`.
   - An `Others (N)` row aggregating authors past the limit — axgit just truncates.
 - **Commit page**
-  - Git notes display (cgit renders them via `format_display_notes()` on both the commit page and
-    `showmsg` log rows) — `CommitDetail` has no field for them.
   - Archive download links on the commit page (Tree link, per-parent `(diff)` link, and patch/raw
     diff links were closed alongside the rest of the diff/patch work, see Done).
 

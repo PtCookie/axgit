@@ -46,7 +46,8 @@ axum's `DefaultBodyLimit` returns a plain-text `413`.
   value, whether it's a path segment (`{sha}`, `{ref}`) or a query parameter (`ref`, `from`/`to`),
   must exactly match the resolved commit's full sha as a string, since it may otherwise be a
   branch, tag, or abbreviated sha. The commit log's opaque `cursor` also qualifies: it encodes a
-  full-sha walk start. Each endpoint below states its own rule.
+  full-sha walk start. Each endpoint below states its own rule. Commit detail carries one extra
+  condition beyond the full-sha match — see its `note` bullet above.
 - Otherwise: `ETag` + `Cache-Control: no-cache`. A matching `If-None-Match` returns **304** (no
   body, `ETag`/`Cache-Control` still attached). The ETag value is **opaque** and its format is not
   part of the contract — the server derives it from the repo's HEAD sha + agefile mtime, so it
@@ -198,6 +199,7 @@ Commit detail: full message, author/committer, parents, diffstat. A superset of 
   "sha": "<full sha>",
   "summary": "fix: update a",
   "message": "fix: update a\n\nfull body\n",
+  "note": null,
   "author": { "name": "...", "email_hash": "<sha256>" },
   "committer": { "name": "...", "email_hash": "<sha256>" },
   "authored_at": "2026-07-01T14:00:00+09:00",
@@ -222,6 +224,13 @@ Commit detail: full message, author/committer, parents, diffstat. A superset of 
   `renamed`/`copied`.
 - Binary files have `binary: true` and `additions`/`deletions` of 0.
 - `message`/`summary` are `null` for non-UTF-8 messages. The diffstat has no file count limit.
+- `note`: the `git notes` message attached to this commit on the repository's default notes ref
+  (`refs/notes/commits`, or `core.notesRef` when set) — only the default ref is read, unlike cgit's
+  `notes.displayRef`/multi-ref concatenation. `null` when there is no note, no notes ref at all, or
+  the note is non-UTF-8 or blank.
+- Caching: a commit carrying a `note` is never eligible for immutable caching, even when `{sha}` is
+  the resolved full sha — a note can change without the commit sha changing, so the response falls
+  back to `ETag` + `no-cache` (see "Caching headers").
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}/diff?path=&context=&ignorews=`
 

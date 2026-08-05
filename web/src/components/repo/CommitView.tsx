@@ -224,6 +224,15 @@ export default function CommitView({
         </pre>
       )}
 
+      {detail.note && (
+        <section className="space-y-1">
+          <h3 className="text-muted-foreground text-sm font-medium">Notes</h3>
+          <pre className="border-border bg-muted/30 border-l-primary overflow-x-auto rounded-md border border-l-4 p-3 text-sm whitespace-pre-wrap">
+            {linkify(detail.note, { repo: resolvedRepo })}
+          </pre>
+        </section>
+      )}
+
       {resolvedPath && (
         <p className="text-muted-foreground text-sm">
           Showing only <span className="text-foreground font-mono">{resolvedPath}</span> —{" "}

@@ -147,10 +147,10 @@ pub async fn list_commits(
         ("sha" = String, Path, description = "Branch, tag, or commit sha"),
     ),
     responses(
-        (status = 200, description = "Commit detail. Immutable caching only when `{sha}` is the resolved full sha (then no `ETag`).", body = CommitDetail,
+        (status = 200, description = "Commit detail. Immutable caching only when `{sha}` is the resolved full sha and the commit carries no `note` (then no `ETag`).", body = CommitDetail,
             headers(
-                ("ETag" = String, description = "Validator-derived; absent on full-sha requests"),
-                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full sha"),
+                ("ETag" = String, description = "Validator-derived; absent on full-sha, note-less requests"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full sha with no note"),
             ),
         ),
         (status = 304, description = "`If-None-Match` matched the current `ETag`"),
@@ -173,7 +173,12 @@ pub async fn get_commit(
         move |repo| {
             let commit = resolve::resolve_commit(repo, &sha)?;
             let detail = commits::detail(repo, &commit)?;
-            Ok((sha == detail.sha, serde_json::to_vec(&detail)?))
+            // A note is mutable state on an otherwise immutable (full-sha)
+            // resource: it can be added/edited/removed without the commit
+            // sha changing, so a response carrying one can't be cached
+            // forever the way a note-less commit's can (docs/DECISIONS.md #45).
+            let immutable = sha == detail.sha && detail.note.is_none();
+            Ok((immutable, serde_json::to_vec(&detail)?))
         },
     )
     .await

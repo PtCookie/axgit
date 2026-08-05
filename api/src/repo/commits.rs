@@ -97,6 +97,13 @@ pub struct CommitDetail {
     /// Full commit message. `None` for non-utf8 messages.
     #[schema(required = true)]
     pub message: Option<String>,
+    /// `git notes` message attached to this commit on the repository's
+    /// default notes ref (`refs/notes/commits`, or `core.notesRef` when set).
+    /// `None` when there is no note, no notes ref at all, or the note is
+    /// non-utf8 or blank. Only the default ref is read — cgit's
+    /// `notes.displayRef`/multi-ref concatenation has no analogue here.
+    #[schema(required = true)]
+    pub note: Option<String>,
     pub author: CommitAuthor,
     pub committer: CommitAuthor,
     #[schema(required = true)]
@@ -114,6 +121,7 @@ pub fn detail(repo: &Repository, commit: &Commit) -> Result<CommitDetail, ApiErr
         sha: commit.id().to_string(),
         summary: commit.summary().map(str::to_owned),
         message: commit.message().map(str::to_owned),
+        note: note(repo, commit),
         author: signature_info(&commit.author()),
         committer: signature_info(&commit.committer()),
         authored_at: time_rfc3339(commit.author().when()),
@@ -121,6 +129,18 @@ pub fn detail(repo: &Repository, commit: &Commit) -> Result<CommitDetail, ApiErr
         parents: commit.parent_ids().map(|id| id.to_string()).collect(),
         diffstat: diff::diffstat(repo, commit)?,
     })
+}
+
+/// Reads this commit's note off the repository's default notes ref. Any
+/// lookup failure — no notes ref, no note for this commit, a non-utf8
+/// message — is `None`, never an error: a repository with no notes at all
+/// (every fixture git-compose produces) must not turn a working commit page
+/// into a 500. A note that is present but all-whitespace also collapses to
+/// `None`, same treatment as an empty commit message.
+fn note(repo: &Repository, commit: &Commit) -> Option<String> {
+    let note = repo.find_note(None, commit.id()).ok()?;
+    let message = note.message()?.trim_end();
+    (!message.trim().is_empty()).then(|| message.to_owned())
 }
 
 /// Walks history from `start` (inclusive), skips the first `skip` commits

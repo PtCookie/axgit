@@ -135,6 +135,7 @@ test("the (diff) link on a commit's parent leads to the compare page", async ({ 
         sha: COMMIT_SHA,
         summary: "fix: update a",
         message: "fix: update a\n",
+        note: null,
         author: { name: "Ada Lovelace", email_hash: "deadbeef" },
         committer: { name: "Ada Lovelace", email_hash: "deadbeef" },
         authored_at: "2026-07-24T13:06:00+09:00",

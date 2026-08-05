@@ -587,6 +587,14 @@ export interface components {
       summary: string | null;
       /** @description Full commit message. `None` for non-utf8 messages. */
       message: string | null;
+      /**
+       * @description `git notes` message attached to this commit on the repository's
+       *     default notes ref (`refs/notes/commits`, or `core.notesRef` when set).
+       *     `None` when there is no note, no notes ref at all, or the note is
+       *     non-utf8 or blank. Only the default ref is read — cgit's
+       *     `notes.displayRef`/multi-ref concatenation has no analogue here.
+       */
+      note: string | null;
       author: components["schemas"]["CommitAuthor"];
       committer: components["schemas"]["CommitAuthor"];
       authored_at: string | null;
@@ -1333,12 +1341,12 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Commit detail. Immutable caching only when `{sha}` is the resolved full sha (then no `ETag`). */
+      /** @description Commit detail. Immutable caching only when `{sha}` is the resolved full sha and the commit carries no `note` (then no `ETag`). */
       200: {
         headers: {
-          /** @description `no-cache`, or `public, max-age=31536000, immutable` for a full sha */
+          /** @description `no-cache`, or `public, max-age=31536000, immutable` for a full sha with no note */
           "Cache-Control"?: string;
-          /** @description Validator-derived; absent on full-sha requests */
+          /** @description Validator-derived; absent on full-sha, note-less requests */
           ETag?: string;
           [name: string]: unknown;
         };

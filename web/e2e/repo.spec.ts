@@ -50,6 +50,7 @@ const COMMIT_DETAIL = {
   sha: COMMIT_SHA,
   summary: "fix: update the readme",
   message: "fix: update the readme\n",
+  note: null,
   author: { name: "Ada Lovelace", email_hash: "deadbeef" },
   committer: { name: "Ada Lovelace", email_hash: "deadbeef" },
   authored_at: "2026-07-24T13:06:00+09:00",

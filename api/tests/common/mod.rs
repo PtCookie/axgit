@@ -204,6 +204,12 @@ pub fn add_annotated_tag(bare: &Path, name: &str, message: &str) {
     git(bare, &["tag", "-a", "-m", message, name, "main"]);
 }
 
+/// Attaches a `git notes` message to `sha` on the repository's default notes
+/// ref (`refs/notes/commits`). Works directly against a bare repository.
+pub fn add_note(bare: &Path, sha: &str, message: &str) {
+    git(bare, &["notes", "add", "-m", message, sha]);
+}
+
 /// Sends `GET {uri}` to the router and returns status + parsed JSON body.
 pub async fn get_json(router: Router, uri: &str) -> (StatusCode, Value) {
     let (status, _, json) = get_json_with_headers(router, uri).await;

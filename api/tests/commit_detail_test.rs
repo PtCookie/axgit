@@ -107,6 +107,32 @@ async fn detail_should_return_full_message_and_signatures() {
     );
     // The raw email must never be exposed.
     assert!(json["author"].get("email").is_none());
+    // `note` is a present-but-null key: this repository has no notes ref.
+    assert!(json["note"].is_null());
+}
+
+#[tokio::test]
+async fn detail_should_return_note_when_present() {
+    let (root, shas) = setup();
+    let bare = root.path().join("alpha.git");
+    common::add_note(&bare, &shas[1], "Reviewed-by: someone\n\nLGTM");
+    let json = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/commits/{}", shas[1]),
+    )
+    .await;
+    assert_eq!(
+        json["note"].as_str(),
+        Some("Reviewed-by: someone\n\nLGTM"),
+        "unexpected response: {json}"
+    );
+    // A note on one commit must not leak onto another.
+    let json = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/commits/{}", shas[0]),
+    )
+    .await;
+    assert!(json["note"].is_null(), "unexpected response: {json}");
 }
 
 #[tokio::test]
@@ -286,6 +312,28 @@ async fn detail_should_set_immutable_cache_for_full_sha() {
             .map(|value| value.to_str().unwrap()),
         Some("public, max-age=31536000, immutable")
     );
+}
+
+#[tokio::test]
+async fn detail_with_note_should_use_no_cache_even_for_full_sha() {
+    let (root, shas) = setup();
+    let bare = root.path().join("alpha.git");
+    common::add_note(&bare, &shas[0], "a review note");
+    let (status, headers, json) = common::get_json_with_headers(
+        router_for(root.path()),
+        &format!("/api/v1/repos/alpha/commits/{}", shas[0]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    // A note is mutable state, so a full-sha request can no longer be served
+    // as immutable — same reasoning as docs/DECISIONS.md #45.
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("no-cache")
+    );
+    assert!(headers.contains_key("etag"));
 }
 
 #[tokio::test]
