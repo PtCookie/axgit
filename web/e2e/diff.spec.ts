@@ -190,6 +190,42 @@ test("toggling unified/split updates the URL and the rendered table shape", asyn
   await expect(page.getByRole("cell", { name: "-", exact: true })).not.toBeVisible();
 });
 
+test("switching to stat-only hides hunks, and a stat row leads to that file's own diff", async ({ page }) => {
+  await page.route("**/api/v1/repos/git-compose", async (route) => {
+    await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/readme*", async (route) => {
+    await route.fulfill({ status: 404, json: NO_README });
+  });
+  await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
+    await route.fulfill({ json: REFS });
+  });
+  await page.route("**/api/v1/repos/git-compose/diff*", async (route) => {
+    const url = new URL(route.request().url());
+    // Mirrors the real api: `stat=1` drops `files` entirely, `diffstat`
+    // stays the same either way.
+    const statOnly = url.searchParams.get("stat") === "1";
+    await route.fulfill({ json: { ...REV_DIFF, files: statOnly ? [] : REV_DIFF.files } });
+  });
+
+  await page.goto(`/git-compose/diff?from=${FROM_SHA}&to=${TO_SHA}`);
+  await expect(page.getByRole("cell", { name: "two", exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Stat only" }).click();
+
+  await expect(page).toHaveURL(`/git-compose/diff?from=${FROM_SHA}&to=${TO_SHA}&view=stat`);
+  await expect(page.getByRole("link", { name: "Stat only" })).toHaveAttribute("aria-current", "page");
+  // No hunks in stat mode: neither side's content renders as a diff cell.
+  await expect(page.getByRole("cell", { name: "two", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "three", exact: true })).toHaveCount(0);
+
+  await page.getByRole("link", { name: "a.txt" }).click();
+
+  await expect(page).toHaveURL(`/git-compose/diff?from=${FROM_SHA}&to=${TO_SHA}&path=a.txt`);
+  await expect(page.getByText("Showing only")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "two", exact: true })).toBeVisible();
+});
+
 test("the refs page's Compare links lead to the diff page (branch and tag rows)", async ({ page }) => {
   await page.route("**/api/v1/repos/git-compose", async (route) => {
     await route.fulfill({ json: SUMMARY });

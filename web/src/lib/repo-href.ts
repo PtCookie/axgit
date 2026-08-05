@@ -43,15 +43,21 @@ export function logHref(repo: string, params: { ref?: string; path?: string; cur
  *  display options forward — so following a parent-commit link keeps the
  *  same context/ignore-whitespace/view choice instead of silently resetting
  *  it, and `DiffOptionsBar`'s view pill on the commit page can build its own
- *  "same commit, different view" href through this same function. */
-export function commitHref(repo: string, sha: string, options: Partial<DiffOptions> = {}): string {
-  const query = diffOptionsQuery({
-    view: options.view ?? "unified",
-    context: options.context ?? DEFAULT_CONTEXT,
-    ignorews: options.ignorews ?? false,
-  });
-  const search = new URLSearchParams(query).toString();
-  return `/${encodeSegment(repo)}/commit/${encodeSegment(sha)}${search ? `?${search}` : ""}`;
+ *  "same commit, different view" href through this same function. `path`
+ *  restricts the commit's diff to one file — used by the stat view's rows to
+ *  link into a single-file diff (there's no file list on that page to jump
+ *  an anchor to). */
+export function commitHref(repo: string, sha: string, options: Partial<DiffOptions> & { path?: string } = {}): string {
+  const search = new URLSearchParams(
+    diffOptionsQuery({
+      view: options.view ?? "unified",
+      context: options.context ?? DEFAULT_CONTEXT,
+      ignorews: options.ignorews ?? false,
+    }),
+  );
+  if (options.path) search.set("path", options.path);
+  const query = search.toString();
+  return `/${encodeSegment(repo)}/commit/${encodeSegment(sha)}${query ? `?${query}` : ""}`;
 }
 
 /** Builds a `/{repo}/diff` href from the given comparison + display options,

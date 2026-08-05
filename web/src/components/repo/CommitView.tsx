@@ -8,7 +8,7 @@ import { diffApiParams, type DiffViewMode, parseDiffOptions } from "@/lib/diff-o
 import { linkify } from "@/lib/format/linkify";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { commitHref, compareHref, treeHref } from "@/lib/repo-href";
-import { commitShaFromPathname, repoFromPathname } from "@/lib/repo-param";
+import { commitShaFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
 import RefBadges from "@/components/repo/RefBadges";
 import DiffFileList from "@/components/repo/diff/DiffFileList";
@@ -19,7 +19,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 type State =
   | { status: "loading" }
   | { status: "error"; error: ApiError }
-  | { status: "data"; detail: CommitDetail; diff: CommitDiff };
+  // `diff` is `null` in stat-only mode (`view=stat`): `detail.diffstat` is
+  // already the full, uncapped file list, so the hunk-bearing diff response
+  // is never fetched at all — see the effect below.
+  | { status: "data"; detail: CommitDetail; diff: CommitDiff | null };
 
 interface CommitViewProps {
   /**
@@ -30,12 +33,14 @@ interface CommitViewProps {
    */
   repo?: string;
   sha?: string;
-  /** `view`/`context`/`ignorews` follow the same "prop overrides,
+  /** `view`/`context`/`ignorews`/`path` follow the same "prop overrides,
    *  `location` is the default source" pattern as `repo`/`sha` — see
-   *  `SearchView`. */
+   *  `SearchView`. `path` restricts the diff to one file — set when a
+   *  stat-view row links into a single-file diff. */
   view?: DiffViewMode;
   context?: number;
   ignorews?: boolean;
+  path?: string;
 }
 
 /** Also rendered statically into the page shell as the island's
@@ -76,6 +81,7 @@ export default function CommitView({
   view: viewProp,
   context: contextProp,
   ignorews: ignorewsProp,
+  path: pathProp,
 }: CommitViewProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const resolvedSha = sha ?? commitShaFromPathname(window.location.pathname);
@@ -83,17 +89,23 @@ export default function CommitView({
   const resolvedView = viewProp ?? urlOptions.view;
   const resolvedContext = contextProp ?? urlOptions.context;
   const resolvedIgnorews = ignorewsProp ?? urlOptions.ignorews;
+  const resolvedPath = pathProp ?? paramFromSearch("path", window.location.search);
   const options = { view: resolvedView, context: resolvedContext, ignorews: resolvedIgnorews };
+  const isStatOnly = resolvedView === "stat";
   const [state, setState] = useState<State>({ status: "loading" });
   const refsBySha = useCommitRefs(resolvedRepo);
 
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      getCommit(resolvedRepo, resolvedSha),
-      getCommitDiff(resolvedRepo, resolvedSha, diffApiParams(options)),
-    ])
+    // Stat-only mode never fetches the hunk-bearing diff response —
+    // `detail.diffstat` is already the full, uncapped file list, so there's
+    // nothing the diff response would add.
+    const diffPromise: Promise<CommitDiff | null> = isStatOnly
+      ? Promise.resolve(null)
+      : getCommitDiff(resolvedRepo, resolvedSha, { path: resolvedPath, ...diffApiParams(options) });
+
+    Promise.all([getCommit(resolvedRepo, resolvedSha), diffPromise])
       .then(([detail, diff]) => {
         if (!cancelled) {
           setState({ status: "data", detail, diff });
@@ -112,7 +124,7 @@ export default function CommitView({
     return () => {
       cancelled = true;
     };
-  }, [resolvedRepo, resolvedSha, resolvedContext, resolvedIgnorews]);
+  }, [resolvedRepo, resolvedSha, resolvedContext, resolvedIgnorews, resolvedPath, isStatOnly]);
 
   if (state.status === "loading") {
     return <CommitViewSkeleton />;
@@ -196,7 +208,7 @@ export default function CommitView({
           </a>
           <a
             className="hover:text-foreground hover:underline"
-            href={commitRawDiffUrl(resolvedRepo, detail.sha, diffApiParams(options))}
+            href={commitRawDiffUrl(resolvedRepo, detail.sha, { path: resolvedPath, ...diffApiParams(options) })}
           >
             Raw diff
           </a>
@@ -212,14 +224,29 @@ export default function CommitView({
         </pre>
       )}
 
-      <DiffStatTable stat={detail.diffstat} />
+      {resolvedPath && (
+        <p className="text-muted-foreground text-sm">
+          Showing only <span className="text-foreground font-mono">{resolvedPath}</span> —{" "}
+          <a className="hover:text-foreground underline" href={commitHref(resolvedRepo, detail.sha, options)}>
+            Show all files
+          </a>
+        </p>
+      )}
+
+      <DiffStatTable
+        stat={detail.diffstat}
+        hrefFor={(file) => commitHref(resolvedRepo, detail.sha, { ...options, view: "unified", path: file.path })}
+      />
 
       <DiffOptionsBar
         options={options}
-        hrefFor={(patch) => commitHref(resolvedRepo, detail.sha, { ...options, ...patch })}
+        extraParams={resolvedPath ? { path: resolvedPath } : undefined}
+        hrefFor={(patch) => commitHref(resolvedRepo, detail.sha, { ...options, path: resolvedPath, ...patch })}
       />
 
-      <DiffFileList truncated={diff.truncated} files={diff.files} view={resolvedView} />
+      {resolvedView !== "stat" && diff && (
+        <DiffFileList truncated={diff.truncated} files={diff.files} view={resolvedView} />
+      )}
     </div>
   );
 }

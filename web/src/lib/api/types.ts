@@ -190,7 +190,9 @@ export interface paths {
      *     shape as the per-commit diff plus an uncapped `diffstat`. `?to=X` alone
      *     (no `from`) produces `files` identical to `GET /commits/X/diff`. `from`
      *     and `to` accept anything `resolve_commit` does — branch, tag, sha, or a
-     *     `revparse_single` expression such as `main~1`.
+     *     `revparse_single` expression such as `main~1`. `?stat=1` skips hunk
+     *     rendering entirely (cgit's `dt=2`), returning only the uncapped
+     *     `diffstat`.
      */
     get: operations["get_rev_diff"];
     put?: never;
@@ -289,7 +291,8 @@ export interface paths {
      * @description Plain unified diff between two revisions (`git diff <from> <to>`, the same
      *     two-dot semantics as `GET /diff` — not a merge-base `...` diff), for
      *     `git apply`. **No line/file caps** — unlike the structured diffs, a
-     *     truncated patch would be a corrupt one.
+     *     truncated patch would be a corrupt one. Has no `stat` mode — an empty diff
+     *     with a stat summary elsewhere wouldn't be a valid patch.
      */
     get: operations["get_rawdiff"];
     put?: never;
@@ -820,10 +823,18 @@ export interface components {
       from: string | null;
       /** @description Resolved full sha of the new side. */
       to: string;
-      /** @description `true` when files beyond [`MAX_DIFF_FILES`] were omitted. */
+      /**
+       * @description `true` when files beyond [`MAX_DIFF_FILES`] were omitted. Always
+       *     `false` in stat-only mode (`?stat=1`) — there is nothing to cap when
+       *     `files` itself is always empty.
+       */
       truncated: boolean;
       /** @description The full, uncapped file list — same rule as the commit diffstat. */
       diffstat: components["schemas"]["DiffStat"];
+      /**
+       * @description Always empty in stat-only mode (`?stat=1`, [`rev_diff_stat`]) — the
+       *     caller only wanted `diffstat`, so hunks are never rendered.
+       */
       files: components["schemas"]["FileDiff"][];
     };
     /**
@@ -1450,6 +1461,13 @@ export interface operations {
          * @example 1
          */
         ignorews?: boolean;
+        /**
+         * @description Skip hunk rendering — `files` stays empty and `truncated` stays
+         *     `false`; only `diffstat` (already uncapped) is computed. `context`/
+         *     `ignorews` have no effect in this mode.
+         * @example 1
+         */
+        stat?: boolean;
       };
       header?: never;
       path: {
@@ -1483,7 +1501,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description `invalid_param` — bad `context` or `ignorews` */
+      /** @description `invalid_param` — bad `context`, `ignorews`, or `stat` */
       400: {
         headers: {
           [name: string]: unknown;
@@ -1710,7 +1728,7 @@ export interface operations {
         to?: string;
         /**
          * @description Restrict the diff to one file (literal match, no globbing). A path
-         *     neither side touched yields `files: []`, not a 404.
+         *     neither side touched yields an empty diff, not a 404.
          */
         path?: string;
         /**

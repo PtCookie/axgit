@@ -106,6 +106,11 @@ export interface RevDiffParams {
   path?: string;
   context?: number;
   ignorews?: number;
+  /** `GET /diff` only — skips hunk rendering, returning just the uncapped
+   *  `diffstat` (cgit's `dt=2`). Meaningless on `/rawdiff`/`/patch`; no
+   *  caller passes it through `compareRawDiffUrl`/`comparePatchUrl`, which
+   *  share this same param shape. */
+  stat?: number;
 }
 
 /** Arbitrary two-revision diff (`GET /diff`) — `?to=X` alone (no `from`) is a

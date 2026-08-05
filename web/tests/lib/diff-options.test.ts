@@ -19,8 +19,9 @@ describe("parseDiffOptions", () => {
     }
   });
 
-  it("only recognizes view=split, anything else stays unified", () => {
+  it("only recognizes view=split and view=stat, anything else stays unified", () => {
     expect(parseDiffOptions("?view=split").view).toBe("split");
+    expect(parseDiffOptions("?view=stat").view).toBe("stat");
     expect(parseDiffOptions("?view=unified").view).toBe("unified");
     expect(parseDiffOptions("?view=bogus").view).toBe("unified");
   });
@@ -43,6 +44,10 @@ describe("diffOptionsQuery", () => {
       context: "10",
       ignorews: "1",
     });
+  });
+
+  it("includes view=stat", () => {
+    expect(diffOptionsQuery({ view: "stat", context: 3, ignorews: false })).toEqual({ view: "stat" });
   });
 
   it("round-trips through parseDiffOptions", () => {

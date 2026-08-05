@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { FileDiff, Line } from "@/lib/api/schemas";
-import type { DiffViewMode } from "@/lib/diff-options";
+import type { HunkViewMode } from "@/lib/diff-options";
 import { highlightFileDiff } from "@/lib/diff/file-highlights";
 import { renamePathLabel, STATUS_CLASS, STATUS_LABEL } from "@/lib/format/diff-status";
 import type { HighlightedLine } from "@/lib/format/highlight";
@@ -13,7 +13,7 @@ interface DiffFileProps {
   /** Position within the current file list (0-based) — used for the `#diff-N`
    *  anchor cgit-compat-redirected changeset links land on (DECISIONS.md #35). */
   index: number;
-  view: DiffViewMode;
+  view: HunkViewMode;
 }
 
 /** One file's diff: a collapsible summary line plus its hunks (or a binary/notice). */
@@ -21,7 +21,7 @@ export default function DiffFile({ file, index, view }: DiffFileProps) {
   // A whole added/deleted file has nothing on one side either way — an
   // entire empty split column is pure waste, so it always renders unified
   // regardless of the page's chosen view (cgit does the same).
-  const effectiveView: DiffViewMode = file.status === "added" || file.status === "deleted" ? "unified" : view;
+  const effectiveView: HunkViewMode = file.status === "added" || file.status === "deleted" ? "unified" : view;
 
   // `null` until highlighting resolves (or if the language isn't supported)
   // — every hunk renders plain text in the meantime, then swaps in tokens,

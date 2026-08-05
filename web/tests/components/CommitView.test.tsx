@@ -233,4 +233,35 @@ describe("CommitView", () => {
       .element(page.getByRole("link", { name: "Patch" }))
       .toHaveAttribute("href", `/api/v1/repos/git-compose/patch?to=${DETAIL.sha}`);
   });
+
+  it("skips the diff fetch and hunk rendering entirely in stat-only mode", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} view="stat" />);
+
+    await expect.element(page.getByText("a.txt").first()).toBeVisible();
+    expect(mockedGetCommitDiff).not.toHaveBeenCalled();
+    expect(page.getByText("one").elements().length).toBe(0);
+  });
+
+  it("links a stat row to that file's own single-file diff", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} view="stat" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "a.txt" }))
+      .toHaveAttribute("href", `/git-compose/commit/${DETAIL.sha}?path=a.txt`);
+  });
+
+  it("shows a path banner with a link back to the full diff when path is set", async () => {
+    mockedGetCommit.mockResolvedValue(DETAIL);
+    mockedGetCommitDiff.mockResolvedValue(DIFF);
+    render(<CommitView repo="git-compose" sha={DETAIL.sha} path="a.txt" />);
+
+    await expect.element(page.getByText("Showing only")).toBeVisible();
+    await expect.element(page.getByText("a.txt").first()).toBeVisible();
+    await expect
+      .element(page.getByRole("link", { name: "Show all files" }))
+      .toHaveAttribute("href", `/git-compose/commit/${DETAIL.sha}`);
+    expect(mockedGetCommitDiff).toHaveBeenCalledWith("git-compose", DETAIL.sha, { path: "a.txt" });
+  });
 });

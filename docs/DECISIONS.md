@@ -1392,3 +1392,58 @@ commit detail/diff/blame/search/stats.
 - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (description-only: the
   `/commits` 200 response's `ETag`/`Cache-Control` header descriptions, plus a new caching bullet in
   the endpoint's own section — `CommitsPage`'s shape did not change).
+
+## #43 Diff stat-only mode (`view=stat`), with a `stat=1` fast path on `GET /diff`
+
+Closed the last `docs/ROADMAP.md` candidate on the diff/patch surface — cgit's `dt=2`. Two-part
+change, api then web, following #38/#39's precedent.
+
+- **The api half wasn't optional.** The candidate note reasoned that `/commits/{sha}`'s diffstat
+  and `/diff`'s `diffstat` field already carry everything a stat view needs, so this could be pure
+  client-side rendering — true for the per-commit page, but not for the compare page: stat mode's
+  entire reason to exist is "this diff is too big to render," which is exactly the case where
+  `GET /diff` would still ship up to 300 files × 1000 rendered lines of hunks the page throws away.
+  So `GET /diff` gained `?stat=1` (`repo/diff.rs::rev_diff_stat`, a sibling of `rev_diff` sharing a
+  new `rev_sides` helper for the (old tree, old sha, new tree) triple) — skips `render_files`
+  entirely, always returns `files: []`/`truncated: false`, and computes only the already-uncapped
+  `diffstat`. A separate function rather than a boolean flag on `rev_diff`, so "hunks are never
+  rendered in this mode" is a property of the call graph, not a runtime branch to get wrong.
+  `stat` is part of the cache key (`revdiff_test.rs` asserts the full and stat-only responses for
+  the same revisions are independently cached) and factors into the immutable-caching decision the
+  same way `context`/`ignorews` always have — no special-casing needed there since `stat` doesn't
+  change what `from`/`to` resolve to.
+- **`/rawdiff`'s query struct was split off** (`RevDiffQuery` → `RevDiffQuery` for `/diff`,
+  `RawDiffQuery` for `/rawdiff`), rather than adding `stat` to the shared struct both handlers used.
+  `stat` has no meaning on `/rawdiff` (a plain-text patch has nowhere to put a stat summary, and
+  #38 already ruled out ever truncating it) — leaving it on the shared struct would have put a
+  meaningless parameter in that endpoint's own OpenAPI spec.
+- **The commit page and compare page take opposite approaches to the fetch itself**, and that
+  asymmetry is deliberate rather than an inconsistency to fix later: `CommitView.tsx` already has
+  `detail.diffstat` (uncapped) from its existing `getCommit` call, so stat mode there skips the
+  `getCommitDiff` request outright — no api parameter needed, since there's nothing left to ask
+  for. `DiffView.tsx` has no equivalent standalone diffstat call, so it fetches `GET /diff` with
+  `stat=1` and, deliberately, without `context`/`ignorews` — neither affects `diffstat`
+  (`diffstat_for_trees` always uses `DiffParams::default()`), and dropping them normalizes every
+  stat-only comparison for a given `from`/`to`/`path` onto one cache entry regardless of what
+  unified/split had last been set to.
+- **`view` gained a third value (`"stat"`)** rather than a separate boolean alongside it
+  (`web/src/lib/diff-options.ts`) — `DiffOptionsBar`'s pill row, the URL round-trip, and the
+  hidden-input carry-through in `diffOptionsQuery` all already treat `view` as the one
+  display-mode axis, so a third pill was strictly additive. `DiffFileList`/`DiffFile` narrow their
+  own `view` prop to a new `HunkViewMode = Exclude<DiffViewMode, "stat">` type instead of handling
+  a meaningless third case internally — stat mode never renders them at all, so the type system
+  states that rather than a runtime guard.
+- **Each stat row links to that file's own single-file diff** (`path=` + `view=unified`), not to a
+  `#diff-N` anchor — there is no file list on the page in stat mode for an anchor to jump to.
+  `DiffStatTable` gained an optional `hrefFor` (default: the existing anchor, unchanged for every
+  other caller) rather than becoming stat-aware itself. This is also why `commitHref` gained a
+  `path` param (`compareHref` already had one) and why `CommitView`/`DiffView` both gained `?path=`
+  support entirely — previously nothing on the commit page could restrict its diff to one file.
+  Landing on a path-filtered single-file diff (from any view, not just stat) now shows a
+  "Showing only `{path}` — Show all files" line; without it, the only way back to the full diff
+  would have been the browser's back button.
+- Verified end-to-end against a real built `web/dist` served by the api over the fixture repos
+  (not just mocked component/e2e tests): confirmed via the browser's own network panel that
+  `view=stat` sends `stat=1` with no `context`/`ignorews` on the compare page and issues no
+  `/commits/{sha}/diff` request at all on the commit page.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /diff` gained `stat`).

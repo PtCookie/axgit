@@ -177,4 +177,38 @@ describe("DiffView", () => {
     await expect.element(page.getByText("one")).toBeVisible();
     expect(page.getByRole("alert").elements().length).toBe(0);
   });
+
+  it("requests stat=1 without context/ignorews and skips hunk rendering in stat-only mode", async () => {
+    mockedGetDiff.mockResolvedValue({ ...REV_DIFF, files: [] });
+    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} view="stat" context={10} ignorews={true} />);
+
+    await expect.element(page.getByText("a.txt").first()).toBeVisible();
+    expect(mockedGetDiff).toHaveBeenCalledWith("git-compose", {
+      from: FROM_SHA,
+      to: TO_SHA,
+      path: undefined,
+      stat: 1,
+    });
+    expect(page.getByText("one").elements().length).toBe(0);
+  });
+
+  it("links a stat row to that file's own single-file comparison", async () => {
+    mockedGetDiff.mockResolvedValue({ ...REV_DIFF, files: [] });
+    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} view="stat" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "a.txt" }))
+      .toHaveAttribute("href", `/git-compose/diff?from=${FROM_SHA}&to=${TO_SHA}&path=a.txt`);
+  });
+
+  it("shows a path banner with a link back to the full comparison when path is set", async () => {
+    mockedGetDiff.mockResolvedValue(REV_DIFF);
+    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} path="a.txt" />);
+
+    await expect.element(page.getByText("Showing only")).toBeVisible();
+    await expect
+      .element(page.getByRole("link", { name: "Show all files" }))
+      .toHaveAttribute("href", `/git-compose/diff?from=${FROM_SHA}&to=${TO_SHA}`);
+    expect(mockedGetDiff).toHaveBeenCalledWith("git-compose", { from: FROM_SHA, to: TO_SHA, path: "a.txt" });
+  });
 });

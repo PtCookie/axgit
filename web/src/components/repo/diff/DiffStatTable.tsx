@@ -1,12 +1,23 @@
-import type { DiffStat } from "@/lib/api/schemas";
+import type { DiffStat, DiffStatFile } from "@/lib/api/schemas";
 import { renamePathLabel, STATUS_CLASS, STATUS_LABEL } from "@/lib/format/diff-status";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
+interface DiffStatTableProps {
+  stat: DiffStat;
+  /**
+   * Builds each row's link. Defaults to the `#diff-N` anchor in the file
+   * list below (present for up to 300 files — the diff endpoints' own cap;
+   * a stale anchor past that just no-ops). `view=stat` passes a per-file
+   * diff href instead, since there's no file list on the page to jump to.
+   */
+  hrefFor?: (file: DiffStatFile, index: number) => string;
+}
+
+const defaultHrefFor = (_file: DiffStatFile, index: number) => `#diff-${index + 1}`;
+
 /** The uncapped diffstat table (file → status → change count), shared by the
- *  commit page and the two-revision compare page. Each row links to its file's
- *  `#diff-N` anchor in the file list below (present for up to 300 files — the
- *  diff endpoints' own cap; a stale anchor past that just no-ops). */
-export default function DiffStatTable({ stat }: { stat: DiffStat }) {
+ *  commit page and the two-revision compare page. */
+export default function DiffStatTable({ stat, hrefFor = defaultHrefFor }: DiffStatTableProps) {
   return (
     <div className="space-y-2">
       <h3 className="text-sm font-medium">
@@ -25,7 +36,7 @@ export default function DiffStatTable({ stat }: { stat: DiffStat }) {
           {stat.files.map((file, index) => (
             <TableRow key={file.path}>
               <TableCell className="font-mono">
-                <a href={`#diff-${index + 1}`} className="hover:underline">
+                <a href={hrefFor(file, index)} className="hover:underline">
                   {renamePathLabel(file)}
                 </a>
               </TableCell>

@@ -5,11 +5,15 @@
  * so there's nowhere else for it to live.
  */
 
-export type DiffViewMode = "unified" | "split";
+export type DiffViewMode = "unified" | "split" | "stat";
+
+/** `DiffViewMode` minus `"stat"` — the two modes that actually render hunks.
+ *  `stat` never reaches `DiffFileList`/`DiffFile` (the caller doesn't render
+ *  them at all in that mode), so their `view` prop is narrowed to this type
+ *  rather than having to handle a third, meaningless case internally. */
+export type HunkViewMode = Exclude<DiffViewMode, "stat">;
 
 export interface DiffOptions {
-  /** Side-by-side rendering is added in a later commit; `"unified"` is the
-   *  only value in use until then. */
   view: DiffViewMode;
   context: number;
   ignorews: boolean;
@@ -30,7 +34,7 @@ export function parseDiffOptions(search: string): DiffOptions {
   const params = new URLSearchParams(search);
 
   const rawView = params.get("view");
-  const view: DiffViewMode = rawView === "split" ? "split" : DEFAULT_VIEW;
+  const view: DiffViewMode = rawView === "split" || rawView === "stat" ? rawView : DEFAULT_VIEW;
 
   const rawContext = Number(params.get("context"));
   const context = (ALLOWED_CONTEXT as readonly number[]).includes(rawContext) ? rawContext : DEFAULT_CONTEXT;

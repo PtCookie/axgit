@@ -1,5 +1,5 @@
 import type { FileDiff } from "@/lib/api/schemas";
-import type { DiffViewMode } from "@/lib/diff-options";
+import type { HunkViewMode } from "@/lib/diff-options";
 import DiffFile from "@/components/repo/diff/DiffFile";
 
 interface DiffFileListProps {
@@ -7,7 +7,7 @@ interface DiffFileListProps {
    *  per-commit diff and the two-revision diff — both cap the same way). */
   truncated: boolean;
   files: FileDiff[];
-  view: DiffViewMode;
+  view: HunkViewMode;
 }
 
 /** The full list of per-file diffs for a commit or a two-revision comparison. */

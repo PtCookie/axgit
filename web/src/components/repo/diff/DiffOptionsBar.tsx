@@ -5,6 +5,7 @@ const NO_EXTRA_PARAMS: Record<string, string> = {};
 const VIEW_MODES: { value: DiffViewMode; label: string }[] = [
   { value: "unified", label: "Unified" },
   { value: "split", label: "Split" },
+  { value: "stat", label: "Stat only" },
 ];
 
 interface DiffOptionsBarProps {
@@ -25,7 +26,7 @@ interface DiffOptionsBarProps {
 }
 
 /**
- * Display controls for a diff view: a fixed unified/split choice as pill
+ * Display controls for a diff view: a fixed unified/split/stat choice as pill
  * links (`StatsView`'s period-switcher pattern — one click, no Apply), plus
  * context-line and ignore-whitespace controls as a plain `method="get"` form
  * (`SearchView`'s pattern): `<ClientRouter />` intercepts the same-origin

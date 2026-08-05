@@ -69,6 +69,7 @@ export default function DiffView({
   const resolvedContext = contextProp ?? urlOptions.context;
   const resolvedIgnorews = ignorewsProp ?? urlOptions.ignorews;
   const options = { view: resolvedView, context: resolvedContext, ignorews: resolvedIgnorews };
+  const isStatOnly = resolvedView === "stat";
 
   // Neither side given: nothing to compare yet, same "idle" shape as
   // SearchView before a query is entered.
@@ -127,11 +128,16 @@ export default function DiffView({
     // (same convention as `CommitLog`/`SearchView`).
     let cancelled = false;
 
+    // Stat-only mode (`?stat=1`) skips hunk rendering server-side, so
+    // `context`/`ignorews` are dropped from the request entirely — neither
+    // affects `diffstat`, and omitting them normalizes every stat-only
+    // comparison onto one cache entry regardless of what unified/split had
+    // last been set to.
     getDiff(resolvedRepo, {
       from: resolvedFrom,
       to: resolvedTo,
       path: resolvedPath,
-      ...diffApiParams(options),
+      ...(isStatOnly ? { stat: 1 } : diffApiParams(options)),
     })
       .then((diff) => {
         if (!cancelled) {
@@ -151,7 +157,7 @@ export default function DiffView({
     return () => {
       cancelled = true;
     };
-  }, [resolvedRepo, resolvedFrom, resolvedTo, resolvedPath, resolvedContext, resolvedIgnorews]);
+  }, [resolvedRepo, resolvedFrom, resolvedTo, resolvedPath, resolvedContext, resolvedIgnorews, isStatOnly]);
 
   const revisionNames = [...refs.branches.map((branch) => branch.name), ...refs.tags.map((tag) => tag.name)];
 
@@ -254,7 +260,30 @@ export default function DiffView({
             </a>
           </div>
 
-          <DiffStatTable stat={state.diff.diffstat} />
+          {resolvedPath && (
+            <p className="text-muted-foreground text-sm">
+              Showing only <span className="text-foreground font-mono">{resolvedPath}</span> —{" "}
+              <a
+                className="hover:text-foreground underline"
+                href={compareHref(resolvedRepo, { from: resolvedFrom, to: resolvedTo, ...options })}
+              >
+                Show all files
+              </a>
+            </p>
+          )}
+
+          <DiffStatTable
+            stat={state.diff.diffstat}
+            hrefFor={(file) =>
+              compareHref(resolvedRepo, {
+                from: resolvedFrom,
+                to: resolvedTo,
+                path: file.path,
+                ...options,
+                view: "unified",
+              })
+            }
+          />
 
           <DiffOptionsBar
             options={options}
@@ -270,7 +299,9 @@ export default function DiffView({
             }
           />
 
-          <DiffFileList truncated={state.diff.truncated} files={state.diff.files} view={resolvedView} />
+          {resolvedView !== "stat" && (
+            <DiffFileList truncated={state.diff.truncated} files={state.diff.files} view={resolvedView} />
+          )}
         </>
       )}
     </div>

@@ -798,13 +798,32 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (description-only: the
     `/commits` response's header descriptions plus a new caching bullet; `CommitsPage` unchanged).
 
+- **Diff stat-only mode (`view=stat`), plus a `stat=1` fast path on `GET /diff`** (DECISIONS.md
+  #43), closing the last candidate on the diff/patch surface (cgit's `dt=2`). Finalized design:
+  - `GET /diff?stat=1` (`repo/diff.rs::rev_diff_stat`) skips hunk rendering entirely — `files: []`,
+    `truncated: false`, uncapped `diffstat` — bypassing `MAX_DIFF_FILES` on purpose, since a capped
+    stat view would defeat the point. `stat` is part of the cache key; `/rawdiff`'s query struct
+    was split off (`RawDiffQuery`) since `stat` has no meaning there.
+  - The commit page and compare page take opposite approaches: `CommitView.tsx` already has
+    `detail.diffstat` from `getCommit`, so stat mode skips the `getCommitDiff` request outright — no
+    api parameter involved. `DiffView.tsx` has no standalone diffstat call, so it sends `stat=1`
+    and, deliberately, omits `context`/`ignorews` (neither affects `diffstat`).
+  - `view` gained a third value (`web/src/lib/diff-options.ts`); `DiffFileList`/`DiffFile` narrow
+    to a new `HunkViewMode = Exclude<DiffViewMode, "stat">` rather than handling a meaningless third
+    case. Each stat row links to that file's own single-file diff (`path=` + `view=unified`, new
+    `DiffStatTable` `hrefFor` prop) rather than a dead `#diff-N` anchor — which is also why
+    `commitHref` gained a `path` param and why both pages gained `?path=` support and a "Showing
+    only `{path}` — Show all files" line.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /diff` gained
+    `stat`).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), the build-chunk-size,
 ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and commit-log-immutable-caching
-candidates are all resolved, and diff/patch output (#38/#39) plus its two follow-up candidates
-(#40, #41) closed the largest cgit parity gap. Pick the next piece of work from the candidates
+candidates are all resolved, and diff/patch output (#38/#39) plus its three follow-up candidates
+(#40, #41, #43) closed the largest cgit parity gap. Pick the next piece of work from the candidates
 below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
@@ -816,12 +835,6 @@ below, or from a fresh request.
 - `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
   revisit with the `dataviz` skill's validator if the stats page (or a future one) ever needs a
   second chart series.
-- Diff stat-only mode (cgit's `dt=2`) — for a single commit already covered by the uncapped
-  diffstat on `GET /commits/{sha}`; for the two-revision compare page, `GET /diff`'s `diffstat`
-  field already carries everything a stat-only view needs, so this is a client-side rendering
-  choice, not an API gap — unless the payload size of fetching unused hunks ever becomes a real
-  complaint, in which case the right shape is `?stat=1` on `GET /diff` (omitting `hunks` **and**
-  bypassing `MAX_DIFF_FILES`, since a capped stat view defeats the point).
 
 ### cgit parity gaps (from a cgit feature audit)
 
