@@ -26,6 +26,11 @@ pub struct CommitInfo {
     /// First line of the commit message. `None` for non-utf8 commit messages.
     #[schema(required = true)]
     pub summary: Option<String>,
+    /// Commit message past the summary line, trimmed. Present only when the
+    /// request asked for it (`msg=1`); the key itself is omitted otherwise,
+    /// for a commit with no body, and for a non-utf8 message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
     pub author: CommitAuthor,
     /// Authordate (RFC 3339). `None` for unrepresentable timestamps.
     #[schema(required = true, example = "2026-07-01T14:00:00+09:00")]
@@ -132,6 +137,7 @@ pub fn log(
     path: Option<&Path>,
     skip: usize,
     limit: usize,
+    include_body: bool,
 ) -> Result<CommitsPage, ApiError> {
     let mut revwalk = repo.revwalk()?;
     revwalk.push(start)?;
@@ -154,7 +160,11 @@ pub fn log(
             has_more = true;
             break;
         }
-        commits.push(commit_info(&commit));
+        commits.push(if include_body {
+            commit_info_with_body(&commit)
+        } else {
+            commit_info(&commit)
+        });
     }
     let next_cursor = has_more.then(|| {
         Cursor {
@@ -170,14 +180,23 @@ pub fn log(
 }
 
 /// Shared by the log walk and search's commit-message matcher
-/// (`repo/search.rs`).
+/// (`repo/search.rs`). Never carries `body` — see [`commit_info_with_body`].
 pub(crate) fn commit_info(commit: &Commit) -> CommitInfo {
     CommitInfo {
         sha: commit.id().to_string(),
         summary: commit.summary().map(str::to_owned),
+        body: None,
         author: signature_info(&commit.author()),
         authored_at: time_rfc3339(commit.author().when()),
         parents: commit.parent_ids().map(|id| id.to_string()).collect(),
+    }
+}
+
+/// [`commit_info`] plus the message body (`?msg=1` on `GET /commits`).
+pub(crate) fn commit_info_with_body(commit: &Commit) -> CommitInfo {
+    CommitInfo {
+        body: commit.body().map(str::to_owned),
+        ..commit_info(commit)
     }
 }
 

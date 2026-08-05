@@ -473,6 +473,15 @@
               "minimum": 1
             },
             "example": 50
+          },
+          {
+            "name": "msg",
+            "in": "query",
+            "description": "When `1`/`true`, each log entry also carries the commit message's\n`body` (past the summary line). Absent/`0`/`false` by default.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -2246,6 +2255,13 @@
               "null"
             ],
             "description": "First line of the commit message. `None` for non-utf8 commit messages."
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Commit message past the summary line, trimmed. Present only when the\nrequest asked for it (`msg=1`); the key itself is omitted otherwise,\nfor a commit with no body, and for a non-utf8 message."
           },
           "author": {
             "$ref": "#/components/schemas/CommitAuthor"

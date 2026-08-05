@@ -147,6 +147,82 @@ async fn commits_rejects_invalid_limit() {
 }
 
 #[tokio::test]
+async fn commits_omits_body_by_default() {
+    let (root, _shas) = setup_history();
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha/commits").await;
+
+    for commit in json["commits"].as_array().unwrap() {
+        assert!(
+            commit.get("body").is_none(),
+            "body must be omitted without msg=1: {commit}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn commits_includes_body_when_msg_is_set() {
+    let (root, _shas) = setup_history();
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha/commits?msg=1").await;
+    let commits = json["commits"].as_array().unwrap();
+
+    // Index 3 (newest-first) is "docs: add guide\n\nwith a body".
+    assert_eq!(
+        commits[3]["body"], "with a body",
+        "unexpected response: {json}"
+    );
+    // Every other commit in the fixture has no body: the key is omitted
+    // entirely rather than set to `null`.
+    for (index, commit) in commits.iter().enumerate() {
+        if index != 3 {
+            assert!(
+                commit.get("body").is_none(),
+                "commit {index} should have no body key: {commit}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn commits_rejects_invalid_msg() {
+    let (root, _shas) = setup_history();
+
+    let (status, json) = common::get_json(
+        router_for(root.path()),
+        "/api/v1/repos/alpha/commits?msg=bogus",
+    )
+    .await;
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_param")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn commits_uses_a_separate_cache_entry_for_msg() {
+    let (root, _shas) = setup_history();
+    let router = router_for(root.path());
+
+    let without_body = common::get_json(router.clone(), "/api/v1/repos/alpha/commits")
+        .await
+        .1;
+    let with_body = common::get_json(router, "/api/v1/repos/alpha/commits?msg=1")
+        .await
+        .1;
+
+    assert!(
+        without_body["commits"][3].get("body").is_none(),
+        "unexpected response: {without_body}"
+    );
+    assert_eq!(
+        with_body["commits"][3]["body"], "with a body",
+        "the msg=1 response should not have reused the no-body cache entry: {with_body}"
+    );
+}
+
+#[tokio::test]
 async fn commits_resolves_ref_variants() {
     let (root, shas) = setup_history();
     let alpha = root.path().join("alpha.git");

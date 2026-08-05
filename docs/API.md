@@ -136,7 +136,7 @@ branch/tag counts, and the clone URL.
 - `tags[].annotation`: the first line of the tag message. `tagged_at`: the tagger timestamp.
   **Both are `null` for lightweight tags.**
 
-### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=`
+### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=`
 
 Commit log. When `path` is given, only commits that changed that path (cgit log's path filter).
 
@@ -144,7 +144,8 @@ Commit log. When `path` is given, only commits that changed that path (cgit log'
 {
   "commits": [
     {
-      "sha": "...", "summary": "...", "author": { "name": "...", "email_hash": "<sha256, avatar seed>" },
+      "sha": "...", "summary": "...", "body": "...",
+      "author": { "name": "...", "email_hash": "<sha256, avatar seed>" },
       "authored_at": "...", "parents": ["..."]
     }
   ],
@@ -175,11 +176,17 @@ address (the gravatar approach).
   `{"commits": [], "next_cursor": null}`. An explicit `ref` returns `404 ref_not_found`.
 - `summary`: the commit message's first line. `summary`/`authored_at` are `null` for non-UTF-8
   messages or corrupted timestamps.
+- `msg`: `0`/`1`/`true`/`false`, default off (cgit's `showmsg=1`). When on, each entry also carries
+  `body` — the message past the summary line, trimmed. **The `body` key itself is omitted**, not
+  set to `null`, when `msg` is off, when a commit has no body, or for a non-UTF-8 message — so its
+  presence alone tells the caller whether there's anything to show. Any other value is
+  `400 invalid_param`. Git notes are not included (no analogue of cgit's `showmsg` note row).
 - **Immutable caching** when the request pins the walk start to a full sha: `cursor` always does
   (the token encodes one), and `ref` does when it equals the resolved commit's full sha as a
   string. Everything else — no `ref`, a symbolic `ref`, or the empty-repository page — is `ETag` +
-  `Cache-Control: no-cache`. `path` and `limit` don't affect this: for a fixed walk start the page
-  is a pure function of the request.
+  `Cache-Control: no-cache`. `path`, `limit`, and `msg` don't affect this: for a fixed walk start
+  the page is a pure function of the request. `msg` is part of the cache key, so a `msg=1` response
+  never collides with the default (bodyless) one for the same request.
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}`
 

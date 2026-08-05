@@ -1447,3 +1447,58 @@ change, api then web, following #38/#39's precedent.
   `view=stat` sends `stat=1` with no `context`/`ignorews` on the compare page and issues no
   `/commits/{sha}/diff` request at all on the commit page.
 - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /diff` gained `stat`).
+
+## #44 Log tab message expansion (`msg=1`), cgit's `showmsg=1` parity
+
+Closed the "Log → Expand full commit message" `docs/ROADMAP.md` cgit-parity gap. Git notes stayed
+out of scope — cgit's `showmsg=1` renders the body plus a note row, but axgit has no `refs/notes`
+reading anywhere in the api, git-compose's stack never produces notes, and the ROADMAP already
+tracks notes display as its own gap on the commit page. Closing only the body half keeps this
+change to one concern.
+
+- **`CommitInfo` gained an optional `body`, keyed off a new `msg=` query param on `GET /commits`**
+  (`api/src/repo/commits.rs`, `api/src/handlers/commits.rs`) — `0`/`1`/`true`/`false` via the
+  existing `parse_flag` helper (shared with `ignorews`/`stat`), default off. The default (no `msg`)
+  log payload is unchanged, and so is `/search?type=message`'s response, which reuses `CommitInfo`
+  through the same `commit_info` constructor — a new `commit_info_with_body` sibling is used only
+  by the log walk when `msg=1` is set, so search never has to think about the field at all.
+- **`body` is an omitted key, not a `null` value, when there's nothing to show** — off by request,
+  no body on the commit, or a non-utf8 message all serialize the same way
+  (`#[serde(skip_serializing_if = "Option::is_none")]`, no `#[schema(required = true)]`). This
+  breaks from every other optional field in `CommitInfo`/`CommitDetail`, which are always-present
+  keys that can be `null` — deliberate here, since a caller that didn't ask for `msg=1` shouldn't
+  see a `body: null` on every single entry it has no use for, and a caller that did ask can treat
+  "key present" as "there's something to render" without also checking for `null`.
+- **`msg` is folded into the cache key's `params` string** (`commits.rs`'s hand-built format string)
+  the same way `stat` was for `GET /diff` (#43) — otherwise a `msg=1` response and the default one
+  for the same `ref`/`path`/`cursor`/`limit` would alias onto the same cache entry.
+  `commits_uses_a_separate_cache_entry_for_msg` (`api/tests/commits_test.rs`) asserts this the same
+  way `revdiff_test.rs` does for `stat`. `msg` does **not** affect the immutable-vs-`ETag` decision
+  (`docs/DECISIONS.md` #42) — same reasoning as `path`/`limit`: for a fixed walk start it only picks
+  which fields come back, not which commits.
+- **The graph column needed a second row shape.** `CommitLog.tsx`'s existing `TableRow`/`h-12`/
+  `CommitGraph` combination is a fixed-height grid (`docs/DECISIONS.md` #33) that an arbitrary-length
+  message row can't fit into, and hiding the graph for expanded rows (the path-filter precedent)
+  would have broken the line for every commit, not just the ones with visible bodies. Instead
+  `CommitGraph.tsx` gained a sibling `CommitGraphSpacer`: an absolutely positioned
+  (`absolute inset-y-0 h-full`) SVG holding only straight verticals for `row.through ∪ row.out` — no
+  node, no diagonals, because those belong to the commit row above — stretched to whatever height
+  its container's message content needs by CSS rather than by a fixed `viewBox`. Verified in a real
+  browser against `devlog-nextjs` (dependabot bodies running to 20+ lines of linkified URLs): the
+  line stays a single unbroken column through message rows of any height, in both themes and past
+  a cursor page boundary.
+- Each commit is a `Fragment` wrapping its own row plus an optional message row
+  (`expanded && commit.body`), rather than a second `.map()` pass or a flag on `CommitGraph` itself
+  — keeps "does this commit have a body row" a single `&&` next to the row it belongs to.
+- **Toggle is a URL-only link** (`Expand messages` / `Collapse messages`, `logHref`'s `msg` param),
+  not client component state — same "display option lives in the URL, no state to fall out of sync
+  on navigation" rule `DiffOptionsBar` established (#24) and `stat=1` (#43) reused. The link
+  preserves `ref`/`path`/`cursor`, so toggling from a paginated ("Older →") page doesn't reset to
+  page 1, and the "Older →" link itself carries `msg` forward the same way it already carries
+  `cursor`.
+- Verified end-to-end against a real built `web/dist` served by the api over the fixture repos: the
+  default log has no `body` in the network response, `?msg=1` adds it and renders the expansion,
+  `Collapse messages` on a cursor page drops `msg` while keeping `cursor`, and the graph line holds
+  together across both plain and very long dependabot-style bodies.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /commits` gained `msg`,
+  `CommitInfo` gained optional `body`).

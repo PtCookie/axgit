@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
 import { encodeSegment } from "@/lib/api/path";
@@ -6,11 +6,12 @@ import { listCommits } from "@/lib/api/repos";
 import type { CommitsPage } from "@/lib/api/schemas";
 import { layoutCommitGraph } from "@/lib/commit-graph";
 import { useCommitRefs } from "@/lib/commit-refs";
+import { linkify } from "@/lib/format/linkify";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import { logHref } from "@/lib/repo-href";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
-import CommitGraph from "@/components/repo/CommitGraph";
+import CommitGraph, { CommitGraphSpacer } from "@/components/repo/CommitGraph";
 import RefBadges from "@/components/repo/RefBadges";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -42,6 +43,7 @@ interface CommitLogProps {
   ref?: string;
   path?: string;
   cursor?: string;
+  msg?: string;
 }
 
 /** Also rendered statically into the page shell as the island's
@@ -56,26 +58,39 @@ export function CommitLogSkeleton() {
   );
 }
 
-export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor: cursorParam }: CommitLogProps) {
+export default function CommitLog({
+  repo,
+  ref: refParam,
+  path: pathParam,
+  cursor: cursorParam,
+  msg: msgParam,
+}: CommitLogProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const resolvedRef = refParam ?? paramFromSearch("ref", window.location.search);
   const resolvedPath = pathParam ?? paramFromSearch("path", window.location.search);
   const resolvedCursor = cursorParam ?? paramFromSearch("cursor", window.location.search);
+  const resolvedMsg = msgParam ?? paramFromSearch("msg", window.location.search);
+  const expanded = resolvedMsg === "1";
   const [state, setState] = useState<State>({ status: "loading" });
   const refsBySha = useCommitRefs(resolvedRepo);
 
   useEffect(() => {
     let cancelled = false;
 
-    // `resolvedRef`/`resolvedPath`/`resolvedCursor` never actually change on
-    // an already-mounted instance in production — `<main>` isn't persisted
-    // across navigations (DECISIONS.md #24), so a new URL always remounts
-    // this component fresh instead of updating its props in place. This
-    // effect's dependency array only matters for tests, which render the
-    // component directly and change props on a live instance; staying on the
-    // previous result until the new one arrives is preferable to a loading
-    // flash there too.
-    listCommits(resolvedRepo, { ref: resolvedRef, path: resolvedPath, cursor: resolvedCursor })
+    // `resolvedRef`/`resolvedPath`/`resolvedCursor`/`expanded` never actually
+    // change on an already-mounted instance in production — `<main>` isn't
+    // persisted across navigations (DECISIONS.md #24), so a new URL always
+    // remounts this component fresh instead of updating its props in place.
+    // This effect's dependency array only matters for tests, which render
+    // the component directly and change props on a live instance; staying on
+    // the previous result until the new one arrives is preferable to a
+    // loading flash there too.
+    listCommits(resolvedRepo, {
+      ref: resolvedRef,
+      path: resolvedPath,
+      cursor: resolvedCursor,
+      msg: expanded ? 1 : undefined,
+    })
       .then((page) => {
         if (!cancelled) {
           setState({ status: "data", page });
@@ -94,7 +109,7 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
     return () => {
       cancelled = true;
     };
-  }, [resolvedRepo, resolvedRef, resolvedPath, resolvedCursor]);
+  }, [resolvedRepo, resolvedRef, resolvedPath, resolvedCursor, expanded]);
 
   if (state.status === "loading") {
     return <CommitLogSkeleton />;
@@ -110,7 +125,7 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
   }
 
   const { page } = state;
-  const current = { ref: resolvedRef, path: resolvedPath };
+  const current = { ref: resolvedRef, path: resolvedPath, msg: resolvedMsg };
   // Hidden under a path filter: `touches_path` yields a subsequence, so
   // displayed commits are usually not each other's parents and edges would
   // be arbitrary (docs/DECISIONS.md #33).
@@ -124,6 +139,22 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
           Filtered by path <code className="text-foreground">{resolvedPath}</code> —{" "}
           <a className="underline" href={logHref(resolvedRepo, { ref: resolvedRef })}>
             clear filter
+          </a>
+        </p>
+      )}
+
+      {page.commits.length > 0 && (
+        <p className="text-sm">
+          <a
+            className="text-muted-foreground hover:text-foreground underline"
+            href={logHref(resolvedRepo, {
+              ref: resolvedRef,
+              path: resolvedPath,
+              cursor: resolvedCursor,
+              msg: expanded ? undefined : "1",
+            })}
+          >
+            {expanded ? "Collapse messages" : "Expand messages"}
           </a>
         </p>
       )}
@@ -147,38 +178,56 @@ export default function CommitLog({ repo, ref: refParam, path: pathParam, cursor
           </TableHeader>
           <TableBody>
             {page.commits.map((commit, index) => (
-              <TableRow key={commit.sha} className="h-12">
-                {graph && (
-                  <TableCell className="hidden w-0 p-0 pr-2 align-middle sm:table-cell">
-                    <CommitGraph row={graph.rows[index]} lanes={graph.lanes} />
-                  </TableCell>
-                )}
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <AuthorAvatar author={commit.author} className="size-6 shrink-0 rounded-full" />
-                    <span className="text-muted-foreground">{commit.author.name}</span>
-                  </div>
-                </TableCell>
-                <TableCell className="font-medium">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <a
-                      className="hover:underline"
-                      href={`/${encodeSegment(resolvedRepo)}/commit/${encodeSegment(commit.sha)}`}
-                    >
-                      {commit.summary ?? "(no commit message)"}
-                    </a>
-                    <RefBadges repo={resolvedRepo} refs={refsBySha.get(commit.sha) ?? []} max={MAX_ROW_BADGES} />
-                  </div>
-                </TableCell>
-                <TableCell className="text-muted-foreground font-mono">{commit.sha.slice(0, 12)}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {commit.authored_at ? (
-                    <span title={formatAbsoluteTime(commit.authored_at)}>{formatRelativeTime(commit.authored_at)}</span>
-                  ) : (
-                    "—"
+              <Fragment key={commit.sha}>
+                <TableRow className="h-12">
+                  {graph && (
+                    <TableCell className="hidden w-0 p-0 pr-2 align-middle sm:table-cell">
+                      <CommitGraph row={graph.rows[index]} lanes={graph.lanes} />
+                    </TableCell>
                   )}
-                </TableCell>
-              </TableRow>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <AuthorAvatar author={commit.author} className="size-6 shrink-0 rounded-full" />
+                      <span className="text-muted-foreground">{commit.author.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        className="hover:underline"
+                        href={`/${encodeSegment(resolvedRepo)}/commit/${encodeSegment(commit.sha)}`}
+                      >
+                        {commit.summary ?? "(no commit message)"}
+                      </a>
+                      <RefBadges repo={resolvedRepo} refs={refsBySha.get(commit.sha) ?? []} max={MAX_ROW_BADGES} />
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground font-mono">{commit.sha.slice(0, 12)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {commit.authored_at ? (
+                      <span title={formatAbsoluteTime(commit.authored_at)}>
+                        {formatRelativeTime(commit.authored_at)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                </TableRow>
+                {expanded && commit.body && (
+                  <TableRow>
+                    {graph && (
+                      <TableCell className="relative hidden w-0 p-0 pr-2 sm:table-cell">
+                        <CommitGraphSpacer row={graph.rows[index]} lanes={graph.lanes} />
+                      </TableCell>
+                    )}
+                    <TableCell colSpan={4} className="pt-0 pb-3 align-top">
+                      <pre className="text-muted-foreground text-sm whitespace-pre-wrap">
+                        {linkify(commit.body, { repo: resolvedRepo })}
+                      </pre>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
             ))}
           </TableBody>
         </Table>

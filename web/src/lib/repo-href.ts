@@ -30,7 +30,10 @@ export function refsHref(repo: string): string {
  *  unset — same shape as `searchHref`/`statsHref`. Moved out of
  *  `CommitLog.tsx` (docs/DECISIONS.md #34) so `RefBadges`' ref links can
  *  share it too. */
-export function logHref(repo: string, params: { ref?: string; path?: string; cursor?: string } = {}): string {
+export function logHref(
+  repo: string,
+  params: { ref?: string; path?: string; cursor?: string; msg?: string } = {},
+): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value) search.set(key, value);

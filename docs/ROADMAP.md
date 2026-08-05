@@ -841,15 +841,32 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `web/e2e/repos.spec.ts` gained a request-level check that it's actually served and contains the
     expected rules.
 
+- **Log tab message expansion (`msg=1`)** (DECISIONS.md #44), closing the "Log → Expand full commit
+  message" cgit-parity gap (cgit's `showmsg=1`). Git notes deliberately stayed out — tracked
+  separately under the Commit page gap below. Finalized design:
+  - `GET /commits?msg=1` adds `body` (message past the summary line) to each `CommitInfo`; the key
+    is omitted rather than `null` when there's nothing to show. `msg` is part of the cache key
+    (same pattern as `stat` in #43) and doesn't affect the immutable-vs-`ETag` decision, like
+    `path`/`limit`.
+  - `CommitLog.tsx` gained an `Expand messages`/`Collapse messages` URL-only toggle (`logHref`'s
+    `msg` param, preserving `ref`/`path`/`cursor`) and a message row per commit with a body,
+    linkified the same way the commit page's own body is.
+  - The graph column's fixed `ROW_HEIGHT` grid (#33) can't fit an arbitrary-height message row, so
+    `CommitGraph.tsx` gained a `CommitGraphSpacer` sibling — an absolutely positioned SVG drawing
+    only the lanes continuing past the commit row, sized to its container by CSS rather than a
+    fixed `viewBox` — so the graph line stays unbroken through message rows of any height.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /commits` gained
+    `msg`, `CommitInfo` gained optional `body`).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), the build-chunk-size,
 ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and commit-log-immutable-caching
 candidates are all resolved, diff/patch output (#38/#39) plus its three follow-up candidates (#40,
-#41, #43) closed the largest cgit parity gap, and the feed's alternate link plus a `robots.txt`
-closed two more of the "Feed and discovery" gaps. Pick the next piece of work from the candidates
-below, or from a fresh request.
+#41, #43) closed the largest cgit parity gap, the feed's alternate link plus a `robots.txt` closed
+two more of the "Feed and discovery" gaps, and log message expansion (#44) closed the last item
+under "Log". Pick the next piece of work from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -875,8 +892,6 @@ recorded separately below instead of listed as gaps.
   - Author / committer / revision-range search (`qt=author|committer|range`) — `/search` only has
     `content|path|message`. cgit's `range` mode accepts rev-list expressions, rejecting any token
     starting with `-`.
-  - Expand full commit message in the log (`showmsg=1`) — shows the full message plus git notes in
-    a second row.
   - Files / Lines changed columns (`enable-log-filecount`, `enable-log-linecount`).
 - **Tags and refs**
   - Dedicated tag detail page + API (`cmd=tag`, `ui-tag.c`) — tag message body, tagger, target

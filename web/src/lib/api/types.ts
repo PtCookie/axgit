@@ -610,6 +610,12 @@ export interface components {
       sha: string;
       /** @description First line of the commit message. `None` for non-utf8 commit messages. */
       summary: string | null;
+      /**
+       * @description Commit message past the summary line, trimmed. Present only when the
+       *     request asked for it (`msg=1`); the key itself is omitted otherwise,
+       *     for a commit with no body, and for a non-utf8 message.
+       */
+      body?: string | null;
       author: components["schemas"]["CommitAuthor"];
       /**
        * @description Authordate (RFC 3339). `None` for unrepresentable timestamps.
@@ -1252,6 +1258,11 @@ export interface operations {
          * @example 50
          */
         limit?: number;
+        /**
+         * @description When `1`/`true`, each log entry also carries the commit message's
+         *     `body` (past the summary line). Absent/`0`/`false` by default.
+         */
+        msg?: boolean;
       };
       header?: never;
       path: {

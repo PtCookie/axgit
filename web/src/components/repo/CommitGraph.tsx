@@ -7,7 +7,9 @@ import type { GraphRow } from "@/lib/commit-graph";
  *
  * `ROW_HEIGHT` is coupled to the `h-12` class `CommitLog` puts on each
  * `TableRow` — the graph cell has no padding of its own, so if that class
- * ever changes this constant must change with it.
+ * ever changes this constant must change with it. `CommitGraphSpacer` below
+ * is exempt from that coupling — it sizes itself to whatever height its
+ * container ends up with.
  */
 
 /** Centre-to-centre spacing between lanes, in px. */
@@ -83,6 +85,37 @@ export default function CommitGraph({ row, lanes }: CommitGraphProps) {
       ) : (
         <circle cx={x(row.lane)} cy={MID} r={NODE_R} className="text-foreground fill-current" />
       )}
+    </svg>
+  );
+}
+
+/**
+ * Graph segment for a commit's expanded message row (`CommitLog`'s `msg=1`
+ * mode). Unlike `CommitGraph`, this row's height is whatever its content
+ * needs, so it can't be laid out on the fixed `ROW_HEIGHT` grid — instead it
+ * draws only the straight verticals for lanes that continue past the commit
+ * row's bottom edge (`row.through` plus `row.out`, since a lane a commit's
+ * own node just moved into keeps going too) as an absolutely positioned
+ * overlay that stretches to fill its container. No node, no diagonals: those
+ * belong to the commit row above.
+ */
+export function CommitGraphSpacer({ row, lanes }: CommitGraphProps) {
+  const continuing = [...new Set([...row.through, ...row.out])].sort((a, b) => a - b);
+
+  return (
+    <svg
+      data-testid="commit-graph-spacer"
+      aria-hidden="true"
+      focusable="false"
+      width={lanes * LANE_WIDTH}
+      preserveAspectRatio="none"
+      className="text-muted-foreground absolute inset-y-0 left-0 h-full overflow-visible"
+    >
+      <g stroke="currentColor" strokeWidth={1.5} fill="none">
+        {continuing.map((lane) => (
+          <line key={lane} x1={x(lane)} y1={-BLEED} x2={x(lane)} y2="100%" />
+        ))}
+      </g>
     </svg>
   );
 }

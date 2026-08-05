@@ -51,6 +51,7 @@ describe("CommitLog", () => {
       ref: undefined,
       path: undefined,
       cursor: undefined,
+      msg: undefined,
     });
   });
 
@@ -219,5 +220,100 @@ describe("CommitLog", () => {
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByRole("alert").elements().length).toBe(0);
+  });
+
+  it("requests msg=1 and shows the body when expanded", async () => {
+    mockedListCommits.mockResolvedValue({
+      commits: [{ ...PAGE.commits[0], body: "with a body" }],
+      next_cursor: null,
+    });
+    render(<CommitLog repo="git-compose" msg="1" />);
+
+    await expect.element(page.getByText("with a body")).toBeVisible();
+    expect(mockedListCommits).toHaveBeenCalledWith("git-compose", {
+      ref: undefined,
+      path: undefined,
+      cursor: undefined,
+      msg: 1,
+    });
+  });
+
+  it("shows no message row for a commit with no body even when expanded", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" msg="1" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByTestId("commit-graph-spacer").elements().length).toBe(0);
+  });
+
+  it("does not show the body when collapsed, even if the api sent one", async () => {
+    mockedListCommits.mockResolvedValue({
+      commits: [{ ...PAGE.commits[0], body: "with a body" }],
+      next_cursor: null,
+    });
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByText("with a body").elements().length).toBe(0);
+  });
+
+  it("shows an Expand messages link that carries msg=1 and preserves ref/path/cursor", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" ref="main" path="src" cursor="abc123.50" />);
+
+    const expandLink = page.getByRole("link", { name: "Expand messages" });
+    await expect.element(expandLink).toBeVisible();
+    const expandHref = await expandLink.element().getAttribute("href");
+    const expandUrl = new URL(expandHref ?? "", "http://localhost");
+    expect(expandUrl.pathname).toBe("/git-compose/log");
+    expect(expandUrl.searchParams.get("msg")).toBe("1");
+    expect(expandUrl.searchParams.get("ref")).toBe("main");
+    expect(expandUrl.searchParams.get("path")).toBe("src");
+    expect(expandUrl.searchParams.get("cursor")).toBe("abc123.50");
+  });
+
+  it("shows a Collapse messages link that drops msg and preserves ref/path", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" ref="main" path="src" msg="1" />);
+
+    const collapseLink = page.getByRole("link", { name: "Collapse messages" });
+    await expect.element(collapseLink).toBeVisible();
+    const collapseHref = await collapseLink.element().getAttribute("href");
+    const collapseUrl = new URL(collapseHref ?? "", "http://localhost");
+    expect(collapseUrl.searchParams.get("msg")).toBeNull();
+    expect(collapseUrl.searchParams.get("ref")).toBe("main");
+  });
+
+  it("renders one graph spacer per expanded commit with a body", async () => {
+    const twoCommits: CommitsPage = {
+      commits: [
+        { ...PAGE.commits[0], body: "first body" },
+        {
+          sha: "def456abc123def456abc123def456abc123def",
+          summary: "feat: add graph",
+          body: undefined,
+          author: { name: "Ada Lovelace", email_hash: "deadbeef" },
+          authored_at: "2026-07-23T13:06:00+09:00",
+          parents: [],
+        },
+      ],
+      next_cursor: null,
+    };
+    mockedListCommits.mockResolvedValue(twoCommits);
+    render(<CommitLog repo="git-compose" msg="1" />);
+
+    await expect.element(page.getByText("first body")).toBeVisible();
+    expect(page.getByTestId("commit-graph-spacer").elements().length).toBe(1);
+  });
+
+  it("keeps the Older link's msg=1 when expanded", async () => {
+    mockedListCommits.mockResolvedValue({ ...PAGE, next_cursor: "def456" });
+    render(<CommitLog repo="git-compose" msg="1" />);
+
+    const older = page.getByRole("link", { name: "Older →" });
+    await expect.element(older).toBeVisible();
+    const href = await older.element().getAttribute("href");
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.searchParams.get("msg")).toBe("1");
   });
 });

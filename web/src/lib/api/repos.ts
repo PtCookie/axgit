@@ -49,6 +49,8 @@ export interface ListCommitsParams {
   path?: string;
   cursor?: string;
   limit?: number;
+  /** `1` to have each entry carry its message `body` (`msg=1`). */
+  msg?: number;
 }
 
 /** Builds a query string from the given params, omitting any that are unset

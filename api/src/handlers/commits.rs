@@ -32,6 +32,10 @@ pub struct CommitsQuery {
     /// envelope instead of axum's plain-text 400. Never clamped.
     #[param(value_type = Option<u32>, minimum = 1, maximum = 100, example = 50)]
     limit: Option<String>,
+    /// When `1`/`true`, each log entry also carries the commit message's
+    /// `body` (past the summary line). Absent/`0`/`false` by default.
+    #[param(value_type = Option<bool>)]
+    msg: Option<String>,
 }
 
 /// Commit log
@@ -67,10 +71,15 @@ pub async fn list_commits(
 ) -> Result<Response, ApiError> {
     let limit = parse_limit(query.limit.as_deref())?;
     let path = clean_path(query.path.as_deref());
+    let include_body = parse_flag(query.msg.as_deref(), "msg")?;
     // A missing `ref` is not normalized to HEAD: the two take different
     // unborn-HEAD paths (empty page vs 404), so they stay distinct keys.
+    // `msg` must be part of the key too: it doesn't change the walk (so it's
+    // irrelevant to the immutability decision below, same as `path`/`limit`)
+    // but it does change the response body, and the cache is keyed on params
+    // alone.
     let params = format!(
-        "ref={:?}&path={:?}&cursor={:?}&limit={limit}",
+        "ref={:?}&path={:?}&cursor={:?}&limit={limit}&msg={include_body}",
         query.r#ref, path, query.cursor
     );
     cached_response(
@@ -107,14 +116,15 @@ pub async fn list_commits(
                     }
                 }
             };
-            let page = commits::log(repo, start, path.as_deref(), skip, limit)?;
+            let page = commits::log(repo, start, path.as_deref(), skip, limit, include_body)?;
             // Immutable when the request itself pins the walk start to a full
             // sha, which makes the page a pure function of the request
             // (DECISIONS.md #42): a cursor always does — it encodes a
             // full-sha start plus an offset (#37) — and a `ref` does when it
             // is the resolved commit's own full sha, the same test
-            // search/stats apply. `path`/`limit` are irrelevant: for a fixed
-            // start they only select which slice is returned.
+            // search/stats apply. `path`/`limit`/`msg` are irrelevant: for a
+            // fixed start they only select which slice, or which fields, are
+            // returned.
             let start_sha = start.to_string();
             let immutable =
                 query.cursor.is_some() || query.r#ref.as_deref() == Some(start_sha.as_str());
