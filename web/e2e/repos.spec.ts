@@ -40,3 +40,16 @@ test("deep-links a filtered list from ?q=", async ({ page }) => {
   await expect(page.getByRole("link", { name: "axgit", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "git-compose" })).not.toBeVisible();
 });
+
+// robots.txt is a real static file (`web/public/robots.txt`), served ahead of
+// the page-shell fallback (`api/src/routes.rs`) — steers crawlers away from
+// the expensive, scan-budgeted endpoints (search/stats/blame/diff, DECISIONS
+// #38's `X-Robots-Tag` precedent generalized here).
+test("serves a robots.txt disallowing the expensive endpoints", async ({ page }) => {
+  const response = await page.request.get("/robots.txt");
+  expect(response.status()).toBe(200);
+
+  const body = await response.text();
+  expect(body).toContain("Disallow: /api/v1/");
+  expect(body).toContain("Disallow: /*/search");
+});

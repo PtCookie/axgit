@@ -832,15 +832,24 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     `docs/openapi.json` change — the alternate link was never part of the operation's documented
     schema.
 
+- **Added a `robots.txt`**. Closed another of the "Feed and discovery" cgit-parity gaps.
+  Finalized design:
+  - New `web/public/robots.txt` disallows `/api/v1/`, `/swagger-ui`, and the four scan-budgeted web
+    routes (`search`/`stats`/`blame`/`diff`) plus any `.git`-suffixed path — no route wiring needed
+    on either side, `ServeDir`/Astro's `public/` copy already serve it ahead of the shell fallback.
+    Repository list/summary/log/tree/blob stay crawlable.
+  - `web/e2e/repos.spec.ts` gained a request-level check that it's actually served and contains the
+    expected rules.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), the build-chunk-size,
 ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and commit-log-immutable-caching
 candidates are all resolved, diff/patch output (#38/#39) plus its three follow-up candidates (#40,
-#41, #43) closed the largest cgit parity gap, and the feed's alternate link now points at the web
-commit page instead of the API. Pick the next piece of work from the candidates below, or from a
-fresh request.
+#41, #43) closed the largest cgit parity gap, and the feed's alternate link plus a `robots.txt`
+closed two more of the "Feed and discovery" gaps. Pick the next piece of work from the candidates
+below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -898,8 +907,6 @@ recorded separately below instead of listed as gaps.
     repo pages are prerendered under the `__repo__` placeholder, so a per-repo `<link>` needs a
     runtime fill-in (`window.__axgit.fillRepoShell`) and would be invisible to non-JS feed
     readers — deserves its own decision, not a tack-on to the item below.
-  - `robots.txt` — cgit ships one disallowing `/*/snapshot/*` and `/*/blame/*`. `web/public/` only
-    has favicons, so crawlers can hit archive/blame/search freely.
 - **Repository index**
   - Column sorting (`s=name|desc|owner|idle|section`, `repository-sort=age|name`) — axgit is fixed
     to name order plus the client-side `?q=` filter; cgit's `idle` sort is descending.

@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /api/v1/
+Disallow: /swagger-ui
+Disallow: /*/blame/
+Disallow: /*/search
+Disallow: /*/stats
+Disallow: /*/diff
+Disallow: /*.git/
