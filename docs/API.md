@@ -267,7 +267,7 @@ as diffstat entries.
   file, since libgit2 recomputes line stats from the whitespace-ignoring patch too. Any other value
   is `400 invalid_param`.
 
-### `GET /api/v1/repos/{repo}/diff?from=&to=&path=&context=&ignorews=`
+### `GET /api/v1/repos/{repo}/diff?from=&to=&path=&context=&ignorews=&stat=`
 
 Arbitrary two-revision diff — `git diff <from> <to>`, a plain tree-to-tree comparison, **not** a
 merge-base `A...B` diff. Same file/hunk/line shape as the per-commit diff, plus an uncapped
@@ -293,9 +293,15 @@ merge-base `A...B` diff. Same file/hunk/line shape as the per-commit diff, plus 
 - `?to=X` alone (no `from`) produces `files` byte-identical to `GET /commits/X/diff` with the same
   `path`/`context`/`ignorews`: this endpoint is a strict superset of the per-commit diff.
 - `path`, `context`, `ignorews`: same rules as the per-commit diff.
+- `stat`: `0`/`1`/`true`/`false`, default off (cgit's `dt=2`). When on, hunk rendering is skipped
+  entirely — `files` is always `[]` and `truncated` is always `false` (there is nothing left to
+  cap), while `diffstat` is computed exactly as it would be otherwise — the same uncapped file
+  list as the commit detail's diffstat. `context`/`ignorews` have no effect on `diffstat` and are
+  ignored in this mode. Any other value is `400 invalid_param`.
 - **Immutable caching** requires every side actually present in the request to resolve to itself as
   a full sha string; an omitted `from` inherits whatever `to` resolved to (so `?to=<full sha>` alone
-  is immutable, `?from=<full sha>&to=<full sha>` is immutable, `?to=main` is not).
+  is immutable, `?from=<full sha>&to=<full sha>` is immutable, `?to=main` is not). `stat` is part of
+  the cache key, so a stat-only response never collides with the full diff for the same revisions.
 
 ### `GET /api/v1/repos/{repo}/rawdiff?from=&to=&path=&context=&ignorews=`
 

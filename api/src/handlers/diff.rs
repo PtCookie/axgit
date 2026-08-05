@@ -38,6 +38,11 @@ pub struct RevDiffQuery {
     /// Ignore whitespace-only changes (`git diff --ignore-all-space`).
     #[param(value_type = Option<bool>, example = "1")]
     ignorews: Option<String>,
+    /// Skip hunk rendering — `files` stays empty and `truncated` stays
+    /// `false`; only `diffstat` (already uncapped) is computed. `context`/
+    /// `ignorews` have no effect in this mode.
+    #[param(value_type = Option<bool>, example = "1")]
+    stat: Option<String>,
 }
 
 /// Two-revision diff
@@ -46,7 +51,9 @@ pub struct RevDiffQuery {
 /// shape as the per-commit diff plus an uncapped `diffstat`. `?to=X` alone
 /// (no `from`) produces `files` identical to `GET /commits/X/diff`. `from`
 /// and `to` accept anything `resolve_commit` does — branch, tag, sha, or a
-/// `revparse_single` expression such as `main~1`.
+/// `revparse_single` expression such as `main~1`. `?stat=1` skips hunk
+/// rendering entirely (cgit's `dt=2`), returning only the uncapped
+/// `diffstat`.
 #[utoipa::path(
     get,
     path = "/api/v1/repos/{repo}/diff",
@@ -63,7 +70,7 @@ pub struct RevDiffQuery {
             ),
         ),
         (status = 304, description = "`If-None-Match` matched the current `ETag`"),
-        (status = 400, description = "`invalid_param` — bad `context` or `ignorews`", body = ErrorResponse),
+        (status = 400, description = "`invalid_param` — bad `context`, `ignorews`, or `stat`", body = ErrorResponse),
         (status = 404, description = "`repo_not_found`, `ref_not_found` (names the offending side)", body = ErrorResponse),
     ),
 )]
@@ -76,6 +83,7 @@ pub async fn get_rev_diff(
     let path = clean_path(query.path.as_deref());
     let context = parse_context(query.context.as_deref())?;
     let ignore_whitespace = parse_flag(query.ignorews.as_deref(), "ignorews")?;
+    let stat_only = parse_flag(query.stat.as_deref(), "stat")?;
     let from_ref = query.from.filter(|value| !value.is_empty());
     // Normalized so `?to=HEAD` and no `to` at all share one cache entry.
     let to_ref = query
@@ -83,7 +91,7 @@ pub async fn get_rev_diff(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "HEAD".to_owned());
     let params = format!(
-        "from={from_ref:?}&to={to_ref}&path={path:?}&context={context}&ws={ignore_whitespace}"
+        "from={from_ref:?}&to={to_ref}&path={path:?}&context={context}&ws={ignore_whitespace}&stat={stat_only}"
     );
     cached_response(
         &state,
@@ -103,7 +111,11 @@ pub async fn get_rev_diff(
                 context,
                 ignore_whitespace,
             };
-            let rev_diff = diff::rev_diff(repo, from_commit.as_ref(), &to_commit, &diff_params)?;
+            let rev_diff = if stat_only {
+                diff::rev_diff_stat(repo, from_commit.as_ref(), &to_commit, &diff_params)?
+            } else {
+                diff::rev_diff(repo, from_commit.as_ref(), &to_commit, &diff_params)?
+            };
             // Immutable only when every side actually given in the request
             // resolved to itself as a full sha; an omitted `from` inherits
             // whatever `to` resolved to.
@@ -117,19 +129,44 @@ pub async fn get_rev_diff(
     .await
 }
 
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct RawDiffQuery {
+    /// Old side of the comparison (`git diff <from> <to>` — not a merge-base
+    /// `...` diff). Defaults to `to`'s first parent (the empty tree for a
+    /// root commit).
+    #[param(example = "main")]
+    from: Option<String>,
+    /// New side of the comparison. Defaults to `HEAD`.
+    #[param(example = "feature/x")]
+    to: Option<String>,
+    /// Restrict the diff to one file (literal match, no globbing). A path
+    /// neither side touched yields an empty diff, not a 404.
+    path: Option<String>,
+    /// Context lines around each change. Parsed manually so an invalid value
+    /// yields the JSON `invalid_param` envelope instead of axum's plain-text
+    /// 400. Never clamped.
+    #[param(value_type = Option<u32>, minimum = 0, maximum = 100, example = 3)]
+    context: Option<String>,
+    /// Ignore whitespace-only changes (`git diff --ignore-all-space`).
+    #[param(value_type = Option<bool>, example = "1")]
+    ignorews: Option<String>,
+}
+
 /// Raw unified diff
 ///
 /// Plain unified diff between two revisions (`git diff <from> <to>`, the same
 /// two-dot semantics as `GET /diff` — not a merge-base `...` diff), for
 /// `git apply`. **No line/file caps** — unlike the structured diffs, a
-/// truncated patch would be a corrupt one.
+/// truncated patch would be a corrupt one. Has no `stat` mode — an empty diff
+/// with a stat summary elsewhere wouldn't be a valid patch.
 #[utoipa::path(
     get,
     path = "/api/v1/repos/{repo}/rawdiff",
     tag = "diff",
     params(
         ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
-        RevDiffQuery,
+        RawDiffQuery,
     ),
     responses(
         (status = 200, description = "Plain unified diff, no size limit. Immutable caching only when every side given resolves to the exact requested string as a full sha.",
@@ -148,7 +185,7 @@ pub async fn get_rev_diff(
 pub async fn get_rawdiff(
     State(state): State<AppState>,
     Path(name): Path<String>,
-    Query(query): Query<RevDiffQuery>,
+    Query(query): Query<RawDiffQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let path = clean_path(query.path.as_deref());

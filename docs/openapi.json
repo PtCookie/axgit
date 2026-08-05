@@ -714,7 +714,7 @@
           "diff"
         ],
         "summary": "Two-revision diff",
-        "description": "Arbitrary two-revision diff (`git diff <from> <to>`), the same structured\nshape as the per-commit diff plus an uncapped `diffstat`. `?to=X` alone\n(no `from`) produces `files` identical to `GET /commits/X/diff`. `from`\nand `to` accept anything `resolve_commit` does — branch, tag, sha, or a\n`revparse_single` expression such as `main~1`.",
+        "description": "Arbitrary two-revision diff (`git diff <from> <to>`), the same structured\nshape as the per-commit diff plus an uncapped `diffstat`. `?to=X` alone\n(no `from`) produces `files` identical to `GET /commits/X/diff`. `from`\nand `to` accept anything `resolve_commit` does — branch, tag, sha, or a\n`revparse_single` expression such as `main~1`. `?stat=1` skips hunk\nrendering entirely (cgit's `dt=2`), returning only the uncapped\n`diffstat`.",
         "operationId": "get_rev_diff",
         "parameters": [
           {
@@ -778,6 +778,16 @@
               "type": "boolean"
             },
             "example": "1"
+          },
+          {
+            "name": "stat",
+            "in": "query",
+            "description": "Skip hunk rendering — `files` stays empty and `truncated` stays\n`false`; only `diffstat` (already uncapped) is computed. `context`/\n`ignorews` have no effect in this mode.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "example": "1"
           }
         ],
         "responses": {
@@ -809,7 +819,7 @@
             "description": "`If-None-Match` matched the current `ETag`"
           },
           "400": {
-            "description": "`invalid_param` — bad `context` or `ignorews`",
+            "description": "`invalid_param` — bad `context`, `ignorews`, or `stat`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1113,7 +1123,7 @@
           "diff"
         ],
         "summary": "Raw unified diff",
-        "description": "Plain unified diff between two revisions (`git diff <from> <to>`, the same\ntwo-dot semantics as `GET /diff` — not a merge-base `...` diff), for\n`git apply`. **No line/file caps** — unlike the structured diffs, a\ntruncated patch would be a corrupt one.",
+        "description": "Plain unified diff between two revisions (`git diff <from> <to>`, the same\ntwo-dot semantics as `GET /diff` — not a merge-base `...` diff), for\n`git apply`. **No line/file caps** — unlike the structured diffs, a\ntruncated patch would be a corrupt one. Has no `stat` mode — an empty diff\nwith a stat summary elsewhere wouldn't be a valid patch.",
         "operationId": "get_rawdiff",
         "parameters": [
           {
@@ -1149,7 +1159,7 @@
           {
             "name": "path",
             "in": "query",
-            "description": "Restrict the diff to one file (literal match, no globbing). A path\nneither side touched yields `files: []`, not a 404.",
+            "description": "Restrict the diff to one file (literal match, no globbing). A path\nneither side touched yields an empty diff, not a 404.",
             "required": false,
             "schema": {
               "type": "string"
@@ -2778,7 +2788,7 @@
           },
           "truncated": {
             "type": "boolean",
-            "description": "`true` when files beyond [`MAX_DIFF_FILES`] were omitted."
+            "description": "`true` when files beyond [`MAX_DIFF_FILES`] were omitted. Always\n`false` in stat-only mode (`?stat=1`) — there is nothing to cap when\n`files` itself is always empty."
           },
           "diffstat": {
             "$ref": "#/components/schemas/DiffStat",
@@ -2788,7 +2798,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/FileDiff"
-            }
+            },
+            "description": "Always empty in stat-only mode (`?stat=1`, [`rev_diff_stat`]) — the\ncaller only wanted `diffstat`, so hunks are never rendered."
           }
         }
       },

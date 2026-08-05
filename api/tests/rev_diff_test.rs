@@ -409,6 +409,128 @@ async fn diff_should_honor_context_and_ignorews() {
 }
 
 #[tokio::test]
+async fn diff_stat_should_return_uncapped_diffstat_with_no_files() {
+    let (root, shas, _feature_sha) = setup();
+    let full = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/diff?from={}&to={}", shas[0], shas[3]),
+    )
+    .await;
+    let stat = get_ok(
+        root.path(),
+        &format!(
+            "/api/v1/repos/alpha/diff?from={}&to={}&stat=1",
+            shas[0], shas[3]
+        ),
+    )
+    .await;
+    assert_eq!(
+        (
+            stat["files"].as_array().map(Vec::len),
+            stat["truncated"].as_bool(),
+        ),
+        (Some(0), Some(false)),
+        "stat mode should render no files: {stat}"
+    );
+    assert_eq!(
+        stat["diffstat"], full["diffstat"],
+        "stat mode's diffstat should match the full diff's: {stat} vs {full}"
+    );
+}
+
+#[tokio::test]
+async fn diff_stat_should_bypass_the_max_diff_files_cap() {
+    let root = tempfile::tempdir().unwrap();
+    let bare = common::create_bare_repo(root.path(), "alpha.git");
+    let work = tempfile::tempdir().unwrap();
+    let work_path = work.path();
+    common::git(
+        work_path,
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+    std::fs::write(work_path.join("base.txt"), "base\n").unwrap();
+    let start = commit_all(work_path, "feat: base");
+
+    // One more file than the JSON diff endpoints' MAX_DIFF_FILES (300) cap.
+    const FILE_COUNT: usize = 301;
+    for i in 0..FILE_COUNT {
+        std::fs::write(work_path.join(format!("file-{i}.txt")), "content\n").unwrap();
+    }
+    let end = commit_all(work_path, "feat: add many files");
+    common::git(work_path, &["push", "--quiet", "origin", "HEAD:main"]);
+
+    let full = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/diff?from={start}&to={end}"),
+    )
+    .await;
+    assert_eq!(
+        full["truncated"].as_bool(),
+        Some(true),
+        "the full diff should be truncated past MAX_DIFF_FILES: {full}"
+    );
+
+    let stat = get_ok(
+        root.path(),
+        &format!("/api/v1/repos/alpha/diff?from={start}&to={end}&stat=1"),
+    )
+    .await;
+    assert_eq!(
+        (
+            stat["truncated"].as_bool(),
+            stat["diffstat"]["files_changed"].as_u64(),
+            stat["diffstat"]["files"].as_array().map(Vec::len),
+        ),
+        (Some(false), Some(FILE_COUNT as u64), Some(FILE_COUNT)),
+        "stat mode should report every file, uncapped: {stat}"
+    );
+}
+
+#[tokio::test]
+async fn diff_stat_should_reject_an_invalid_value() {
+    let (root, _shas, _feature_sha) = setup();
+    let (status, json) = common::get_json(
+        router_for(root.path()),
+        "/api/v1/repos/alpha/diff?stat=bogus",
+    )
+    .await;
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_param")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn diff_stat_should_use_a_separate_cache_entry_from_the_full_diff() {
+    let (root, shas, _feature_sha) = setup();
+    let router = router_for(root.path());
+    let full = common::get_json(
+        router.clone(),
+        &format!("/api/v1/repos/alpha/diff?from={}&to={}", shas[0], shas[1]),
+    )
+    .await
+    .1;
+    let stat = common::get_json(
+        router,
+        &format!(
+            "/api/v1/repos/alpha/diff?from={}&to={}&stat=1",
+            shas[0], shas[1]
+        ),
+    )
+    .await
+    .1;
+    assert!(
+        !full["files"].as_array().unwrap().is_empty(),
+        "the full diff should carry hunks: {full}"
+    );
+    assert!(
+        stat["files"].as_array().unwrap().is_empty(),
+        "the stat diff should not carry hunks even after the full diff was cached: {stat}"
+    );
+}
+
+#[tokio::test]
 async fn diff_should_return_404_for_unknown_repo() {
     let root = tempfile::tempdir().unwrap();
     let (status, json) = common::get_json(router_for(root.path()), "/api/v1/repos/nope/diff").await;

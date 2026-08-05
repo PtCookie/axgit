@@ -121,10 +121,14 @@ pub struct RevDiff {
     pub from: Option<String>,
     /// Resolved full sha of the new side.
     pub to: String,
-    /// `true` when files beyond [`MAX_DIFF_FILES`] were omitted.
+    /// `true` when files beyond [`MAX_DIFF_FILES`] were omitted. Always
+    /// `false` in stat-only mode (`?stat=1`) — there is nothing to cap when
+    /// `files` itself is always empty.
     pub truncated: bool,
     /// The full, uncapped file list — same rule as the commit diffstat.
     pub diffstat: DiffStat,
+    /// Always empty in stat-only mode (`?stat=1`, [`rev_diff_stat`]) — the
+    /// caller only wanted `diffstat`, so hunks are never rendered.
     pub files: Vec<FileDiff>,
 }
 
@@ -213,14 +217,7 @@ pub fn rev_diff(
     to: &Commit,
     params: &DiffParams<'_>,
 ) -> Result<RevDiff, ApiError> {
-    let (old_tree, from_sha) = match from {
-        Some(commit) => (Some(commit.tree()?), Some(commit.id().to_string())),
-        None => (
-            first_parent_tree(to)?,
-            to.parent_id(0).ok().map(|id| id.to_string()),
-        ),
-    };
-    let new_tree = to.tree()?;
+    let (old_tree, from_sha, new_tree) = rev_sides(from, to)?;
     let diff = build_diff(repo, old_tree.as_ref(), Some(&new_tree), params)?;
     let (files, truncated) = render_files(&diff)?;
     let diffstat = diffstat_for_trees(repo, old_tree.as_ref(), Some(&new_tree))?;
@@ -231,6 +228,49 @@ pub fn rev_diff(
         diffstat,
         files,
     })
+}
+
+/// Same comparison as [`rev_diff`], but skips the hunk render entirely
+/// (`?stat=1` — cgit's `dt=2`). `files` is always empty and `truncated` is
+/// always `false`: [`MAX_DIFF_FILES`] is a cap on rendered hunks, and there
+/// are none to cap here. `diffstat` is uncapped either way, so this is
+/// strictly cheaper than `rev_diff`, never smaller in what it reports.
+/// `params.context`/`params.ignore_whitespace` are accepted for a uniform
+/// call shape but have no effect — `diffstat_for_trees` always uses
+/// [`DiffParams::default`].
+pub fn rev_diff_stat(
+    repo: &Repository,
+    from: Option<&Commit>,
+    to: &Commit,
+    _params: &DiffParams<'_>,
+) -> Result<RevDiff, ApiError> {
+    let (old_tree, from_sha, new_tree) = rev_sides(from, to)?;
+    let diffstat = diffstat_for_trees(repo, old_tree.as_ref(), Some(&new_tree))?;
+    Ok(RevDiff {
+        from: from_sha,
+        to: to.id().to_string(),
+        truncated: false,
+        diffstat,
+        files: Vec::new(),
+    })
+}
+
+/// The (old tree, old sha, new tree) triple a two-revision comparison diffs
+/// between — shared by [`rev_diff`] and [`rev_diff_stat`]. `from: None` means
+/// `to`'s first parent (the empty tree for a root commit).
+fn rev_sides<'r>(
+    from: Option<&Commit<'r>>,
+    to: &Commit<'r>,
+) -> Result<(Option<Tree<'r>>, Option<String>, Tree<'r>), ApiError> {
+    let (old_tree, from_sha) = match from {
+        Some(commit) => (Some(commit.tree()?), Some(commit.id().to_string())),
+        None => (
+            first_parent_tree(to)?,
+            to.parent_id(0).ok().map(|id| id.to_string()),
+        ),
+    };
+    let new_tree = to.tree()?;
+    Ok((old_tree, from_sha, new_tree))
 }
 
 /// Plain unified diff between two revisions (`cmd=rawdiff`), honoring
