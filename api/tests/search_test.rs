@@ -139,6 +139,152 @@ async fn search_message_matches_commit_messages() {
 }
 
 #[tokio::test]
+async fn search_author_matches_the_author_name_only() {
+    // Every `alpha.git` commit is authored by "Test Author" and committed by
+    // "Test Committer" (`api/tests/common/mod.rs`'s fixed env) — distinct
+    // names, so `type=author` matching the committer's name would be a bug.
+    let (root, shas) = setup();
+    let json = get_ok(
+        root.path(),
+        "/api/v1/repos/alpha/search?q=Author&type=author",
+    )
+    .await;
+    let commits = json["commits"].as_array().expect("commits missing");
+    let matched: Vec<_> = commits
+        .iter()
+        .map(|c| c["sha"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(matched.len(), 3, "unexpected response: {json}");
+    for sha in &shas {
+        assert!(matched.contains(sha), "{sha} missing from {matched:?}");
+    }
+    assert_eq!(json["files"], Value::Array(vec![]));
+
+    let json = get_ok(
+        root.path(),
+        "/api/v1/repos/alpha/search?q=Committer&type=author",
+    )
+    .await;
+    assert_eq!(json["commits"], Value::Array(vec![]), "{json}");
+}
+
+#[tokio::test]
+async fn search_committer_matches_the_committer_name_only() {
+    let (root, shas) = setup();
+    let json = get_ok(
+        root.path(),
+        "/api/v1/repos/alpha/search?q=Committer&type=committer",
+    )
+    .await;
+    let commits = json["commits"].as_array().expect("commits missing");
+    let matched: Vec<_> = commits
+        .iter()
+        .map(|c| c["sha"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(matched.len(), 3, "unexpected response: {json}");
+    for sha in &shas {
+        assert!(matched.contains(sha), "{sha} missing from {matched:?}");
+    }
+
+    let json = get_ok(
+        root.path(),
+        "/api/v1/repos/alpha/search?q=Author&type=committer",
+    )
+    .await;
+    assert_eq!(json["commits"], Value::Array(vec![]), "{json}");
+}
+
+#[tokio::test]
+async fn search_range_selects_commits_between_two_revisions() {
+    let (root, shas) = setup();
+    let json = get_ok(
+        root.path(),
+        &format!(
+            "/api/v1/repos/alpha/search?type=range&q={}..{}",
+            shas[0], shas[2]
+        ),
+    )
+    .await;
+    let commits = json["commits"].as_array().expect("commits missing");
+    let matched: Vec<_> = commits
+        .iter()
+        .map(|c| c["sha"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(matched.len(), 2, "unexpected response: {json}");
+    assert!(matched.contains(&shas[1]));
+    assert!(matched.contains(&shas[2]));
+    assert!(!matched.contains(&shas[0]));
+    assert_eq!(json["files"], Value::Array(vec![]));
+}
+
+#[tokio::test]
+async fn search_range_accepts_a_bare_revision() {
+    let (root, shas) = setup();
+    let json = get_ok(root.path(), "/api/v1/repos/alpha/search?type=range&q=main").await;
+    let commits = json["commits"].as_array().expect("commits missing");
+    assert_eq!(commits.len(), 3, "unexpected response: {json}");
+    let matched: Vec<_> = commits
+        .iter()
+        .map(|c| c["sha"].as_str().unwrap().to_owned())
+        .collect();
+    for sha in &shas {
+        assert!(matched.contains(sha));
+    }
+}
+
+#[tokio::test]
+async fn search_range_rejects_a_flag_looking_token() {
+    let (root, _shas) = setup();
+    let (status, json) = common::get_json(
+        router_for(root.path()),
+        "/api/v1/repos/alpha/search?type=range&q=--all",
+    )
+    .await;
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_param")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn search_range_returns_404_for_an_unresolvable_revision() {
+    let (root, _shas) = setup();
+    let (status, json) = common::get_json(
+        router_for(root.path()),
+        "/api/v1/repos/alpha/search?type=range&q=no-such-rev..main",
+    )
+    .await;
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::NOT_FOUND, Some("ref_not_found")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn search_range_is_never_immutable_even_for_a_full_sha_ref() {
+    let (root, shas) = setup();
+    let (status, headers, json) = common::get_json_with_headers(
+        router_for(root.path()),
+        &format!(
+            "/api/v1/repos/alpha/search?type=range&q=main&ref={}",
+            shas[2]
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("no-cache"),
+        "type=range must never be immutably cached, even with a full-sha ref"
+    );
+    assert!(headers.contains_key("etag"));
+}
+
+#[tokio::test]
 async fn search_rejects_missing_or_oversized_query() {
     let (root, _shas) = setup();
     for uri in [

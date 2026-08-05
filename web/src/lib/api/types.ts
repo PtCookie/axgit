@@ -355,9 +355,10 @@ export interface paths {
     };
     /**
      * Repository search
-     * @description git2 in-process scan across file content, file paths, or commit messages
-     *     (docs/DECISIONS.md #26) — not a `git grep` exec or a persistent index.
-     *     Every scan is bounded by its own byte/file/commit budget independent of
+     * @description git2 in-process scan across file content, file paths, commit messages,
+     *     author/committer names, or a rev-list expression (docs/DECISIONS.md
+     *     #26/#46) — not a `git grep`/`git log` exec or a persistent index. Every
+     *     scan is bounded by its own byte/file/commit budget independent of
      *     `limit`; either cap sets `truncated: true`.
      */
     get: operations["get_search"];
@@ -855,7 +856,7 @@ export interface components {
      * @description Requested search variant, echoed back in the response's `type` field.
      * @enum {string}
      */
-    SearchKind: "content" | "path" | "message";
+    SearchKind: "content" | "path" | "message" | "author" | "committer" | "range";
     /** @description Response of `GET /api/v1/repos/{repo}/search` (docs/API.md). */
     SearchResults: {
       /**
@@ -1919,13 +1920,15 @@ export interface operations {
     parameters: {
       query?: {
         /**
-         * @description Fixed-string, case-insensitive query. Trimmed; empty or over 200
-         *     characters is `invalid_param`.
+         * @description Fixed-string, case-insensitive query for every `type` except `range`,
+         *     where it is a case-sensitive rev-list expression instead. Trimmed;
+         *     empty or over 200 characters is `invalid_param` either way.
          * @example TODO
          */
         q?: string;
         /**
-         * @description `content` (default), `path`, or `message`.
+         * @description `content` (default), `path`, `message`, `author`, `committer`, or
+         *     `range`.
          * @example content
          */
         type?: string;
@@ -1956,7 +1959,7 @@ export interface operations {
       /** @description Search results. An empty repository with no `ref` yields an empty result. */
       200: {
         headers: {
-          /** @description `no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref` */
+          /** @description `no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref` (never immutable for `type=range`) */
           "Cache-Control"?: string;
           /** @description Validator-derived; absent on full-sha `ref` requests */
           ETag?: string;
@@ -1973,7 +1976,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description `invalid_param` — missing/oversized `q`, unknown `type`, or bad `limit` */
+      /** @description `invalid_param` — missing/oversized `q`, unknown `type`, bad `limit`, or a `range` token starting with `-` */
       400: {
         headers: {
           [name: string]: unknown;
@@ -1982,7 +1985,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description `repo_not_found`, `ref_not_found` */
+      /** @description `repo_not_found`, `ref_not_found` (also returned when a `range` token doesn't resolve) */
       404: {
         headers: {
           [name: string]: unknown;

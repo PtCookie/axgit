@@ -511,9 +511,10 @@ An Atom feed of the default branch's (HEAD's) most recent **20 commits**.
 
 ### `GET /api/v1/repos/{repo}/search?q=&type=&ref=&limit=`
 
-Repository search: file content, file paths, or commit messages. Implemented as an in-process
-git2 scan (not a `git grep` exec, not a persistent index — DECISIONS.md #26); every scan is
-bounded by its own size budget, independent of `limit`.
+Repository search: file content, file paths, commit messages, author/committer names, or a
+rev-list range expression. Implemented as an in-process git2 scan (not a `git grep`/`git log` exec,
+not a persistent index — DECISIONS.md #26/#46); every scan is bounded by its own size budget,
+independent of `limit`.
 
 ```json
 {
@@ -527,9 +528,11 @@ bounded by its own size budget, independent of `limit`.
 }
 ```
 
-- `q`: **required**. A fixed string (not a regex), matched case-insensitively. Trimmed; empty
-  after trimming or over 200 characters is `400 invalid_param`.
-- `type`: `content` (default), `path`, or `message`. Any other value is `400 invalid_param`.
+- `q`: **required**. Trimmed; empty after trimming or over 200 characters is `400 invalid_param`.
+  A fixed string (not a regex), matched case-insensitively, for every `type` except `range`, where
+  it is instead a case-sensitive rev-list expression (see below).
+- `type`: `content` (default), `path`, `message`, `author`, `committer`, or `range`. Any other
+  value is `400 invalid_param`.
   - `content`: matches file content line by line. Binary files and files over the blob endpoint's
     1 MiB inline-content cap are skipped, same as the blob endpoint's classification. Symlinks are
     excluded (their "content" is a link target, not text).
@@ -537,22 +540,39 @@ bounded by its own size budget, independent of `limit`.
     are included; directories are not (there is nothing to match beyond the files under them).
   - `message`: matches a commit's full message (title + body), walking history from `ref`
     (or HEAD).
+  - `author`/`committer`: matches the commit's author/committer **name only**, never the email —
+    axgit never exposes a raw email address in any response (only `email_hash`), and matching the
+    email here would turn the search box into a confirm/deny oracle for it. A deliberate difference
+    from cgit's `--author=`, which matches `Name <email>`. Walks history from `ref` (or HEAD), same
+    as `message`.
+  - `range`: `q` is a `git log`-style rev-list expression instead of a text filter — the query
+    *selects* commits, it doesn't match against them. Space-separated tokens, each one of:
+    `A..B` (commits reachable from `B` but not `A`; an empty side means `HEAD`), `A...B`
+    (symmetric difference — reachable from either but not both, hiding every merge base), `^X`
+    (excludes everything reachable from `X`), or a bare revision (walks everything reachable from
+    it). A token starting with `-` is rejected as `400 invalid_param` (a `git log` flag, not a
+    revision). Every revision is resolved the same way `ref` is; one that doesn't resolve is
+    `404 ref_not_found`. `ref` itself is not part of the walk for this type — it only determines
+    the response's `sha` — so `q` alone must name everything to include.
 - `ref`: branch/tag/sha, defaults to HEAD. `404 ref_not_found` on resolution failure.
 - `limit`: default 50, allowed range 1–100, same rules as the commit log's `limit` (not clamped).
-  For `content`/`path` it caps the number of files returned; for `message` it caps the number of
-  commits.
-- `files`: populated for `type=content`/`type=path`; empty for `type=message`. Each entry's
-  `lines` holds up to 10 matches (each truncated to 500 characters), empty for `type=path`.
-- `commits`: populated for `type=message` only, using the same shape as a commit log entry
-  (`CommitInfo`).
+  For `content`/`path` it caps the number of files returned; for every commit-producing type
+  (`message`, `author`, `committer`, `range`) it caps the number of commits.
+- `files`: populated for `type=content`/`type=path`; empty otherwise. Each entry's `lines` holds
+  up to 10 matches (each truncated to 500 characters), empty for `type=path`.
+- `commits`: populated for `type=message`/`author`/`committer`/`range`; empty otherwise. Same shape
+  as a commit log entry (`CommitInfo`).
 - `truncated`: `true` when either `limit` or an internal scan budget (20,000 tree entries scanned,
-  32 MiB of blob content read for `content`, or 10,000 commits walked for `message`) was hit
-  before the search finished — the results are a prefix, not necessarily the complete match set.
+  32 MiB of blob content read for `content`, or 10,000 commits walked for any commit-producing
+  type) was hit before the search finished — the results are a prefix, not necessarily the
+  complete match set.
 - Empty repository (unborn HEAD): omitting `ref` returns `200` with `"sha": null` and empty
   `files`/`commits`. An explicit `ref` returns `404 ref_not_found` — the same carve-out the
   commit log applies.
 - Caching follows the commit-detail pattern: immutable only when `ref` is given and equals the
-  resolved commit's full sha as a string; otherwise `ETag` + `Cache-Control: no-cache`.
+  resolved commit's full sha as a string; otherwise `ETag` + `Cache-Control: no-cache`. **Never
+  immutable for `type=range`**, even with a full-sha `ref` — the result depends on the revisions
+  named in `q` (e.g. `main~5..main`), which can move independently of `ref`.
 
 ### `GET /api/v1/repos/{repo}/stats?ref=&period=&limit=`
 

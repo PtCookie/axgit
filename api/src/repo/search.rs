@@ -8,12 +8,13 @@
 //! a process timeout. Same reasoning as blame choosing git2 over exec
 //! (DECISIONS.md #14).
 
-use git2::{Commit, ObjectType, Oid, Repository, TreeWalkMode, TreeWalkResult};
+use git2::{Commit, ObjectType, Oid, Repository, Revwalk, TreeWalkMode, TreeWalkResult};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use super::blob;
 use super::commits::{self, CommitInfo};
+use super::resolve;
 use crate::error::ApiError;
 
 /// Regular-file mode; mirrors `repo/tree.rs`'s private constant (not shared —
@@ -44,6 +45,13 @@ pub enum SearchKind {
     Path,
     /// Commit message (title + body).
     Message,
+    /// Author signature name.
+    Author,
+    /// Committer signature name.
+    Committer,
+    /// A rev-list expression (`A..B`, `A...B`, `^X`, or a bare rev) selecting
+    /// commits directly — `q` is not a text filter for this variant.
+    Range,
 }
 
 /// Matched line within a file (docs/API.md).
@@ -105,6 +113,22 @@ pub fn search(
         }
         SearchKind::Message => {
             let (commits, truncated) = search_messages(repo, commit, &query_lower, limit)?;
+            (Vec::new(), commits, truncated)
+        }
+        SearchKind::Author => {
+            let (commits, truncated) =
+                search_signatures(repo, commit, SignatureField::Author, &query_lower, limit)?;
+            (Vec::new(), commits, truncated)
+        }
+        SearchKind::Committer => {
+            let (commits, truncated) =
+                search_signatures(repo, commit, SignatureField::Committer, &query_lower, limit)?;
+            (Vec::new(), commits, truncated)
+        }
+        SearchKind::Range => {
+            // Case-sensitive: a rev expression, not a text query — the
+            // caller's lowercased `query_lower` doesn't apply here.
+            let (commits, truncated) = search_range(repo, query, limit)?;
             (Vec::new(), commits, truncated)
         }
     };
@@ -284,6 +308,127 @@ fn search_messages(
     Ok((commits, truncated))
 }
 
+/// Which signature `search_signatures` matches against.
+#[derive(Debug, Clone, Copy)]
+enum SignatureField {
+    Author,
+    Committer,
+}
+
+/// Matches a commit's author/committer *name* only — never the email, to
+/// keep the "email addresses are never exposed in any response" invariant
+/// free of a confirm/deny oracle (docs/DECISIONS.md #46). A deliberate
+/// difference from cgit's `--author=`, which matches `Name <email>`.
+fn search_signatures(
+    repo: &Repository,
+    commit: &Commit,
+    field: SignatureField,
+    query_lower: &str,
+    limit: usize,
+) -> Result<(Vec<CommitInfo>, bool), ApiError> {
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push(commit.id())?;
+    let mut commits = Vec::new();
+    let mut truncated = false;
+    for (scanned, oid) in revwalk.enumerate() {
+        if commits.len() >= limit {
+            truncated = true;
+            break;
+        }
+        if scanned >= MAX_SCANNED_COMMITS {
+            truncated = true;
+            break;
+        }
+        let oid = oid?;
+        let found = repo.find_commit(oid)?;
+        let signature = match field {
+            SignatureField::Author => found.author(),
+            SignatureField::Committer => found.committer(),
+        };
+        // Non-utf8 names can't match a text query; skip rather than error —
+        // same treatment `search_messages` gives a non-utf8 message.
+        if let Some(name) = signature.name()
+            && contains_ignore_case(name, query_lower)
+        {
+            commits.push(commits::commit_info(&found));
+        }
+    }
+    Ok((commits, truncated))
+}
+
+/// Builds a revwalk from a `git log`-style rev-list expression (`A..B`,
+/// `A...B`, `^X`, or a bare rev, space-separated). Every token is resolved
+/// through [`resolve::resolve_commit`], so an unresolvable revision is
+/// `404 ref_not_found` rather than a bare `?`-propagated 500.
+///
+/// [`git2::Revwalk::push_range`] is not used: libgit2 1.9.6's
+/// `git_revwalk_push_range` explicitly rejects `A...B` ("symmetric
+/// differences not implemented in revwalk"), so `..`/`...` are both handled
+/// by hand here for one uniform code path and error type.
+fn walk_range<'r>(repo: &'r Repository, expr: &str) -> Result<Revwalk<'r>, ApiError> {
+    let mut revwalk = repo.revwalk()?;
+    for token in expr.split_whitespace() {
+        if token.starts_with('-') {
+            return Err(ApiError::InvalidParam(format!(
+                "range token '{token}' looks like a flag, not a revision"
+            )));
+        }
+        if let Some((left, right)) = token.split_once("...") {
+            let left = resolve_range_side(repo, left)?;
+            let right = resolve_range_side(repo, right)?;
+            // Symmetric difference: hide every merge base of the two sides,
+            // then walk from both — a criss-cross history can have more
+            // than one base, so every one of them must be hidden.
+            for base in repo.merge_bases(left.id(), right.id())?.iter() {
+                revwalk.hide(*base)?;
+            }
+            revwalk.push(left.id())?;
+            revwalk.push(right.id())?;
+        } else if let Some((left, right)) = token.split_once("..") {
+            revwalk.hide(resolve_range_side(repo, left)?.id())?;
+            revwalk.push(resolve_range_side(repo, right)?.id())?;
+        } else if let Some(rev) = token.strip_prefix('^') {
+            revwalk.hide(resolve::resolve_commit(repo, rev)?.id())?;
+        } else {
+            revwalk.push(resolve::resolve_commit(repo, token)?.id())?;
+        }
+    }
+    Ok(revwalk)
+}
+
+/// Resolves one side of an `A..B`/`A...B` token; an empty side (`..B`,
+/// `A..`) means `HEAD`, matching `git log`'s own shorthand.
+fn resolve_range_side<'r>(repo: &'r Repository, side: &str) -> Result<Commit<'r>, ApiError> {
+    let refname = if side.is_empty() { "HEAD" } else { side };
+    resolve::resolve_commit(repo, refname)
+}
+
+/// Runs `q` as a rev-list expression (`walk_range`) and collects the commits
+/// it selects — the query *is* the selector, there is no additional text
+/// filter.
+fn search_range(
+    repo: &Repository,
+    query: &str,
+    limit: usize,
+) -> Result<(Vec<CommitInfo>, bool), ApiError> {
+    let revwalk = walk_range(repo, query)?;
+    let mut commits = Vec::new();
+    let mut truncated = false;
+    for (scanned, oid) in revwalk.enumerate() {
+        if commits.len() >= limit {
+            truncated = true;
+            break;
+        }
+        if scanned >= MAX_SCANNED_COMMITS {
+            truncated = true;
+            break;
+        }
+        let found = repo.find_commit(oid?)?;
+        commits.push(commits::commit_info(&found));
+    }
+    Ok((commits, truncated))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +449,24 @@ mod tests {
             .collect();
         let parent_refs: Vec<_> = parents.iter().collect();
         repo.commit(Some("HEAD"), &sig, &sig, "test", &tree, &parent_refs)
+            .unwrap()
+    }
+
+    /// Like `commit_files`, but never moves `HEAD` (`update_ref: None`) — for
+    /// building a second branch on a parent `HEAD` has already moved past,
+    /// which `commit_files`'s `Some("HEAD")` would reject. `resolve_commit`
+    /// (used by `walk_range`) resolves a raw sha straight from the odb, so
+    /// the result needs no ref pointing at it.
+    fn commit_detached(repo: &Repository, parent: Oid, files: &[(&str, &str)]) -> Oid {
+        let mut builder = repo.treebuilder(None).unwrap();
+        for (name, content) in files {
+            let blob = repo.blob(content.as_bytes()).unwrap();
+            builder.insert(name, blob, 0o100644).unwrap();
+        }
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let sig = git2::Signature::now("Test", "test@example.com").unwrap();
+        let parent_commit = repo.find_commit(parent).unwrap();
+        repo.commit(None, &sig, &sig, "test", &tree, &[&parent_commit])
             .unwrap()
     }
 
@@ -423,5 +586,161 @@ mod tests {
         assert_eq!(results.commits.len(), 1);
         assert_eq!(results.commits[0].sha, renamed.to_string());
         assert!(results.files.is_empty());
+    }
+
+    /// Commits `files` on top of `parent` (or as a root) with distinct
+    /// author/committer names — `commit_files` hardcodes one signature for
+    /// both, which can't exercise `SearchKind::Committer` diverging from
+    /// `SearchKind::Author`.
+    fn commit_with_signatures(
+        repo: &Repository,
+        parent: Option<Oid>,
+        author: &str,
+        committer: &str,
+        message: &str,
+    ) -> Oid {
+        let mut builder = repo.treebuilder(None).unwrap();
+        let blob = repo.blob(b"x").unwrap();
+        builder.insert("a.txt", blob, 0o100644).unwrap();
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let author_sig = git2::Signature::now(author, "author@example.com").unwrap();
+        let committer_sig = git2::Signature::now(committer, "committer@example.com").unwrap();
+        let parents: Vec<_> = parent
+            .map(|oid| repo.find_commit(oid).unwrap())
+            .into_iter()
+            .collect();
+        let parent_refs: Vec<_> = parents.iter().collect();
+        repo.commit(
+            Some("HEAD"),
+            &author_sig,
+            &committer_sig,
+            message,
+            &tree,
+            &parent_refs,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn search_author_should_match_the_author_name_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_with_signatures(&repo, None, "Alice Author", "Bob Merger", "root");
+        let commit = repo.find_commit(root).unwrap();
+
+        let results = search(&repo, &commit, SearchKind::Author, "alice", 50).unwrap();
+        assert_eq!(results.commits.len(), 1);
+        assert_eq!(results.commits[0].sha, root.to_string());
+
+        // Matching the committer's name must not match under `Author`.
+        let results = search(&repo, &commit, SearchKind::Author, "bob", 50).unwrap();
+        assert!(results.commits.is_empty());
+    }
+
+    #[test]
+    fn search_committer_should_match_the_committer_name_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_with_signatures(&repo, None, "Alice Author", "Bob Merger", "root");
+        let commit = repo.find_commit(root).unwrap();
+
+        let results = search(&repo, &commit, SearchKind::Committer, "bob", 50).unwrap();
+        assert_eq!(results.commits.len(), 1);
+        assert_eq!(results.commits[0].sha, root.to_string());
+
+        let results = search(&repo, &commit, SearchKind::Committer, "alice", 50).unwrap();
+        assert!(results.commits.is_empty());
+    }
+
+    #[test]
+    fn search_range_should_exclude_the_left_side_of_dotdot() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files(&repo, None, &[("a.txt", "one")]);
+        let middle = commit_files(&repo, Some(root), &[("a.txt", "two")]);
+        let tip = commit_files(&repo, Some(middle), &[("a.txt", "three")]);
+        let commit = repo.find_commit(tip).unwrap();
+
+        let query = format!("{root}..{tip}");
+        let results = search(&repo, &commit, SearchKind::Range, &query, 50).unwrap();
+        let shas: Vec<_> = results.commits.iter().map(|c| c.sha.clone()).collect();
+        assert_eq!(shas.len(), 2);
+        assert!(shas.contains(&middle.to_string()));
+        assert!(shas.contains(&tip.to_string()));
+        assert!(!shas.contains(&root.to_string()));
+    }
+
+    #[test]
+    fn search_range_should_hide_a_caret_prefixed_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files(&repo, None, &[("a.txt", "one")]);
+        let tip = commit_files(&repo, Some(root), &[("a.txt", "two")]);
+        let commit = repo.find_commit(tip).unwrap();
+
+        let query = format!("{tip} ^{root}");
+        let results = search(&repo, &commit, SearchKind::Range, &query, 50).unwrap();
+        let shas: Vec<_> = results.commits.iter().map(|c| c.sha.clone()).collect();
+        assert_eq!(shas, vec![tip.to_string()]);
+    }
+
+    #[test]
+    fn search_range_should_walk_a_bare_rev() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files(&repo, None, &[("a.txt", "one")]);
+        let tip = commit_files(&repo, Some(root), &[("a.txt", "two")]);
+        let commit = repo.find_commit(tip).unwrap();
+
+        let results = search(&repo, &commit, SearchKind::Range, "HEAD", 50).unwrap();
+        let shas: Vec<_> = results.commits.iter().map(|c| c.sha.clone()).collect();
+        assert_eq!(shas.len(), 2);
+        assert!(shas.contains(&root.to_string()));
+        assert!(shas.contains(&tip.to_string()));
+    }
+
+    #[test]
+    fn search_range_should_apply_symmetric_difference_across_a_criss_cross_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let base = commit_files(&repo, None, &[("a.txt", "base")]);
+        // `commit_files` moves `HEAD` to its own result via `Some("HEAD")`,
+        // which rejects a second commit built on the same parent once `HEAD`
+        // has already moved past it ("current tip is not the first parent")
+        // — a diverging two-branch history needs a detached commit
+        // (`update_ref: None`) for at least one side.
+        let left = commit_files(&repo, Some(base), &[("a.txt", "left")]);
+        let right = commit_detached(&repo, base, &[("a.txt", "right")]);
+        let commit = repo.find_commit(left).unwrap();
+
+        let query = format!("{left}...{right}");
+        let results = search(&repo, &commit, SearchKind::Range, &query, 50).unwrap();
+        let shas: Vec<_> = results.commits.iter().map(|c| c.sha.clone()).collect();
+        assert_eq!(shas.len(), 2);
+        assert!(shas.contains(&left.to_string()));
+        assert!(shas.contains(&right.to_string()));
+        assert!(!shas.contains(&base.to_string()));
+    }
+
+    #[test]
+    fn search_range_should_reject_a_flag_looking_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files(&repo, None, &[("a.txt", "one")]);
+        let commit = repo.find_commit(root).unwrap();
+
+        let err = search(&repo, &commit, SearchKind::Range, "--all", 50).unwrap_err();
+        assert!(matches!(err, ApiError::InvalidParam(_)));
+    }
+
+    #[test]
+    fn search_range_should_report_an_unresolvable_revision_as_ref_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files(&repo, None, &[("a.txt", "one")]);
+        let commit = repo.find_commit(root).unwrap();
+
+        let err = search(&repo, &commit, SearchKind::Range, "does-not-exist", 50).unwrap_err();
+        assert!(matches!(err, ApiError::RefNotFound(_)));
     }
 }

@@ -1,5 +1,5 @@
-//! Handler for `/repos/{repo}/search` — content, path, and commit-message
-//! search within a single repository.
+//! Handler for `/repos/{repo}/search` — content, path, commit-message,
+//! author/committer, and rev-list-range search within a single repository.
 
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
@@ -20,11 +20,13 @@ const MAX_QUERY_CHARS: usize = 200;
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct SearchQuery {
-    /// Fixed-string, case-insensitive query. Trimmed; empty or over 200
-    /// characters is `invalid_param`.
+    /// Fixed-string, case-insensitive query for every `type` except `range`,
+    /// where it is a case-sensitive rev-list expression instead. Trimmed;
+    /// empty or over 200 characters is `invalid_param` either way.
     #[param(example = "TODO")]
     q: Option<String>,
-    /// `content` (default), `path`, or `message`.
+    /// `content` (default), `path`, `message`, `author`, `committer`, or
+    /// `range`.
     #[serde(rename = "type")]
     #[param(value_type = Option<String>, example = "content")]
     r#type: Option<String>,
@@ -53,17 +55,21 @@ fn parse_kind(raw: Option<&str>) -> Result<SearchKind, ApiError> {
         None | Some("content") => Ok(SearchKind::Content),
         Some("path") => Ok(SearchKind::Path),
         Some("message") => Ok(SearchKind::Message),
+        Some("author") => Ok(SearchKind::Author),
+        Some("committer") => Ok(SearchKind::Committer),
+        Some("range") => Ok(SearchKind::Range),
         Some(other) => Err(ApiError::InvalidParam(format!(
-            "type must be one of content, path, message (got '{other}')"
+            "type must be one of content, path, message, author, committer, range (got '{other}')"
         ))),
     }
 }
 
 /// Repository search
 ///
-/// git2 in-process scan across file content, file paths, or commit messages
-/// (docs/DECISIONS.md #26) — not a `git grep` exec or a persistent index.
-/// Every scan is bounded by its own byte/file/commit budget independent of
+/// git2 in-process scan across file content, file paths, commit messages,
+/// author/committer names, or a rev-list expression (docs/DECISIONS.md
+/// #26/#46) — not a `git grep`/`git log` exec or a persistent index. Every
+/// scan is bounded by its own byte/file/commit budget independent of
 /// `limit`; either cap sets `truncated: true`.
 #[utoipa::path(
     get,
@@ -77,12 +83,12 @@ fn parse_kind(raw: Option<&str>) -> Result<SearchKind, ApiError> {
         (status = 200, description = "Search results. An empty repository with no `ref` yields an empty result.", body = SearchResults,
             headers(
                 ("ETag" = String, description = "Validator-derived; absent on full-sha `ref` requests"),
-                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref`"),
+                ("Cache-Control" = String, description = "`no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref` (never immutable for `type=range`)"),
             ),
         ),
         (status = 304, description = "`If-None-Match` matched the current `ETag`"),
-        (status = 400, description = "`invalid_param` — missing/oversized `q`, unknown `type`, or bad `limit`", body = ErrorResponse),
-        (status = 404, description = "`repo_not_found`, `ref_not_found`", body = ErrorResponse),
+        (status = 400, description = "`invalid_param` — missing/oversized `q`, unknown `type`, bad `limit`, or a `range` token starting with `-`", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found`, `ref_not_found` (also returned when a `range` token doesn't resolve)", body = ErrorResponse),
     ),
 )]
 pub async fn get_search(
@@ -122,7 +128,12 @@ pub async fn get_search(
             };
             let sha = commit.id().to_string();
             let results = search::search(repo, &commit, kind, &q, limit)?;
-            let immutable = query.r#ref.as_deref() == Some(sha.as_str());
+            // `range` walks revisions named in `q` (e.g. `main~5..main`),
+            // which can move independently of the resolved `ref`/`sha` — so
+            // it never qualifies for immutable caching, unlike every other
+            // variant (docs/DECISIONS.md #46).
+            let immutable =
+                kind != SearchKind::Range && query.r#ref.as_deref() == Some(sha.as_str());
             Ok((immutable, serde_json::to_vec(&results)?))
         },
     )
@@ -147,6 +158,12 @@ mod tests {
         assert_eq!(parse_kind(Some("content")).unwrap(), SearchKind::Content);
         assert_eq!(parse_kind(Some("path")).unwrap(), SearchKind::Path);
         assert_eq!(parse_kind(Some("message")).unwrap(), SearchKind::Message);
+        assert_eq!(parse_kind(Some("author")).unwrap(), SearchKind::Author);
+        assert_eq!(
+            parse_kind(Some("committer")).unwrap(),
+            SearchKind::Committer
+        );
+        assert_eq!(parse_kind(Some("range")).unwrap(), SearchKind::Range);
         assert!(parse_kind(Some("bogus")).is_err());
     }
 }

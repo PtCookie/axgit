@@ -877,16 +877,37 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`CommitDetail` gained
     `note`; the endpoint's caching description states the extra "note-less" condition).
 
+- **`/search` API: `type=author|committer|range`** (DECISIONS.md #46). Closed the "Author /
+  committer / revision-range search" cgit-parity gap under "Log" — the last of `/search`'s three
+  missing `qt=` modes. Finalized design:
+  - `author`/`committer` match the commit's signature **name only**, never the email — keeps the
+    "no raw email in any response" invariant free of a confirm/deny search oracle. Reuses the same
+    revwalk/budget shape `type=message` already had (`repo/search.rs::search_signatures`).
+  - `range` treats `q` as a rev-list expression (`A..B`, `A...B`, `^X`, bare revs) that selects
+    commits directly rather than filtering them; `ref` still resolves the response's `sha` but
+    plays no part in the walk. Hand-rolled in `repo/search.rs::walk_range` — libgit2 1.9.6's
+    `git_revwalk_push_range` rejects `A...B` outright, so `git2::Revwalk::push_range` isn't used at
+    all, keeping one parser for the whole grammar. A `-`-prefixed token is `400 invalid_param`; an
+    unresolvable revision is `404 ref_not_found`, same as every other ref lookup in the API.
+  - `range` is never immutably cached, even with a full-sha `ref` — its result depends on the
+    revisions named in `q`, which move independently of `ref`.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (new `SearchKind`
+    variants). Web support for the new types is the next commit.
+
 ## Next up
 
-None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
-stays permanently excluded, not deferred, by the read-only invariant), the build-chunk-size,
-ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and commit-log-immutable-caching
-candidates are all resolved, diff/patch output (#38/#39) plus its three follow-up candidates (#40,
-#41, #43) closed the largest cgit parity gap, the feed's alternate link plus a `robots.txt` closed
-two more of the "Feed and discovery" gaps, log message expansion (#44) closed the last item under
-"Log", and git notes on the commit page (#45) closed the `git notes` item under "Commit page"
-(archive download links on the commit page remain open there). Pick the next piece of work from the
+**`/{repo}/search` page: surface `type=author|committer|range`** (DECISIONS.md #47, following the
+API commit above). `SearchView.tsx`'s type selector and result-list branch both need the three new
+values added — the commit-row renderer `type=message` already has is reusable as-is for all three,
+so this is additive, no new component. Once that lands, #9's v1 scope is fully built out again
+(search: #25/#26/#27/#46/#47; stats: #28/#29; HTTP push stays permanently excluded, not deferred,
+by the read-only invariant), the build-chunk-size, ref-badge, cgit-compatibility, blame-rename,
+commit-log-pagination, and commit-log-immutable-caching candidates are all resolved, diff/patch
+output (#38/#39) plus its three follow-up candidates (#40, #41, #43) closed the largest cgit parity
+gap, the feed's alternate link plus a `robots.txt` closed two more of the "Feed and discovery"
+gaps, log message expansion (#44) closed the last item under "Log" message search, and git notes on
+the commit page (#45) closed the `git notes` item under "Commit page" (archive download links on
+the commit page remain open there). Afterwards, pick the next piece of work from the
 candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
@@ -910,9 +931,6 @@ recorded separately below instead of listed as gaps.
   - Rename-following in the path filter (`follow=1`, `enable-follow-links`) — blame already follows
     renames (#36); log is the remaining piece. cgit's `handle_rename()` rewrites the link's path
     too.
-  - Author / committer / revision-range search (`qt=author|committer|range`) — `/search` only has
-    `content|path|message`. cgit's `range` mode accepts rev-list expressions, rejecting any token
-    starting with `-`.
   - Files / Lines changed columns (`enable-log-filecount`, `enable-log-linecount`).
 - **Tags and refs**
   - Dedicated tag detail page + API (`cmd=tag`, `ui-tag.c`) — tag message body, tagger, target

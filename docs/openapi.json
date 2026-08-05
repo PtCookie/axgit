@@ -1393,7 +1393,7 @@
           "search"
         ],
         "summary": "Repository search",
-        "description": "git2 in-process scan across file content, file paths, or commit messages\n(docs/DECISIONS.md #26) — not a `git grep` exec or a persistent index.\nEvery scan is bounded by its own byte/file/commit budget independent of\n`limit`; either cap sets `truncated: true`.",
+        "description": "git2 in-process scan across file content, file paths, commit messages,\nauthor/committer names, or a rev-list expression (docs/DECISIONS.md\n#26/#46) — not a `git grep`/`git log` exec or a persistent index. Every\nscan is bounded by its own byte/file/commit budget independent of\n`limit`; either cap sets `truncated: true`.",
         "operationId": "get_search",
         "parameters": [
           {
@@ -1409,7 +1409,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Fixed-string, case-insensitive query. Trimmed; empty or over 200\ncharacters is `invalid_param`.",
+            "description": "Fixed-string, case-insensitive query for every `type` except `range`,\nwhere it is a case-sensitive rev-list expression instead. Trimmed;\nempty or over 200 characters is `invalid_param` either way.",
             "required": false,
             "schema": {
               "type": "string"
@@ -1419,7 +1419,7 @@
           {
             "name": "type",
             "in": "query",
-            "description": "`content` (default), `path`, or `message`.",
+            "description": "`content` (default), `path`, `message`, `author`, `committer`, or\n`range`.",
             "required": false,
             "schema": {
               "type": "string"
@@ -1458,7 +1458,7 @@
                 "schema": {
                   "type": "string"
                 },
-                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref`"
+                "description": "`no-cache`, or `public, max-age=31536000, immutable` for a full-sha `ref` (never immutable for `type=range`)"
               },
               "ETag": {
                 "schema": {
@@ -1479,7 +1479,7 @@
             "description": "`If-None-Match` matched the current `ETag`"
           },
           "400": {
-            "description": "`invalid_param` — missing/oversized `q`, unknown `type`, or bad `limit`",
+            "description": "`invalid_param` — missing/oversized `q`, unknown `type`, bad `limit`, or a `range` token starting with `-`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1489,7 +1489,7 @@
             }
           },
           "404": {
-            "description": "`repo_not_found`, `ref_not_found`",
+            "description": "`repo_not_found`, `ref_not_found` (also returned when a `range` token doesn't resolve)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2833,7 +2833,10 @@
         "enum": [
           "content",
           "path",
-          "message"
+          "message",
+          "author",
+          "committer",
+          "range"
         ]
       },
       "SearchResults": {

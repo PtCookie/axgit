@@ -1557,3 +1557,60 @@ commit page only — the log's `msg=1` rows stay note-free, kept as its own poss
   `main`/the tag — notes live on their own ref, so no existing fixture commit sha changed.
 - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`CommitDetail` gained
   `note`; the endpoint's caching description now states the extra "note-less" condition).
+
+## #46 Search API: `type=author|committer|range` (cgit `qt=author|committer|range` parity)
+
+Closed the `docs/ROADMAP.md` "Log" cgit-parity gap: `/search` (#26) only covered `content`/`path`/
+`message` (cgit's `grep`), leaving cgit's two remaining log query types — search by author/
+committer, and a rev-list range expression — with no analogue. Same endpoint, same response
+envelope (`sha`, `truncated`, `files`, `commits`), following #26's own "one endpoint, one type
+selector" rationale rather than three more routes.
+
+- **`author`/`committer` match the signature *name* only, never the email.** axgit's blanket
+  invariant is that no response ever exposes a raw email address (only `email_hash` —
+  `repo/commits.rs`'s `CommitAuthor`); matching the email in a search box would turn it into a
+  confirm/deny oracle for a specific address (search `alice@example.com`, see whether any commit
+  comes back), which the hash-only design exists specifically to prevent. This is a deliberate
+  difference from cgit's own `--author=`, which matches `Name <email>` — documented in `docs/API.md`
+  so it isn't mistaken for a bug later. Implementation is the same revwalk-and-budget shape
+  `search_messages` already used (`repo/search.rs::search_signatures`), just testing
+  `commit.author()`/`committer()`'s `name()` instead of `message()`.
+- **`range` treats `q` as a rev-list expression, not a text filter** — the query *selects* commits
+  directly (`A..B`, `A...B`, `^X`, bare revs, space-separated), matching cgit's own `range` mode.
+  `ref` still resolves the response's `sha` (so the empty-repository carve-out and the general
+  "`ref` defaults to HEAD" behavior are untouched) but plays no part in the walk itself — `q` alone
+  has to name everything to include, same as `git log <range>` on the command line ignores any
+  checked-out branch.
+  - **A token starting with `-` is `400 invalid_param`.** Nothing here is ever exec'd (`repo/
+    search.rs`'s doc comment already states the container never shells out to `git log` for
+    search), so this isn't an injection guard — it exists purely so a `git log`-flag-shaped token
+    (`--all`, `-n5`) gets a clear 400 instead of libgit2 attempting to `revparse` it as a revision
+    and failing with a confusing `ref_not_found`.
+  - **Hand-rolled `A..B`/`A...B`/`^X` parsing (`repo/search.rs::walk_range`), not
+    `git2::Revwalk::push_range`.** Reading libgit2 1.9.6's `revwalk.c` directly (the same
+    verification standard #24 established) showed `git_revwalk_push_range` explicitly rejects
+    `A...B` — `GIT_REVSPEC_MERGE_BASE` hits a `goto out` with "symmetric differences not
+    implemented in revwalk" (`revwalk.c:253`) — so it can't cover the full grammar the plan called
+    for. Rather than mixing `push_range` for `..` with hand-rolled logic only for `...`, both are
+    parsed by hand for one uniform code path, one error type
+    (`resolve::resolve_commit`'s existing `RefNotFound` mapping — no bare `?` anywhere, so an
+    unresolvable token in a range is `404 ref_not_found`, never a 500), and one consistent
+    "empty side means `HEAD`" rule across `..`/`...`. `A...B`'s symmetric difference is built from
+    `Repository::merge_bases` (plural — a criss-cross history can have more than one base) with
+    every base `hide()`-ed before both sides are `push()`-ed.
+  - Every revision goes through the same `resolve::resolve_commit` every other endpoint uses, so
+    branch/tag/short-sha/`HEAD` all resolve identically to `?ref=` elsewhere in the API — no
+    parallel resolution logic.
+- **`range` never gets immutable caching, even with a full-sha `ref`.** Immutability up to now has
+  meant "the request's `ref` is the resolved commit's own sha," which was a sound proxy because the
+  API's own resolution of `ref` was the only thing feeding the response. `range` breaks that proxy:
+  the actual result depends on whatever revisions `q` names (`main~5..main` moves every time `main`
+  moves), which is completely independent of `ref`. `handlers/search.rs::get_search` special-cases
+  it: `immutable = kind != SearchKind::Range && ref == sha`. The existing cache key already
+  includes `q`/`type`, so this only affects the immutable-vs-ETag header choice, not correctness of
+  what's cached.
+- **`MAX_SCANNED_COMMITS` (10,000) and `limit` apply to `author`/`committer`/`range` exactly as
+  `message` already used them** — no new budget constant, same `truncated` semantics.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (new `SearchKind` variants,
+  the `type`/`q`/caching prose extended). The `/{repo}/search` web page picking up the three new
+  types is a follow-up commit (#47).
