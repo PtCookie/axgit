@@ -68,11 +68,19 @@ describe("ReadmeView", () => {
     // (react-markdown substitutes the `code` *component*, not a `"code"`
     // tag string) previously made every fence fall back to unstyled text.
     await expect.element(page.getByText("fn")).toBeVisible();
-    await vi.waitFor(() => {
-      const span = document.querySelector("pre.shiki-code span");
-      expect(span).not.toBeNull();
-      expect(span?.getAttribute("style")).toBeTruthy();
-    });
+    // `vi.waitFor`'s default 1s timeout can be too tight in CI, where the
+    // Shiki highlighter's cold start (several dynamic imports plus grammar
+    // loading, all going through the browser's module transform pipeline)
+    // competes with other test workers for CPU — bump it well past what a
+    // slow, loaded runner needs.
+    await vi.waitFor(
+      () => {
+        const span = document.querySelector("pre.shiki-code span");
+        expect(span).not.toBeNull();
+        expect(span?.getAttribute("style")).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("renders plain-text formats (rst/plain) as preformatted text, not markdown", async () => {
