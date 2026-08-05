@@ -485,11 +485,10 @@ An Atom feed of the default branch's (HEAD's) most recent **20 commits**.
 - Entry: `<title>` = commit summary (`(no message)` if non-UTF-8), `<id>` =
   **`urn:sha1:{full sha}`** (stable regardless of host — avoids duplicate entries in feed
   readers), `<updated>` = authordate, `<author><name>` only (not even a hashed email), the
-  `rel="alternate"` link = the commit detail API URL (**provisional** — will be swapped for the
-  web UI's commit page route once that's finalized).
+  `rel="alternate"` link = the web UI's commit page (`/{repo}/commit/{sha}`).
 - The absolute URL base is reconstructed from `X-Forwarded-Proto` (default `http`) +
   `X-Forwarded-Host` → `Host` (default `localhost`) headers (no separate base URL config,
-  DECISIONS.md #12).
+  DECISIONS.md #12). The repository name is percent-encoded wherever it appears in an emitted URL.
 - An empty repository (unborn HEAD) returns `200` with an entry-less feed, not a 404.
 - ETag + `Cache-Control: no-cache` (see the caching headers section). Since the body embeds the
   base URL, the server response cache key includes the base URL too.

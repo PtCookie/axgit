@@ -817,14 +817,30 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /diff` gained
     `stat`).
 
+- **Feed alternate link fixed to the web commit page**. Closed one of the "Feed and discovery"
+  cgit-parity gaps. Finalized design:
+  - `api/src/handlers/feed.rs`'s `rel="alternate"` link now points at `/{repo}/commit/{sha}` (the
+    web UI) instead of the API's own commit-detail URL — closing a stale TODO: `docs/API.md` had
+    flagged this "provisional" since before the commit page existed. `<id>`/`rel="self"` stay on
+    the API's feed URL (a feed document's `self` link must be itself).
+  - New private `encode_segment` percent-encodes the repo name in every emitted feed URL —
+    `open_named` only rejects `/`, `\`, and a leading `.`, so a name with a space or other reserved
+    byte was reachable and, until now, produced a syntactically invalid URI. Hand-rolled, matching
+    the file's existing "small fixed document, build it by hand" stance (`xml_escape`,
+    DECISIONS.md #12).
+  - `docs/API.md` updated (dropped the "provisional" note, documented percent-encoding). No
+    `docs/openapi.json` change — the alternate link was never part of the operation's documented
+    schema.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out (search: #25/#26/#27; stats: #28/#29; HTTP push
 stays permanently excluded, not deferred, by the read-only invariant), the build-chunk-size,
 ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and commit-log-immutable-caching
-candidates are all resolved, and diff/patch output (#38/#39) plus its three follow-up candidates
-(#40, #41, #43) closed the largest cgit parity gap. Pick the next piece of work from the candidates
-below, or from a fresh request.
+candidates are all resolved, diff/patch output (#38/#39) plus its three follow-up candidates (#40,
+#41, #43) closed the largest cgit parity gap, and the feed's alternate link now points at the web
+commit page instead of the API. Pick the next piece of work from the candidates below, or from a
+fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -878,11 +894,12 @@ recorded separately below instead of listed as gaps.
   - Atom parameters: branch (`h=`), path filter, `all=1` (all refs), item count
     (`max-atom-items`) — `/feed.atom` is fixed at HEAD, 20 entries.
   - `<head>` Atom discovery (`<link rel="alternate" type="application/atom+xml">`) and the
-    clone-URL `<link rel="vcs-git">` — neither is in `web/src/layouts/Layout.astro`.
+    clone-URL `<link rel="vcs-git">` — neither is in `web/src/layouts/Layout.astro`. Non-trivial:
+    repo pages are prerendered under the `__repo__` placeholder, so a per-repo `<link>` needs a
+    runtime fill-in (`window.__axgit.fillRepoShell`) and would be invisible to non-JS feed
+    readers — deserves its own decision, not a tack-on to the item below.
   - `robots.txt` — cgit ships one disallowing `/*/snapshot/*` and `/*/blame/*`. `web/public/` only
     has favicons, so crawlers can hit archive/blame/search freely.
-  - The feed's `rel="alternate"` still points at the API commit URL (flagged as provisional in
-    `docs/API.md`) — should become the web UI's `/{repo}/commit/{sha}`.
 - **Repository index**
   - Column sorting (`s=name|desc|owner|idle|section`, `repository-sort=age|name`) — axgit is fixed
     to name order plus the client-side `?q=` filter; cgit's `idle` sort is descending.

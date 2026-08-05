@@ -107,7 +107,10 @@ fn header_value<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
 }
 
 fn render_feed(base: &str, name: &str, info: &RepoInfo, commits: &[CommitInfo]) -> String {
-    let self_url = format!("{base}/api/v1/repos/{name}/feed.atom");
+    // `<id>`/`rel="self"` must be this document's own URL, so they stay on
+    // the API route even though entries' `rel="alternate"` points at the web
+    // UI (see render_entry).
+    let self_url = format!("{base}/api/v1/repos/{}/feed.atom", encode_segment(name));
     let updated = commits
         .first()
         .and_then(|commit| commit.authored_at.as_deref())
@@ -139,7 +142,10 @@ fn render_feed(base: &str, name: &str, info: &RepoInfo, commits: &[CommitInfo]) 
 fn render_entry(xml: &mut String, base: &str, name: &str, commit: &CommitInfo) {
     let title = commit.summary.as_deref().unwrap_or("(no message)");
     let updated = commit.authored_at.as_deref().unwrap_or(EPOCH);
-    let commit_url = format!("{base}/api/v1/repos/{name}/commits/{}", commit.sha);
+    // The web UI's commit page, not the API — feed readers should land
+    // somewhere a human can read (docs/API.md, previously "provisional").
+    // The sha is hex, so it needs no encoding.
+    let commit_url = format!("{base}/{}/commit/{}", encode_segment(name), commit.sha);
 
     xml.push_str("  <entry>\n");
     xml.push_str(&format!("    <title>{}</title>\n", xml_escape(title)));
@@ -155,6 +161,23 @@ fn render_entry(xml: &mut String, base: &str, name: &str, commit: &CommitInfo) {
         xml_escape(&commit.author.name)
     ));
     xml.push_str("  </entry>\n");
+}
+
+/// Percent-encodes a repository name for use as a URL path segment.
+/// `open_named` only rejects `/`, `\`, and a leading `.` (docs/API.md), so a
+/// name containing a space or other reserved byte is otherwise reachable and
+/// would produce a syntactically invalid URI if interpolated raw.
+fn encode_segment(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
 }
 
 fn xml_escape(value: &str) -> String {
@@ -183,6 +206,14 @@ mod tests {
             "&lt;b&gt; &amp; &quot;it&apos;s&quot;"
         );
         assert_eq!(xml_escape("plain"), "plain");
+    }
+
+    #[test]
+    fn encode_segment_should_percent_encode_reserved_bytes() {
+        assert_eq!(encode_segment("git-compose"), "git-compose");
+        assert_eq!(encode_segment("my repo"), "my%20repo");
+        assert_eq!(encode_segment("a/b"), "a%2Fb");
+        assert_eq!(encode_segment("café"), "caf%C3%A9");
     }
 
     #[test]

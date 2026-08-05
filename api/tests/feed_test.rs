@@ -120,10 +120,49 @@ async fn feed_builds_base_url_from_forwarded_headers() {
     )
     .await;
     let xml = String::from_utf8(body).unwrap();
+    // `<id>`/`rel="self"` stay on the API's own feed URL.
     assert!(xml.contains(
         "<link rel=\"self\" href=\"https://git.example.com/api/v1/repos/feed/feed.atom\"/>"
     ));
-    assert!(xml.contains("href=\"https://git.example.com/api/v1/repos/feed/commits/"));
+    // `rel="alternate"` points at the web UI's commit page, not the API.
+    for line in xml
+        .lines()
+        .filter(|line| line.contains("rel=\"alternate\""))
+    {
+        assert!(
+            line.starts_with(
+                "    <link rel=\"alternate\" href=\"https://git.example.com/feed/commit/"
+            ) && line.ends_with("\"/>"),
+            "unexpected alternate link: {line}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn feed_percent_encodes_a_repo_name_with_reserved_characters() {
+    let root = tempfile::tempdir().unwrap();
+    common::create_bare_repo(root.path(), "my repo.git");
+    common::commit_history(
+        &root.path().join("my repo.git"),
+        &[common::CommitSpec {
+            file: "a.txt",
+            content: "one\n",
+            message: "first commit",
+            date: "2026-07-01T12:00:00+09:00",
+        }],
+    );
+
+    let (status, _, body) = common::get_bytes_with_headers(
+        router_for(root.path()),
+        "/api/v1/repos/my%20repo/feed.atom",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let xml = String::from_utf8(body).unwrap();
+    assert!(xml.contains(
+        "<link rel=\"self\" href=\"http://localhost/api/v1/repos/my%20repo/feed.atom\"/>"
+    ));
+    assert!(xml.contains("<link rel=\"alternate\" href=\"http://localhost/my%20repo/commit/"));
 }
 
 #[tokio::test]
