@@ -37,10 +37,21 @@ const TYPE_OPTIONS: { value: SearchKind; label: string }[] = [
   { value: "content", label: "Content" },
   { value: "path", label: "File path" },
   { value: "message", label: "Commit message" },
+  { value: "author", label: "Author" },
+  { value: "committer", label: "Committer" },
+  { value: "range", label: "Revision range" },
 ];
 
+/** Every valid `type` value, derived from `TYPE_OPTIONS` so the list lives
+ *  in one place. */
+const SEARCH_KINDS: readonly SearchKind[] = TYPE_OPTIONS.map((option) => option.value);
+
+/** `type`s whose results are commits (`SearchResults.commits`), rendered as
+ *  commit rows — everything else (`content`/`path`) renders as file rows. */
+const COMMIT_KINDS: readonly SearchKind[] = ["message", "author", "committer", "range"];
+
 function isSearchKind(value: string | undefined): value is SearchKind {
-  return value === "content" || value === "path" || value === "message";
+  return value !== undefined && (SEARCH_KINDS as readonly string[]).includes(value);
 }
 
 /** Also rendered statically into the page shell as the island's
@@ -132,6 +143,13 @@ export default function SearchView({ repo, q: qParam, type: typeParam, ref: refP
         </button>
       </form>
 
+      {resolvedType === "range" && (
+        <p className="text-muted-foreground text-sm">
+          Revision range: a rev-list expression, not a text query — e.g. <code>v1.0..main</code> or{" "}
+          <code>main ^next</code>.
+        </p>
+      )}
+
       {state.status === "idle" && <p className="text-muted-foreground text-sm">Enter a search query above.</p>}
 
       {state.status === "loading" && (
@@ -170,7 +188,7 @@ function SearchResultsList({ repo, ref, results }: SearchResultsListProps) {
       )}
       {!hasResults ? (
         <p className="text-muted-foreground text-sm">No matches found.</p>
-      ) : results.type === "message" ? (
+      ) : COMMIT_KINDS.includes(results.type) ? (
         <ul className="divide-border divide-y">
           {results.commits.map((commit) => (
             <li key={commit.sha} className="flex flex-wrap items-center gap-2 py-2">

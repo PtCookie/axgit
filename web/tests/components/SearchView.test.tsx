@@ -50,6 +50,16 @@ const MESSAGE_RESULTS: SearchResults = {
   ],
 };
 
+const AUTHOR_RESULTS: SearchResults = {
+  ...MESSAGE_RESULTS,
+  type: "author",
+};
+
+const RANGE_RESULTS: SearchResults = {
+  ...MESSAGE_RESULTS,
+  type: "range",
+};
+
 describe("SearchView", () => {
   beforeEach(() => {
     mockedSearchRepo.mockReset();
@@ -96,6 +106,33 @@ describe("SearchView", () => {
     await expect.element(page.getByText("Ada Lovelace")).toBeVisible();
     const link = page.getByRole("link", { name: "fix: add a helper function" });
     await expect.element(link).toHaveAttribute("href", "/git-compose/commit/def456abc123def456abc123def456abc123def");
+  });
+
+  it("renders author matches as commit rows, reusing the message-row shape", async () => {
+    mockedSearchRepo.mockResolvedValue(AUTHOR_RESULTS);
+    render(<SearchView repo="git-compose" q="Ada" type="author" />);
+
+    await expect.element(page.getByText("Ada Lovelace")).toBeVisible();
+    const link = page.getByRole("link", { name: "fix: add a helper function" });
+    await expect.element(link).toHaveAttribute("href", "/git-compose/commit/def456abc123def456abc123def456abc123def");
+    expect(mockedSearchRepo).toHaveBeenCalledWith("git-compose", {
+      q: "Ada",
+      type: "author",
+      ref: undefined,
+    });
+  });
+
+  it("renders range matches as commit rows and shows the range hint", async () => {
+    mockedSearchRepo.mockResolvedValue(RANGE_RESULTS);
+    render(<SearchView repo="git-compose" q="v1.0..main" type="range" />);
+
+    await expect.element(page.getByText("Ada Lovelace")).toBeVisible();
+    await expect.element(page.getByText(/rev-list expression/)).toBeVisible();
+    expect(mockedSearchRepo).toHaveBeenCalledWith("git-compose", {
+      q: "v1.0..main",
+      type: "range",
+      ref: undefined,
+    });
   });
 
   it("shows a no-matches message for an empty result", async () => {

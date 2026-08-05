@@ -894,20 +894,31 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (new `SearchKind`
     variants). Web support for the new types is the next commit.
 
+- **`/{repo}/search` page: surface `type=author|committer|range`** (DECISIONS.md #47). The web half
+  of #46. Finalized design:
+  - No new component: the `type=message` commit-row renderer in `SearchResultsList`
+    (`SearchView.tsx`) already fits the three new types exactly (all four produce
+    `SearchResults.commits`) — the `results.type === "message"` check became a `COMMIT_KINDS`
+    membership test instead of growing more `||` arms.
+  - `TYPE_OPTIONS` stayed the single source of truth for valid `type` values — `isSearchKind` is
+    now derived from it (`SEARCH_KINDS = TYPE_OPTIONS.map(...)`) rather than its own hard-coded
+    `===` chain, which would otherwise have drifted the moment only one of the two was updated.
+  - A one-line hint under the form for `type=range` (`v1.0..main`, `main ^next`) — a rev-list
+    expression isn't a text query, and the search box's placeholder gives no clue otherwise.
+  - No route/`shellFor`/`shell_for`/API contract change — `SearchView.tsx` and its test only.
+
 ## Next up
 
-**`/{repo}/search` page: surface `type=author|committer|range`** (DECISIONS.md #47, following the
-API commit above). `SearchView.tsx`'s type selector and result-list branch both need the three new
-values added — the commit-row renderer `type=message` already has is reusable as-is for all three,
-so this is additive, no new component. Once that lands, #9's v1 scope is fully built out again
-(search: #25/#26/#27/#46/#47; stats: #28/#29; HTTP push stays permanently excluded, not deferred,
-by the read-only invariant), the build-chunk-size, ref-badge, cgit-compatibility, blame-rename,
-commit-log-pagination, and commit-log-immutable-caching candidates are all resolved, diff/patch
-output (#38/#39) plus its three follow-up candidates (#40, #41, #43) closed the largest cgit parity
-gap, the feed's alternate link plus a `robots.txt` closed two more of the "Feed and discovery"
-gaps, log message expansion (#44) closed the last item under "Log" message search, and git notes on
-the commit page (#45) closed the `git notes` item under "Commit page" (archive download links on
-the commit page remain open there). Afterwards, pick the next piece of work from the
+None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
+HTTP push stays permanently excluded, not deferred, by the read-only invariant), the
+build-chunk-size, ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and
+commit-log-immutable-caching candidates are all resolved, diff/patch output (#38/#39) plus its
+three follow-up candidates (#40, #41, #43) closed the largest cgit parity gap, the feed's alternate
+link plus a `robots.txt` closed two more of the "Feed and discovery" gaps, log message expansion
+(#44) closed the last item under "Log" message search, git notes on the commit page (#45) closed
+the `git notes` item under "Commit page" (archive download links on the commit page remain open
+there), and author/committer/range search (#46/#47) closed the last remaining item under "Log".
+Pick the next piece of work from the
 candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)

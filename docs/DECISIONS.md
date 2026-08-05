@@ -1614,3 +1614,27 @@ selector" rationale rather than three more routes.
 - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (new `SearchKind` variants,
   the `type`/`q`/caching prose extended). The `/{repo}/search` web page picking up the three new
   types is a follow-up commit (#47).
+
+## #47 `/{repo}/search` page: surface `type=author|committer|range`
+
+The web half of #46 — the API commit deliberately deferred the UI, following #26/#27's own
+API-then-page precedent.
+
+- **No new component.** `type=message`'s commit-row renderer in `SearchResultsList`
+  (`SearchView.tsx`) already fits `author`/`committer`/`range` exactly — all four produce
+  `SearchResults.commits` in the identical `CommitInfo` shape. The `results.type === "message"`
+  branch condition became a `COMMIT_KINDS` membership test (`["message", "author", "committer",
+  "range"]`) instead of gaining three more `||` arms or a second renderer.
+- **`TYPE_OPTIONS` stayed the single source of truth for valid `type` values.** `isSearchKind`
+  previously hard-coded its own three-way `===` chain, which would silently drift from
+  `TYPE_OPTIONS` the moment one list was updated and the other wasn't (exactly what this commit
+  would have done to it). Replaced with `SEARCH_KINDS = TYPE_OPTIONS.map(o => o.value)` and an
+  `.includes` check, so adding a `type` only ever means editing `TYPE_OPTIONS`.
+- **A one-line hint under the form for `type=range`.** Every other type's query is a plain
+  case-insensitive text match, which the search box's placeholder already conveys; a rev-list
+  expression (`v1.0..main`, `main ^next`) is a different enough input shape that the box alone
+  gives no clue what's expected. Shown whenever `resolvedType === "range"` (the URL-derived state
+  the uncontrolled form already reads for its `defaultValue`), not tied to live `<select>` input —
+  consistent with the rest of the page having no controlled/live form state (#27).
+- No route/`shellFor`/`shell_for` change (the shape is unchanged: `?q=&type=&ref=`), no API
+  contract change — `web/src/components/repo/SearchView.tsx` and its test only.
