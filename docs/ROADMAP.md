@@ -930,6 +930,14 @@ candidates below, or from a fresh request.
 - `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
   revisit with the `dataviz` skill's validator if the stats page (or a future one) ever needs a
   second chart series.
+- Single-binary, non-container deploy path: embed `web/dist` into the `axgit` binary (e.g.
+  `rust-embed`) behind an opt-in `embed-web` Cargo feature, replacing the current
+  `AXGIT_STATIC_DIR`-points-at-a-directory story for that use case. Needs a two-step build
+  (`pnpm --filter web build` then `cargo build --features embed-web`), a packaged tarball +
+  systemd unit, and a Jenkinsfile release stage. `git` exec (archive/upload-pack) stays a runtime
+  dependency either way. Open question carried over: whether libgit2 respects `GIT_CONFIG_GLOBAL`
+  for the bare-metal equivalent of the container's `[safe] directory = *` workaround
+  (DECISIONS.md #22) — needs verifying before the systemd unit's user/group story is finalized.
 
 ### cgit parity gaps (from a cgit feature audit)
 
