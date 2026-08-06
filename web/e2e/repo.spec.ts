@@ -248,12 +248,20 @@ test("navigates from the tree into a subdirectory and a file", async ({ page }) 
   await page.getByRole("link", { name: "src/" }).click();
 
   await expect(page).toHaveURL("/git-compose/tree/src");
-  await expect(page.getByRole("link", { name: "main.rs" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "main.rs", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Raw for main.rs" })).toHaveAttribute(
+    "href",
+    "/api/v1/repos/git-compose/raw/HEAD/src/main.rs",
+  );
+  await expect(page.getByRole("link", { name: "Blame for main.rs" })).toHaveAttribute(
+    "href",
+    "/git-compose/blame/src/main.rs",
+  );
 
   await page.route("**/api/v1/repos/git-compose/blob/HEAD/src/main.rs", async (route) => {
     await route.fulfill({ json: BLOB_MAIN });
   });
-  await page.getByRole("link", { name: "main.rs" }).click();
+  await page.getByRole("link", { name: "main.rs", exact: true }).click();
 
   await expect(page).toHaveURL("/git-compose/blob/src/main.rs");
   await expect(page.getByText('println!("hi");')).toBeVisible();

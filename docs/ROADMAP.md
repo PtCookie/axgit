@@ -907,6 +907,28 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     expression isn't a text query, and the search box's placeholder gives no clue otherwise.
   - No route/`shellFor`/`shell_for`/API contract change — `SearchView.tsx` and its test only.
 
+- **Per-row quick links on the repository index and the tree listing** (DECISIONS.md #48). Closed
+  two of the "Tree and blob" / "Repository index" cgit parity gaps (`enable-index-links`, tree
+  log/raw/blame). Finalized design:
+  - New shared `web/src/components/IconLink.tsx` — an icon-only link whose accessible name comes
+    entirely from `aria-label` (`RepoSummary.tsx`'s `MetaLink`'s `size-4`/`aria-hidden` idiom, pulled
+    out since both `RepoList.tsx` and `TreeView.tsx` needed it). No `RowActions` component was built
+    on top — the action set differs per row kind, and the repository index has no kind at all.
+  - `RepoList.tsx` rows gained Log + Tree icon links (Tree already means "browse the repository," so
+    summary — already covered by the name link — wasn't repeated). `TreeView.tsx` rows gained Log
+    for every non-submodule entry (`?path=` matches a directory path too), plus Raw + Blame for
+    blob/symlink entries; submodule (`commit`) rows get none, same rule `entryHref` already applies.
+  - No API contract change — `logHref`/`treeHref`/`blameHref`/`rawUrl` already covered every needed
+    shape; `TreeEntryInfo`'s existing `name`/`type` were enough to build the per-row hrefs.
+  - Folded in a small existing duplication: `BlobView.tsx`/`BlameView.tsx` both hand-built their
+    "History" link's URL instead of calling `logHref`, with a local `const logHref` shadowing the
+    importable name. Fixed first, as its own commit, proven byte-identical by the untouched tests.
+  - New `aria-label`s made several existing non-exact `getByRole("link", { name })` lookups (in
+    `RepoList`'s and `TreeView`'s tests/e2e specs) ambiguous once a row's name became a substring of
+    its own action labels (`"main.rs"` vs. `"Blame for main.rs"`) — switched those to `exact: true`.
+    Skeletons (`RepoListSkeleton`, `TreeViewSkeleton`) needed no change: both model row *height* as
+    plain bars, and a `w-px` icon column adds none.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -917,9 +939,11 @@ three follow-up candidates (#40, #41, #43) closed the largest cgit parity gap, t
 link plus a `robots.txt` closed two more of the "Feed and discovery" gaps, log message expansion
 (#44) closed the last item under "Log" message search, git notes on the commit page (#45) closed
 the `git notes` item under "Commit page" (archive download links on the commit page remain open
-there), and author/committer/range search (#46/#47) closed the last remaining item under "Log".
-Pick the next piece of work from the
-candidates below, or from a fresh request.
+there), author/committer/range search (#46/#47) closed the last remaining item under "Log", and
+per-row quick links (#48) closed the `enable-index-links` gap under "Repository index" and the
+log/raw/blame gap under "Tree and blob" (submodule links, symlink target display, single-child
+directory collapsing, and the rest of that section remain open). Pick the next piece of work from
+the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -964,8 +988,6 @@ recorded separately below instead of listed as gaps.
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Symlink target display (`name -> target`, linked through the normalized path) — currently
     linked as a plain blob.
-  - Per-row action links in the tree listing (log / raw / blame) — axgit only has these on the blob
-    page (`BlobView.tsx`'s Raw/Blame/History).
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
   - Hex dump view for binary blobs (`<table class='bin-blob'>`, 32 bytes/row + ascii) — axgit shows
     only a binary notice and a Raw link.
@@ -983,7 +1005,6 @@ recorded separately below instead of listed as gaps.
 - **Repository index**
   - Column sorting (`s=name|desc|owner|idle|section`, `repository-sort=age|name`) — axgit is fixed
     to name order plus the client-side `?q=` filter; cgit's `idle` sort is descending.
-  - Per-row quick links (summary / log / tree buttons, `enable-index-links`).
   - Site-level readme / title / description (`root-readme`, `root-title`, `root-desc`).
   - `hide` / `ignore` repo flags — hidden-but-reachable-by-direct-path vs. not reachable at all;
     fits naturally alongside the `[cgit]`/`[axgit]` config-section invariant.

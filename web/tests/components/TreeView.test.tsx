@@ -7,9 +7,13 @@ import { ApiError } from "@/lib/api/client";
 import { getTree } from "@/lib/api/repos";
 import type { TreeListing } from "@/lib/api/schemas";
 
-vi.mock("@/lib/api/repos", () => ({
-  getTree: vi.fn(),
-}));
+vi.mock("@/lib/api/repos", async (importOriginal) => {
+  // `rawUrl` is a pure link builder (no network) — kept real via
+  // `importOriginal` so the per-row Raw link assertions below exercise the
+  // actual implementation, only `getTree` needs mocking.
+  const actual = await importOriginal<typeof import("@/lib/api/repos")>();
+  return { ...actual, getTree: vi.fn() };
+});
 
 const mockedGetTree = vi.mocked(getTree);
 
@@ -48,17 +52,20 @@ describe("TreeView", () => {
 
     await expect.element(page.getByRole("link", { name: "src/" })).toHaveAttribute("href", "/git-compose/tree/src");
     await expect
-      .element(page.getByRole("link", { name: "README.md" }))
+      .element(page.getByRole("link", { name: "README.md", exact: true }))
       .toHaveAttribute("href", "/git-compose/blob/README.md");
-    await expect.element(page.getByRole("link", { name: "link" })).toHaveAttribute("href", "/git-compose/blob/link");
+    await expect
+      .element(page.getByRole("link", { name: "link", exact: true }))
+      .toHaveAttribute("href", "/git-compose/blob/link");
   });
 
-  it("renders a submodule entry without a link", async () => {
+  it("renders a submodule entry without a name link or any row actions", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
     render(<TreeView repo="git-compose" path="" />);
 
     await expect.element(page.getByText("vendor")).toBeVisible();
     expect(page.getByRole("link", { name: "vendor" }).elements().length).toBe(0);
+    expect(page.getByRole("link", { name: "Log for vendor" }).elements().length).toBe(0);
   });
 
   it("orders the columns as Mode, Name, Size and shows symbolic modes", async () => {
@@ -69,7 +76,45 @@ describe("TreeView", () => {
     await expect.element(page.getByText("-rw-r--r--")).toBeVisible();
 
     const headers = page.getByRole("row").elements()[0].textContent;
-    expect(headers).toEqual("ModeNameSize");
+    expect(headers).toEqual("ModeNameSizeLinks");
+  });
+
+  it("gives a file row Log, Raw, and Blame quick links", async () => {
+    mockedGetTree.mockResolvedValue(ROOT_TREE);
+    render(<TreeView repo="git-compose" path="" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "Log for README.md" }))
+      .toHaveAttribute("href", "/git-compose/log?path=README.md");
+    await expect
+      .element(page.getByRole("link", { name: "Raw for README.md" }))
+      .toHaveAttribute("href", "/api/v1/repos/git-compose/raw/HEAD/README.md");
+    await expect
+      .element(page.getByRole("link", { name: "Blame for README.md" }))
+      .toHaveAttribute("href", "/git-compose/blame/README.md");
+  });
+
+  it("gives a directory row only a Log quick link", async () => {
+    mockedGetTree.mockResolvedValue(ROOT_TREE);
+    render(<TreeView repo="git-compose" path="" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "Log for src" }))
+      .toHaveAttribute("href", "/git-compose/log?path=src");
+    expect(page.getByRole("link", { name: "Raw for src" }).elements().length).toBe(0);
+    expect(page.getByRole("link", { name: "Blame for src" }).elements().length).toBe(0);
+  });
+
+  it("carries ref through to the row action links", async () => {
+    mockedGetTree.mockResolvedValue(ROOT_TREE);
+    render(<TreeView repo="git-compose" path="" ref="v1.0.0" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "Log for README.md" }))
+      .toHaveAttribute("href", "/git-compose/log?path=README.md&ref=v1.0.0");
+    await expect
+      .element(page.getByRole("link", { name: "Blame for README.md" }))
+      .toHaveAttribute("href", "/git-compose/blame/README.md?ref=v1.0.0");
   });
 
   it("shows a parent-directory link when not at the root", async () => {

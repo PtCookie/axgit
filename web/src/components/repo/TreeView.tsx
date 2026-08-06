@@ -1,12 +1,16 @@
+import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ClockCounterClockwise";
+import { FileTextIcon } from "@phosphor-icons/react/dist/ssr/FileText";
+import { UserListIcon } from "@phosphor-icons/react/dist/ssr/UserList";
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { getTree } from "@/lib/api/repos";
+import { getTree, rawUrl } from "@/lib/api/repos";
 import type { EntryKind, TreeListing } from "@/lib/api/schemas";
 import { formatMode } from "@/lib/format/mode";
 import { formatSize } from "@/lib/format/size";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
-import { blobHref, treeHref } from "@/lib/repo-href";
+import { blameHref, blobHref, logHref, treeHref } from "@/lib/repo-href";
+import IconLink from "@/components/IconLink";
 import PathBreadcrumbs from "@/components/repo/PathBreadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -50,6 +54,29 @@ function entryHref(kind: EntryKind, repo: string, path: string, ref: string | un
       // A submodule gitlink has no content in this repository to link to.
       return undefined;
   }
+}
+
+/** Per-row action links (log / raw / blame): a submodule gitlink has no
+ *  content in this repository, so it gets none; a directory only has a
+ *  history (`?path=` matches a directory path too), while a file/symlink
+ *  also gets raw content and blame. */
+function rowActions(
+  kind: EntryKind,
+  repo: string,
+  path: string,
+  ref: string | undefined,
+): { label: string; href: string; Icon: typeof ClockCounterClockwiseIcon }[] {
+  if (kind === "commit") {
+    return [];
+  }
+  const actions = [{ label: "Log", href: logHref(repo, { path, ref }), Icon: ClockCounterClockwiseIcon }];
+  if (kind === "blob" || kind === "symlink") {
+    actions.push(
+      { label: "Raw", href: rawUrl(repo, ref, path), Icon: FileTextIcon },
+      { label: "Blame", href: blameHref(repo, path, ref), Icon: UserListIcon },
+    );
+  }
+  return actions;
 }
 
 const KIND_LABEL: Record<EntryKind, string> = {
@@ -120,12 +147,15 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
             <TableHead className="w-px">Mode</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Size</TableHead>
+            <TableHead className="w-px">
+              <span className="sr-only">Links</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {resolvedPath && (
             <TableRow>
-              <TableCell colSpan={3}>
+              <TableCell colSpan={4}>
                 <a className="hover:underline" href={treeHref(resolvedRepo, parentPath, resolvedRef)}>
                   ..
                 </a>
@@ -134,7 +164,7 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
           )}
           {tree.entries.length === 0 && !resolvedPath ? (
             <TableRow>
-              <TableCell colSpan={3} className="text-muted-foreground">
+              <TableCell colSpan={4} className="text-muted-foreground">
                 This repository is empty.
               </TableCell>
             </TableRow>
@@ -159,6 +189,18 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {entry.size === null ? "—" : formatSize(entry.size)}
+                  </TableCell>
+                  <TableCell className="w-px">
+                    <div className="flex items-center gap-2">
+                      {rowActions(entry.type, resolvedRepo, entryPath, resolvedRef).map((action) => (
+                        <IconLink
+                          key={action.label}
+                          href={action.href}
+                          label={`${action.label} for ${entry.name}`}
+                          Icon={action.Icon}
+                        />
+                      ))}
+                    </div>
                   </TableCell>
                 </TableRow>
               );

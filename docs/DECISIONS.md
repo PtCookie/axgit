@@ -1638,3 +1638,36 @@ API-then-page precedent.
   consistent with the rest of the page having no controlled/live form state (#27).
 - No route/`shellFor`/`shell_for` change (the shape is unchanged: `?q=&type=&ref=`), no API
   contract change — `web/src/components/repo/SearchView.tsx` and its test only.
+
+## #48 Per-row quick links on the repository index and the tree listing
+
+Closed two independent-but-similar cgit parity gaps at once: `enable-index-links` (repository index)
+and the tree listing's missing log/raw/blame links (axgit only had those on the blob page).
+
+- **Shared `IconLink` component, not a `RowActions` component.** Both tables needed the same
+  accessibility contract — an icon-only link whose name comes entirely from `aria-label`, the icon
+  itself `aria-hidden` — so that got pulled into `web/src/components/IconLink.tsx` (top-level, not
+  `components/repo/`, since the repository index isn't a repo page). What was **not** shared is which
+  actions apply to which row: the tree listing's set varies by entry kind (submodule rows get
+  nothing, directories get Log only, blobs/symlinks get Log + Raw + Blame) while the index has no
+  kind at all (every row gets Log + Tree). A component that owned "the action set for a row" would
+  have had to parameterize around a concept only one of its two callers has.
+- **Directory rows get a Log link too.** `?path=` on `/log` already matches a directory prefix, not
+  just a single file, so "this directory's history" is a real, working link — cgit's own tree view
+  gives directories a log link for the same reason.
+- **No API contract change.** `logHref`/`treeHref`/`blameHref` (`web/src/lib/repo-href.ts`) and
+  `rawUrl` (`web/src/lib/api/repos.ts`) already covered every shape needed; `TreeEntryInfo`'s existing
+  `name`/`type` fields were enough to build each row's hrefs.
+- **Folded in a pre-existing duplication first, as its own commit.** `BlobView.tsx` and
+  `BlameView.tsx` each hand-built their "History" link's URL with `encodeSegment` instead of calling
+  `logHref`, with a local `const logHref` shadowing the importable name. Fixed ahead of the two
+  feature commits — proven byte-identical by the untouched existing tests (`?path=…&ref=…` in that
+  exact order, matching `logHref`'s own key-iteration order for that argument shape).
+- **New `aria-label`s made several existing non-exact `getByRole("link", { name })` lookups
+  ambiguous** (in `RepoList.tsx`'s and `TreeView.tsx`'s tests and e2e specs) — once a row grew action
+  links, a bare name like `"main.rs"` became a substring of its own `"Blame for main.rs"` label.
+  Switched the affected lookups to `exact: true`, following the precedent `RepoList.test.tsx` had
+  already set for the `?q=` filter tests.
+- **Skeletons needed no change.** `RepoListSkeleton`/`TreeViewSkeleton` model row *height* as plain
+  `h-8` bars, not a mirrored table; a `w-px` icon column adds no height, so DECISIONS #17/#31's
+  no-reflow rule was already satisfied.
