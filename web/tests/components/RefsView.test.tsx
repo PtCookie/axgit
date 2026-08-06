@@ -7,10 +7,13 @@ import { ApiError } from "@/lib/api/client";
 import { getRefs, getRepo } from "@/lib/api/repos";
 import type { RefsInfo, RepoSummary } from "@/lib/api/schemas";
 
-vi.mock("@/lib/api/repos", () => ({
-  getRefs: vi.fn(),
-  getRepo: vi.fn(),
-}));
+vi.mock("@/lib/api/repos", async (importOriginal) => {
+  // `archiveUrl` is a pure link builder (no network) — kept real via
+  // `importOriginal` so the Download column's href assertions below exercise
+  // the actual implementation, same reasoning as `RepoSummary.test.tsx`.
+  const actual = await importOriginal<typeof import("@/lib/api/repos")>();
+  return { ...actual, getRefs: vi.fn(), getRepo: vi.fn() };
+});
 
 const mockedGetRefs = vi.mocked(getRefs);
 const mockedGetRepo = vi.mocked(getRepo);
@@ -103,5 +106,36 @@ describe("RefsView", () => {
 
     await expect.element(page.getByText("feature-x")).toBeVisible();
     await expect.element(page.getByRole("link", { name: "Compare main with feature-x" })).not.toBeInTheDocument();
+  });
+
+  it("offers tar.gz and zip downloads for a tag", async () => {
+    mockedGetRefs.mockResolvedValue(REFS);
+    render(<RefsView repo="git-compose" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "Download v1.0.0 as tar.gz" }))
+      .toHaveAttribute("href", "/api/v1/repos/git-compose/archive/v1.0.0.tar.gz");
+    await expect
+      .element(page.getByRole("link", { name: "Download v1.0.0 as zip" }))
+      .toHaveAttribute("href", "/api/v1/repos/git-compose/archive/v1.0.0.zip");
+  });
+
+  it("keeps a tag name's slash intact in its download href", async () => {
+    mockedGetRefs.mockResolvedValue({
+      branches: REFS.branches,
+      tags: [...REFS.tags, { name: "release/1.0", target: "abc123", annotation: null, tagged_at: null }],
+    });
+    render(<RefsView repo="git-compose" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "Download release/1.0 as tar.gz" }))
+      .toHaveAttribute("href", "/api/v1/repos/git-compose/archive/release/1.0.tar.gz");
+  });
+
+  it("does not offer downloads for branches", async () => {
+    mockedGetRefs.mockResolvedValue(REFS);
+    render(<RefsView repo="git-compose" />);
+
+    await expect.element(page.getByRole("link", { name: "Download main as tar.gz" })).not.toBeInTheDocument();
   });
 });

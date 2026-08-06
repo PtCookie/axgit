@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { getRefs } from "@/lib/api/repos";
+import { archiveUrl, getRefs, type ArchiveFormat } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
 import { useDefaultBranch } from "@/lib/default-branch";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
@@ -11,6 +11,37 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type State = { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; refs: RefsInfo };
+
+// cgit's tags-only Download column (`print_tag_downloads()`) — a branch
+// archive's filename (`{repo}-{branch}.{format}`) names a moving target that
+// changes meaning on every push, while a tag's is reproducible. `archiveUrl`
+// itself accepts any ref (branches included); this is a scope choice, not a
+// capability gap (docs/DECISIONS.md #51).
+const ARCHIVE_FORMATS: readonly ArchiveFormat[] = ["tar.gz", "zip"];
+
+/** Per-tag tar.gz/zip download links. Plain visible text with an overriding
+ *  `aria-label`, not `IconLink` — the format name *is* the link's entire
+ *  information content, so two identical download glyphs side by side would
+ *  be indistinguishable without a hover (unlike `IconLink`'s distinct-icon
+ *  rows in `TreeView.tsx`). Matches this table's own `Compare` column
+ *  convention (visible text + a per-row `aria-label` override) rather than
+ *  #48's icon convention. */
+function ArchiveLinks({ repo, tagName }: { repo: string; tagName: string }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {ARCHIVE_FORMATS.map((format) => (
+        <a
+          key={format}
+          className="hover:underline"
+          aria-label={`Download ${tagName} as ${format}`}
+          href={archiveUrl(repo, tagName, format)}
+        >
+          {format}
+        </a>
+      ))}
+    </span>
+  );
+}
 
 interface RefsViewProps {
   /**
@@ -143,6 +174,7 @@ export default function RefsView({ repo }: RefsViewProps) {
                 <TableHead>Message</TableHead>
                 <TableHead>Tagged</TableHead>
                 <TableHead>Compare</TableHead>
+                <TableHead>Download</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -168,6 +200,9 @@ export default function RefsView({ repo }: RefsViewProps) {
                         Compare
                       </a>
                     )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <ArchiveLinks repo={resolvedRepo} tagName={tag.name} />
                   </TableCell>
                 </TableRow>
               ))}
