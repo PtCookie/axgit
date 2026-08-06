@@ -122,7 +122,8 @@ pub async fn get_repo(
 /// Branches and tags
 ///
 /// Tag targets are peeled to the commit, so an annotated tag reports the
-/// commit sha rather than the tag object.
+/// commit sha rather than the tag object. `remote_branches` is `[]` on
+/// essentially every repository — see its field doc.
 #[utoipa::path(
     get,
     path = "/api/v1/repos/{repo}/refs",
@@ -131,7 +132,7 @@ pub async fn get_repo(
         ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
     ),
     responses(
-        (status = 200, description = "Branches and tags, each sorted by name", body = RefsInfo,
+        (status = 200, description = "Local branches, remote-tracking branches, and tags, each sorted by name", body = RefsInfo,
             headers(
                 ("ETag" = String, description = "Validator-derived; opaque"),
                 ("Cache-Control" = String, description = "`no-cache`"),

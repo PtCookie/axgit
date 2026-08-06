@@ -1332,7 +1332,7 @@
           "repos"
         ],
         "summary": "Branches and tags",
-        "description": "Tag targets are peeled to the commit, so an annotated tag reports the\ncommit sha rather than the tag object.",
+        "description": "Tag targets are peeled to the commit, so an annotated tag reports the\ncommit sha rather than the tag object. `remote_branches` is `[]` on\nessentially every repository — see its field doc.",
         "operationId": "get_refs",
         "parameters": [
           {
@@ -1348,7 +1348,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Branches and tags, each sorted by name",
+            "description": "Local branches, remote-tracking branches, and tags, each sorted by name",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -2735,6 +2735,7 @@
         "type": "object",
         "required": [
           "branches",
+          "remote_branches",
           "tags"
         ],
         "properties": {
@@ -2744,6 +2745,13 @@
               "$ref": "#/components/schemas/BranchRef"
             },
             "description": "Sorted by name ascending; empty for a repository without commits."
+          },
+          "remote_branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BranchRef"
+            },
+            "description": "Remote-tracking branches (`refs/remotes/*`), sorted by name ascending.\nEmpty on essentially every repository axgit serves today: neither\naxgit nor the git-compose stack that populates `/srv/git` ever runs\n`git remote add`/`git fetch` against a served bare repository (pushes\narrive via SSH only, CLAUDE.md's read-only invariant) — this field\nexists for the rare case of a repository someone configured that way\nby hand, not for anything axgit itself produces."
           },
           "tags": {
             "type": "array",
@@ -2869,6 +2877,7 @@
           },
           "branch_count": {
             "type": "integer",
+            "description": "Local branches only — remote-tracking branches (`refs/remotes/*`,\n`RefsInfo.remote_branches`) are not counted here.",
             "minimum": 0
           },
           "tag_count": {

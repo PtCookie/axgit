@@ -4,7 +4,7 @@ import type { RefsInfo } from "@/lib/api/schemas";
 import { indexRefsBySha } from "@/lib/commit-refs";
 
 function refs(overrides: Partial<RefsInfo> = {}): RefsInfo {
-  return { branches: [], tags: [], ...overrides };
+  return { branches: [], remote_branches: [], tags: [], ...overrides };
 }
 
 describe("indexRefsBySha", () => {

@@ -22,7 +22,7 @@ const mockedGetDiff = vi.mocked(getDiff);
 const mockedGetRefs = vi.mocked(getRefs);
 const mockedGetRepo = vi.mocked(getRepo);
 
-const NO_REFS: RefsInfo = { branches: [], tags: [] };
+const NO_REFS: RefsInfo = { branches: [], remote_branches: [], tags: [] };
 
 const SUMMARY: RepoSummary = {
   name: "git-compose",
@@ -159,6 +159,7 @@ describe("DiffView", () => {
     mockedGetDiff.mockResolvedValue(REV_DIFF);
     mockedGetRefs.mockResolvedValue({
       branches: [{ name: "main", target: TO_SHA, committed_at: null }],
+      remote_branches: [],
       tags: [{ name: "v1.0.0", target: TO_SHA, annotation: null, tagged_at: null }],
     });
     render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);

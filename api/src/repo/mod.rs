@@ -60,6 +60,8 @@ pub struct RepoSummary {
     /// HEAD commit sha. `None` for empty repositories (unborn HEAD).
     #[schema(required = true)]
     pub head: Option<String>,
+    /// Local branches only — remote-tracking branches (`refs/remotes/*`,
+    /// `RefsInfo.remote_branches`) are not counted here.
     pub branch_count: usize,
     pub tag_count: usize,
     /// `{clone_url_base}/{name}.git`; `None` when no base is configured.

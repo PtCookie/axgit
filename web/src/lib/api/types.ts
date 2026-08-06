@@ -335,7 +335,8 @@ export interface paths {
     /**
      * Branches and tags
      * @description Tag targets are peeled to the commit, so an annotated tag reports the
-     *     commit sha rather than the tag object.
+     *     commit sha rather than the tag object. `remote_branches` is `[]` on
+     *     essentially every repository — see its field doc.
      */
     get: operations["get_refs"];
     put?: never;
@@ -821,6 +822,16 @@ export interface components {
     RefsInfo: {
       /** @description Sorted by name ascending; empty for a repository without commits. */
       branches: components["schemas"]["BranchRef"][];
+      /**
+       * @description Remote-tracking branches (`refs/remotes/*`), sorted by name ascending.
+       *     Empty on essentially every repository axgit serves today: neither
+       *     axgit nor the git-compose stack that populates `/srv/git` ever runs
+       *     `git remote add`/`git fetch` against a served bare repository (pushes
+       *     arrive via SSH only, CLAUDE.md's read-only invariant) — this field
+       *     exists for the rare case of a repository someone configured that way
+       *     by hand, not for anything axgit itself produces.
+       */
+      remote_branches: components["schemas"]["BranchRef"][];
       /** @description Sorted by name ascending. */
       tags: components["schemas"]["TagRef"][];
     };
@@ -862,6 +873,10 @@ export interface components {
       last_modified: string | null;
       /** @description HEAD commit sha. `None` for empty repositories (unborn HEAD). */
       head: string | null;
+      /**
+       * @description Local branches only — remote-tracking branches (`refs/remotes/*`,
+       *     `RefsInfo.remote_branches`) are not counted here.
+       */
       branch_count: number;
       tag_count: number;
       /** @description `{clone_url_base}/{name}.git`; `None` when no base is configured. */
@@ -1975,7 +1990,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Branches and tags, each sorted by name */
+      /** @description Local branches, remote-tracking branches, and tags, each sorted by name */
       200: {
         headers: {
           /** @description `no-cache` */

@@ -23,6 +23,7 @@ const REFS: RefsInfo = {
     { name: "main", target: "abc123def456", committed_at: "2026-07-24T13:06:00+09:00" },
     { name: "feature-x", target: "789abc012def", committed_at: "2026-07-25T09:00:00+09:00" },
   ],
+  remote_branches: [],
   tags: [
     { name: "v1.0.0", target: "def456abc123", annotation: "First release", tagged_at: "2026-01-01T00:00:00+09:00" },
   ],
@@ -65,7 +66,7 @@ describe("RefsView", () => {
   });
 
   it("shows empty-state messages when there are no branches or tags", async () => {
-    mockedGetRefs.mockResolvedValue({ branches: [], tags: [] });
+    mockedGetRefs.mockResolvedValue({ branches: [], remote_branches: [], tags: [] });
     render(<RefsView repo="scratch" />);
 
     await expect.element(page.getByText("No branches.")).toBeVisible();
@@ -123,6 +124,7 @@ describe("RefsView", () => {
   it("keeps a tag name's slash intact in its download href", async () => {
     mockedGetRefs.mockResolvedValue({
       branches: REFS.branches,
+      remote_branches: REFS.remote_branches,
       tags: [...REFS.tags, { name: "release/1.0", target: "abc123", annotation: null, tagged_at: null }],
     });
     render(<RefsView repo="git-compose" />);
@@ -151,6 +153,7 @@ describe("RefsView", () => {
   it("keeps a tag name's slash intact in its tag detail href", async () => {
     mockedGetRefs.mockResolvedValue({
       branches: REFS.branches,
+      remote_branches: REFS.remote_branches,
       tags: [...REFS.tags, { name: "release/1.0", target: "abc123", annotation: null, tagged_at: null }],
     });
     render(<RefsView repo="git-compose" />);

@@ -28,7 +28,7 @@ const PAGE: CommitsPage = {
   next_cursor: null,
 };
 
-const NO_REFS: RefsInfo = { branches: [], tags: [] };
+const NO_REFS: RefsInfo = { branches: [], remote_branches: [], tags: [] };
 
 describe("CommitLog", () => {
   beforeEach(() => {
@@ -162,6 +162,7 @@ describe("CommitLog", () => {
     mockedListCommits.mockResolvedValue(PAGE);
     mockedGetRefs.mockResolvedValue({
       branches: [{ name: "main", target: PAGE.commits[0].sha, committed_at: null }],
+      remote_branches: [],
       tags: [],
     });
     render(<CommitLog repo="git-compose" />);
@@ -175,6 +176,7 @@ describe("CommitLog", () => {
     mockedListCommits.mockResolvedValue(PAGE);
     mockedGetRefs.mockResolvedValue({
       branches: [],
+      remote_branches: [],
       tags: [{ name: "v1.0.0", target: PAGE.commits[0].sha, annotation: null, tagged_at: null }],
     });
     render(<CommitLog repo="git-compose" />);
@@ -186,6 +188,7 @@ describe("CommitLog", () => {
     mockedListCommits.mockResolvedValue(PAGE);
     mockedGetRefs.mockResolvedValue({
       branches: [{ name: "main", target: "someothersha", committed_at: null }],
+      remote_branches: [],
       tags: [],
     });
     render(<CommitLog repo="git-compose" />);
@@ -203,6 +206,7 @@ describe("CommitLog", () => {
         { name: "release", target: PAGE.commits[0].sha, committed_at: null },
         { name: "hotfix", target: PAGE.commits[0].sha, committed_at: null },
       ],
+      remote_branches: [],
       tags: [],
     });
     render(<CommitLog repo="git-compose" />);

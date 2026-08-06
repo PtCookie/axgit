@@ -194,6 +194,31 @@ pub fn add_branch(bare: &Path, name: &str) {
     git(bare, &["branch", name, "main"]);
 }
 
+/// Creates `refs/remotes/{name}` pointing at `target` (a treeish, e.g.
+/// `"main"`) directly via `update-ref` — no real `git remote add`/`fetch`
+/// involved, which is enough to exercise the remote-branch listing without
+/// standing up an actual second repository to fetch from.
+pub fn add_remote_branch(bare: &Path, name: &str, target: &str) {
+    git(
+        bare,
+        &["update-ref", &format!("refs/remotes/{name}"), target],
+    );
+}
+
+/// Creates the symbolic `refs/remotes/{remote}/HEAD` ref pointing at
+/// `refs/remotes/{remote}/{branch}` — the alias `list_refs` must skip so it
+/// doesn't show up as its own remote-branch row.
+pub fn add_remote_head(bare: &Path, remote: &str, branch: &str) {
+    git(
+        bare,
+        &[
+            "symbolic-ref",
+            &format!("refs/remotes/{remote}/HEAD"),
+            &format!("refs/remotes/{remote}/{branch}"),
+        ],
+    );
+}
+
 /// Creates lightweight tag `{name}` on `main` in the bare repository.
 pub fn add_lightweight_tag(bare: &Path, name: &str) {
     git(bare, &["tag", name, "main"]);

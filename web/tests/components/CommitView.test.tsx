@@ -21,7 +21,7 @@ const mockedGetCommit = vi.mocked(getCommit);
 const mockedGetCommitDiff = vi.mocked(getCommitDiff);
 const mockedGetRefs = vi.mocked(getRefs);
 
-const NO_REFS: RefsInfo = { branches: [], tags: [] };
+const NO_REFS: RefsInfo = { branches: [], remote_branches: [], tags: [] };
 
 const AUTHOR = { name: "Ada Lovelace", email_hash: "deadbeef" };
 
@@ -199,6 +199,7 @@ describe("CommitView", () => {
         { name: "main", target: DETAIL.sha, committed_at: null },
         { name: "dev", target: DETAIL.sha, committed_at: null },
       ],
+      remote_branches: [],
       tags: [{ name: "v1.0.0", target: DETAIL.sha, annotation: null, tagged_at: null }],
     });
     render(<CommitView repo="git-compose" sha={DETAIL.sha} />);

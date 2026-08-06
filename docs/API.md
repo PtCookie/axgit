@@ -117,6 +117,7 @@ branch/tag counts, and the clone URL.
 - `name` through `last_modified`: same rules as the list item.
 - `head`: HEAD commit sha. `null` for an empty repository (unborn HEAD) — this returns `200`, not
   404, with `default_branch`/`last_modified` also `null` and counts at 0.
+- `branch_count`: **local branches only** — does not include `GET /refs`' `remote_branches`.
 - `clone_url`: `{clone_url_base}/{repo}.git`. `null` if `--clone-url-base`
   (`AXGIT_CLONE_URL_BASE`) is not configured.
 
@@ -125,13 +126,23 @@ branch/tag counts, and the clone URL.
 ```json
 {
   "branches": [{ "name": "main", "target": "<sha>", "committed_at": "..." }],
+  "remote_branches": [{ "name": "origin/main", "target": "<sha>", "committed_at": "..." }],
   "tags": [{ "name": "v1.0.0", "target": "<sha>", "annotation": "...", "tagged_at": "..." }]
 }
 ```
 
-- Both `branches`/`tags` are sorted by name ascending. Both are `[]` for an empty repository.
+- `branches`/`remote_branches`/`tags` are each sorted by name ascending, each `[]` for an empty
+  repository.
 - `branches[].target`: the branch tip commit sha. `committed_at`: the tip commit's authordate
   (RFC 3339).
+- `remote_branches`: remote-tracking branches (`refs/remotes/*`), same shape as `branches`
+  (`name` is the full shorthand including the remote, e.g. `origin/main` — git has no API to split
+  the remote name back out). **`[]` on essentially every repository axgit serves**: neither axgit
+  nor the git-compose stack that populates it ever runs `git remote add`/`git fetch` against a
+  served bare repository (pushes arrive over SSH only). This field exists for the rare case of a
+  repository configured that way by hand, not for anything axgit itself produces. A remote's own
+  symbolic `HEAD` (e.g. `origin/HEAD`) is omitted — it's an alias for another row, not a branch of
+  its own.
 - `tags[].target`: the **peeled commit sha** (for annotated tags, the target commit, not the tag
   object itself).
 - `tags[].annotation`: the first line of the tag message. `tagged_at`: the tagger timestamp.

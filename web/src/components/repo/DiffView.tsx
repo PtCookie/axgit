@@ -13,7 +13,7 @@ import DiffStatTable from "@/components/repo/diff/DiffStatTable";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const NO_REFS: RefsInfo = { branches: [], tags: [] };
+const NO_REFS: RefsInfo = { branches: [], remote_branches: [], tags: [] };
 const REVISIONS_LIST_ID = "axgit-diff-revisions";
 
 // No comparison requested yet: the picker is shown but nothing was fetched.

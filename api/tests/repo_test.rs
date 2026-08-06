@@ -19,7 +19,9 @@ fn router_for(repo_root: &Path, clone_url_base: Option<&str>) -> Router {
 }
 
 /// Fixture set: `alpha.git` (one commit on `main`, branch `dev`,
-/// annotated tag `v1.0.0`, lightweight tag `snapshot`), `empty.git` (no commits).
+/// annotated tag `v1.0.0`, lightweight tag `snapshot`, remote-tracking
+/// branches `origin/feature`/`origin/main` plus a symbolic `origin/HEAD`),
+/// `empty.git` (no commits).
 fn setup_fixtures() -> TempDir {
     let root = tempfile::tempdir().expect("failed to create fixture root");
 
@@ -29,6 +31,12 @@ fn setup_fixtures() -> TempDir {
     common::add_branch(&alpha, "dev");
     common::add_annotated_tag(&alpha, "v1.0.0", "release v1.0.0");
     common::add_lightweight_tag(&alpha, "snapshot");
+    // Not something axgit or git-compose ever produces on its own (no
+    // `git remote add`/`fetch` happens against a served repo) — created
+    // directly via `update-ref` to exercise the listing regardless.
+    common::add_remote_branch(&alpha, "origin/feature", "main");
+    common::add_remote_branch(&alpha, "origin/main", "main");
+    common::add_remote_head(&alpha, "origin", "main");
 
     common::create_bare_repo(root.path(), "empty.git");
 
@@ -207,9 +215,75 @@ async fn get_refs_returns_empty_arrays_for_empty_repo() {
     assert_eq!(
         (
             json["branches"].as_array().map(Vec::len),
+            json["remote_branches"].as_array().map(Vec::len),
             json["tags"].as_array().map(Vec::len),
         ),
-        (Some(0), Some(0)),
+        (Some(0), Some(0), Some(0)),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn get_refs_lists_remote_branches_separately_and_sorted() {
+    let root = setup_fixtures();
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha/refs").await;
+
+    let remote_branches = json["remote_branches"]
+        .as_array()
+        .expect("remote_branches is not an array");
+    let names: Vec<&str> = remote_branches
+        .iter()
+        .map(|branch| branch["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        ["origin/feature", "origin/main"],
+        "unexpected response: {json}"
+    );
+    // Neither the local `branches` list nor its ordering/indices are
+    // affected by the presence of remote-tracking branches.
+    let local_names: Vec<&str> = json["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|branch| branch["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(local_names, ["dev", "main"], "unexpected response: {json}");
+    // Both remote branches point at the same commit as the local branches.
+    assert_eq!(remote_branches[0]["target"], json["branches"][1]["target"]);
+    assert_eq!(remote_branches[1]["target"], json["branches"][1]["target"]);
+}
+
+#[tokio::test]
+async fn get_refs_omits_a_remotes_symbolic_head() {
+    let root = setup_fixtures();
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha/refs").await;
+
+    let names: Vec<&str> = json["remote_branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|branch| branch["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        !names.contains(&"origin/HEAD"),
+        "origin/HEAD (a symbolic alias, not its own branch) leaked into remote_branches: {json}"
+    );
+}
+
+#[tokio::test]
+async fn get_repo_branch_count_excludes_remote_branches() {
+    let root = setup_fixtures();
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha").await;
+
+    // Two local branches (`dev`, `main`) even though the fixture also carries
+    // two remote-tracking branches — `branch_count` stays local-only.
+    assert_eq!(
+        json["branch_count"].as_u64(),
+        Some(2),
         "unexpected response: {json}"
     );
 }

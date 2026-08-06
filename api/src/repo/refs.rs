@@ -1,4 +1,4 @@
-use git2::{BranchType, ObjectType, Repository};
+use git2::{BranchType, ObjectType, ReferenceType, Repository};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -35,22 +35,44 @@ pub struct TagRef {
 pub struct RefsInfo {
     /// Sorted by name ascending; empty for a repository without commits.
     pub branches: Vec<BranchRef>,
+    /// Remote-tracking branches (`refs/remotes/*`), sorted by name ascending.
+    /// Empty on essentially every repository axgit serves today: neither
+    /// axgit nor the git-compose stack that populates `/srv/git` ever runs
+    /// `git remote add`/`git fetch` against a served bare repository (pushes
+    /// arrive via SSH only, CLAUDE.md's read-only invariant) — this field
+    /// exists for the rare case of a repository someone configured that way
+    /// by hand, not for anything axgit itself produces.
+    pub remote_branches: Vec<BranchRef>,
     /// Sorted by name ascending.
     pub tags: Vec<TagRef>,
 }
 
-/// Lists local branches and tags, each sorted by name.
+/// Lists local branches, remote-tracking branches, and tags, each sorted by name.
 pub fn list_refs(repo: &Repository) -> anyhow::Result<RefsInfo> {
     Ok(RefsInfo {
-        branches: branches(repo)?,
+        branches: branches_of_kind(repo, BranchType::Local)?,
+        remote_branches: branches_of_kind(repo, BranchType::Remote)?,
         tags: tags(repo)?,
     })
 }
 
-fn branches(repo: &Repository) -> anyhow::Result<Vec<BranchRef>> {
+/// Shared by `branches`/`remote_branches` above (`repo.branches(Some(kind))`
+/// only differs in `kind`, and the tuple's second element — the kind itself
+/// — was previously discarded with `_`).
+fn branches_of_kind(repo: &Repository, kind: BranchType) -> anyhow::Result<Vec<BranchRef>> {
     let mut branches = Vec::new();
-    for entry in repo.branches(Some(BranchType::Local))? {
+    for entry in repo.branches(Some(kind))? {
         let (branch, _) = entry?;
+        // A remote's own `HEAD` (e.g. `refs/remotes/origin/HEAD`) is a
+        // symbolic ref aliasing whichever branch that remote's default is —
+        // libgit2's remote-branch iteration selects purely on the
+        // `refs/remotes/` prefix and doesn't exclude it, and it resolves to
+        // a commit just fine, so the usual "unresolvable tip" guard below
+        // wouldn't catch it either. Skipping it here avoids listing what is
+        // really just an alias for another row as its own branch.
+        if branch.get().kind() != Some(ReferenceType::Direct) {
+            continue;
+        }
         let Some(name) = branch.name()?.map(str::to_owned) else {
             continue; // non-utf8 branch name
         };
