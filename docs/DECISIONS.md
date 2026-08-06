@@ -1800,3 +1800,52 @@ this order: the download links (web-only, no API change), the API endpoint, then
 - Fixtures gained a lightweight, slash-named tag and a tag on a blob (`scripts/make-fixtures.sh`),
   so every response shape — lightweight, slash-in-name, non-commit target — is reachable in a local
   run, not just in tests.
+
+## #52 Remote branches on the refs page, built despite finding no real use case for them
+
+Closed the "remote branches" cgit-parity gap (`enable-remote-branches`) — the last one under "Tags
+and refs" besides object links for non-commit refs. Unusual entry: investigated first, found no
+evidence the feature is needed, and built it anyway on request as a defensive/future-proofing move
+rather than in response to an actual repository that would use it.
+
+- **No repository axgit or the git-compose stack serves today has `refs/remotes/*` populated, and
+  nothing in either produces one.** `git-init`/the post-receive hook only ever write `[cgit]`
+  metadata and the agefile; every repository arrives via SSH push, never `git remote add` +
+  `fetch`. Searched the whole tree (docs, scripts, fixtures, tests, git log) for "remote"/"mirror"/
+  "upstream" — the only git-remote-sense hits were the ROADMAP gap bullet itself. Also worth
+  recording: `git clone --mirror` (the literal reading of "mirror repository") lands upstream
+  branches in `refs/heads/*` via its `+refs/*:refs/*` refspec, so a `--mirror`ed repository was
+  *already* fully visible through the existing local-branch path — `refs/remotes/*` only appears
+  from a hand-configured `remote add` + custom fetch refspec against a bare repo, a genuinely
+  unusual manual setup. `docs/API.md` states this plainly so a future reader doesn't wonder why
+  nothing populates the field.
+- **Built anyway, scoped conservatively** given the above: a separate `RefsInfo.remote_branches:
+  Vec<BranchRef>` (reusing the existing type — git2 exposes no way to split a remote branch's name
+  from its remote, e.g. `"origin/main"` is the whole shorthand), not merged into `branches` — that
+  would have silently changed what `RepoSummary.branch_count` counts.
+- **`refs.rs::branches()` generalized into `branches_of_kind(repo, BranchType)`**, shared by both
+  `branches()`/`remote_branches()` — the iterator's kind field was already there, just discarded
+  with `_`.
+- **A remote's own symbolic `HEAD` (e.g. `origin/HEAD`) is skipped.** libgit2's remote-branch
+  iteration selects purely on the `refs/remotes/` prefix and doesn't exclude it, and it peels to a
+  commit just fine, so the existing "unresolvable tip" guard wouldn't catch it — it would otherwise
+  show up as a redundant alias row for whichever branch that remote's default actually is.
+- **Web only gets Log and Compare links, not Tree.** `?ref=`-driven endpoints (log, diff, stats,
+  search) already resolve `origin/main`-shaped names correctly — `resolve_commit`'s
+  `revparse_single` follows libgit2's own DWIM rule that tries `refs/remotes/%s`, and the query
+  param carries the value already URL-decoded. Tree/blob/blame are different: their `{ref}/{path...}`
+  wildcard route depends on `resolve.rs::ref_shorthands()` to find the ref/path boundary, and that
+  set only ever collected `refs/heads/`/`refs/tags/` shorthands. Extending it to remote branches
+  raises real questions (a local branch named `origin` coexisting with a remote branch
+  `origin/main`, disambiguated only by longest-match) that aren't worth resolving for a feature with
+  no confirmed user — left as a candidate.
+- **The section renders nothing at all when `remote_branches` is empty**, unlike Branches/Tags'
+  always-present "No branches."/"No tags." — showing "No remote branches." permanently on every
+  repository page would be pure noise for a feature essentially nothing exercises yet.
+- **`RefBadges`/`useCommitRefs` and `DiffView`'s revision datalist are untouched** — same reasoning
+  as #51's `RefBadges` non-change: a local `main` and `origin/main` pointing at the same commit
+  would just double the badge for no new information, and the datalist is decoration a typed
+  `?from=&to=` value doesn't need.
+- Test fixtures use `git update-ref refs/remotes/{name} {target}` directly — no real `git remote
+  add`/`fetch` involved, matching the finding above that this is a hand-configured shape, not
+  something to simulate a whole second repository for.

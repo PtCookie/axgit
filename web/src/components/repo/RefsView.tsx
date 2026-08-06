@@ -5,7 +5,7 @@ import { archiveUrl, getRefs, type ArchiveFormat } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
 import { useDefaultBranch } from "@/lib/default-branch";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
-import { compareHref, tagHref } from "@/lib/repo-href";
+import { compareHref, logHref, tagHref } from "@/lib/repo-href";
 import { repoFromPathname } from "@/lib/repo-param";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -160,6 +160,67 @@ export default function RefsView({ repo }: RefsViewProps) {
           </Table>
         )}
       </section>
+
+      {/* Remote-tracking branches (`refs/remotes/*`) are empty on
+          essentially every repository axgit serves (docs/API.md) — unlike
+          Branches/Tags, this section renders nothing at all rather than an
+          always-present "No remote branches." line, which would be noise on
+          every repository page for a feature nobody's repository uses. */}
+      {refs.remote_branches.length > 0 && (
+        <section>
+          <h2 className="text-muted-foreground mb-2 text-sm font-medium">Remote branches</h2>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Commit</TableHead>
+                <TableHead>Committed</TableHead>
+                <TableHead>Log</TableHead>
+                <TableHead>Compare</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {refs.remote_branches.map((branch) => (
+                <TableRow key={branch.name}>
+                  <TableCell className="font-medium">{branch.name}</TableCell>
+                  <TableCell className="text-muted-foreground font-mono">{branch.target.slice(0, 12)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {branch.committed_at ? (
+                      <span title={formatAbsoluteTime(branch.committed_at)}>
+                        {formatRelativeTime(branch.committed_at)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <a
+                      className="hover:underline"
+                      aria-label={`Log for ${branch.name}`}
+                      href={logHref(resolvedRepo, { ref: branch.name })}
+                    >
+                      Log
+                    </a>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {defaultBranch === null ? null : branch.name === defaultBranch ? (
+                      "—"
+                    ) : (
+                      <a
+                        className="hover:underline"
+                        aria-label={`Compare ${defaultBranch} with ${branch.name}`}
+                        href={compareHref(resolvedRepo, { from: defaultBranch, to: branch.name })}
+                      >
+                        Compare
+                      </a>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
+      )}
 
       <section>
         <h2 className="text-muted-foreground mb-2 text-sm font-medium">Tags</h2>

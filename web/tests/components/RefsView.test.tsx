@@ -162,4 +162,29 @@ describe("RefsView", () => {
       .element(page.getByRole("link", { name: "release/1.0", exact: true }))
       .toHaveAttribute("href", "/git-compose/tag/release/1.0");
   });
+
+  it("renders no Remote branches section when there are none", async () => {
+    mockedGetRefs.mockResolvedValue(REFS);
+    render(<RefsView repo="git-compose" />);
+
+    await expect.element(page.getByText("main")).toBeVisible(); // wait for data to render
+    await expect.element(page.getByRole("heading", { name: "Remote branches" })).not.toBeInTheDocument();
+  });
+
+  it("lists remote branches with Log and Compare links, in their own section", async () => {
+    mockedGetRefs.mockResolvedValue({
+      ...REFS,
+      remote_branches: [{ name: "origin/main", target: "abc123def456", committed_at: "2026-07-24T13:06:00+09:00" }],
+    });
+    render(<RefsView repo="git-compose" />);
+
+    await expect.element(page.getByRole("heading", { name: "Remote branches" })).toBeVisible();
+    await expect.element(page.getByText("origin/main")).toBeVisible();
+    await expect
+      .element(page.getByRole("link", { name: "Log for origin/main" }))
+      .toHaveAttribute("href", "/git-compose/log?ref=origin%2Fmain");
+    await expect
+      .element(page.getByRole("link", { name: "Compare main with origin/main" }))
+      .toHaveAttribute("href", "/git-compose/diff?from=main&to=origin%2Fmain");
+  });
 });

@@ -26,6 +26,7 @@ const NO_README = { error: { code: "path_not_found", message: "no readme found" 
 
 const REFS = {
   branches: [{ name: "main", target: "abc123def456", committed_at: "2026-07-24T13:06:00+09:00" }],
+  remote_branches: [],
   tags: [
     { name: "v1.0.0", target: "def456abc123", annotation: "First release", tagged_at: "2026-01-01T00:00:00+09:00" },
   ],
@@ -161,7 +162,9 @@ test("navigates from the log to a commit's detail, showing its ref badge on both
   // The branch tip matches the log's one commit, so its ref badge should
   // show up on both the log row and the commit detail page below.
   await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
-    await route.fulfill({ json: { branches: [{ name: "main", target: COMMIT_SHA, committed_at: null }], tags: [] } });
+    await route.fulfill({
+      json: { branches: [{ name: "main", target: COMMIT_SHA, committed_at: null }], remote_branches: [], tags: [] },
+    });
   });
 
   await page.goto("/git-compose");

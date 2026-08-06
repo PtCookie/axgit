@@ -1000,6 +1000,18 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     reachable in a local run.
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (new endpoint).
 
+- **Remote branches on the refs page** (DECISIONS.md #52). Closed the last "Tags and refs" gap
+  besides object links for non-commit refs — but only after finding no repository axgit or
+  git-compose actually populates `refs/remotes/*`; built anyway as a defensive move rather than in
+  response to a real need. `GET /refs` gained `remote_branches` (same `BranchRef` shape, kept
+  separate from `branches` so `RepoSummary.branch_count` still counts local branches only), skipping
+  a remote's own symbolic `HEAD`. `RefsView.tsx` gained a third section — Name/Commit/Committed/
+  Log/Compare — rendered only when non-empty, so every repository page doesn't carry a permanent
+  "No remote branches." line. Tree links were deliberately left out: they'd need
+  `resolve.rs::ref_shorthands()` extended to remote branches, an unresolved edge case (a local
+  branch `origin` alongside a remote branch `origin/main`) not worth taking on without a real user.
+  `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1014,11 +1026,11 @@ there), author/committer/range search (#46/#47) closed the last remaining item u
 per-row quick links (#48) closed the `enable-index-links` gap under "Repository index" and the
 log/raw/blame gap under "Tree and blob", symlink targets (#49) closed one more there (submodule
 links, single-child directory collapsing, the hex dump view, and blob-by-oid remain open), the
-`Others (N)` row (#50) left `path=` as the only open item under "Stats", and the tag detail page
-plus per-tag downloads (#51) closed all but two items under "Tags and refs" — remote branches and
-object links for non-commit refs (narrowed, not closed: the `/refs` list rows themselves still link
-blind) remain open there. Pick the next piece of work from the candidates below, or from a fresh
-request.
+`Others (N)` row (#50) left `path=` as the only open item under "Stats", the tag detail page plus
+per-tag downloads (#51) closed all but two items under "Tags and refs", and remote branches (#52)
+closed one of those two — object links for non-commit refs (narrowed, not closed: the `/refs` list
+rows themselves still link every tag blind to the commit page) is now the only item left open under
+"Tags and refs". Pick the next piece of work from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1037,6 +1049,11 @@ request.
   dependency either way. Open question carried over: whether libgit2 respects `GIT_CONFIG_GLOBAL`
   for the bare-metal equivalent of the container's `[safe] directory = *` workaround
   (DECISIONS.md #22) — needs verifying before the systemd unit's user/group story is finalized.
+- Tree/blob/blame links for remote branches on the refs page (#52 built Log/Compare only) — needs
+  `resolve.rs::ref_shorthands()` extended to `refs/remotes/*`, plus deciding how a local branch
+  named e.g. `origin` should disambiguate against a remote branch `origin/main` under the existing
+  longest-match rule. No confirmed need yet (#52's own investigation found no repository that
+  actually populates `remote_branches`).
 
 ### cgit parity gaps (from a cgit feature audit)
 
@@ -1051,8 +1068,6 @@ recorded separately below instead of listed as gaps.
     too.
   - Files / Lines changed columns (`enable-log-filecount`, `enable-log-linecount`).
 - **Tags and refs**
-  - Remote branches (`enable-remote-branches`) — `/refs` lists local branches and tags only; a
-    mirror repository could have remotes worth showing.
   - Object links for non-commit refs (`cgit_object_link`) — narrowed but not closed by the tag
     detail page (#51): a tree/blob/tag target renders as inert text there, since axgit's tree/raw
     routes are ref+path based with no by-oid equivalent. The `/refs` list rows still link every tag

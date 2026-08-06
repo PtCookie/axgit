@@ -17,6 +17,7 @@ const TAG_SHA = "abc123def456abc123def456abc123def456abc";
 
 const REFS = {
   branches: [{ name: "main", target: TAG_SHA, committed_at: "2026-07-24T13:06:00+09:00" }],
+  remote_branches: [],
   tags: [{ name: "v1.0.0", target: TAG_SHA, annotation: "First release", tagged_at: "2026-01-01T00:00:00+09:00" }],
 };
 
