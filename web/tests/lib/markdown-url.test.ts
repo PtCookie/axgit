@@ -50,5 +50,10 @@ describe("resolveRepoPath", () => {
   it("resolves relative to a non-root base directory", () => {
     expect(resolveRepoPath("docs", "./x.md")).toBe("docs/x.md");
     expect(resolveRepoPath("docs", "../top.md")).toBe("top.md");
+    // Multi-segment bases: TreeView passes the listed directory when
+    // resolving a symlink target, so `..` has to unwind one level at a time.
+    expect(resolveRepoPath("src/lib", "../README.md")).toBe("src/README.md");
+    expect(resolveRepoPath("src/lib", "../../README.md")).toBe("README.md");
+    expect(resolveRepoPath("src/lib", "../../../escape.md")).toBeNull();
   });
 });

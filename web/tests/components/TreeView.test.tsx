@@ -5,7 +5,7 @@ import { page } from "vitest/browser";
 import TreeView from "@/components/repo/TreeView";
 import { ApiError } from "@/lib/api/client";
 import { getTree } from "@/lib/api/repos";
-import type { TreeListing } from "@/lib/api/schemas";
+import type { TreeEntryInfo, TreeListing } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", async (importOriginal) => {
   // `rawUrl` is a pure link builder (no network) — kept real via
@@ -17,14 +17,19 @@ vi.mock("@/lib/api/repos", async (importOriginal) => {
 
 const mockedGetTree = vi.mocked(getTree);
 
+// Deliberately not a target any other row's name matches — the target renders
+// as its own link, so a colliding value would make every non-exact
+// `getByRole("link", { name })` lookup below ambiguous.
+const SYMLINK: TreeEntryInfo = { name: "link", type: "symlink", mode: "120000", size: 4, target: "docs/guide.md" };
+
 const ROOT_TREE: TreeListing = {
   sha: "abc123def456abc123def456abc123def456abc",
   path: "",
   entries: [
-    { name: "src", type: "tree", mode: "040000", size: null },
-    { name: "README.md", type: "blob", mode: "100644", size: 16 },
-    { name: "link", type: "symlink", mode: "120000", size: 4 },
-    { name: "vendor", type: "commit", mode: "160000", size: null },
+    { name: "src", type: "tree", mode: "040000", size: null, target: null },
+    { name: "README.md", type: "blob", mode: "100644", size: 16, target: null },
+    SYMLINK,
+    { name: "vendor", type: "commit", mode: "160000", size: null, target: null },
   ],
 };
 
@@ -57,6 +62,35 @@ describe("TreeView", () => {
     await expect
       .element(page.getByRole("link", { name: "link", exact: true }))
       .toHaveAttribute("href", "/git-compose/blob/link");
+  });
+
+  it("shows a symlink's target and links it through the normalized path", async () => {
+    mockedGetTree.mockResolvedValue({ ...ROOT_TREE, path: "src", entries: [SYMLINK] });
+    render(<TreeView repo="git-compose" path="src" />);
+
+    // Displayed verbatim, linked resolved against the listed directory.
+    await expect
+      .element(page.getByRole("link", { name: "docs/guide.md" }))
+      .toHaveAttribute("href", "/git-compose/blob/src/docs/guide.md");
+  });
+
+  it("resolves a `..` target against the listed directory, not the entry", async () => {
+    const entry = { ...SYMLINK, target: "../README.md" };
+    mockedGetTree.mockResolvedValue({ ...ROOT_TREE, path: "src/lib", entries: [entry] });
+    render(<TreeView repo="git-compose" path="src/lib" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "../README.md" }))
+      .toHaveAttribute("href", "/git-compose/blob/src/README.md");
+  });
+
+  it("renders a root-escaping symlink target as plain text, not a link", async () => {
+    const entry = { ...SYMLINK, target: "../../outside" };
+    mockedGetTree.mockResolvedValue({ ...ROOT_TREE, entries: [entry] });
+    render(<TreeView repo="git-compose" path="" />);
+
+    await expect.element(page.getByText("../../outside")).toBeVisible();
+    expect(page.getByRole("link", { name: "../../outside" }).elements().length).toBe(0);
   });
 
   it("renders a submodule entry without a name link or any row actions", async () => {

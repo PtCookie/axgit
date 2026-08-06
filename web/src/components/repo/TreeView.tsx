@@ -8,6 +8,7 @@ import { getTree, rawUrl } from "@/lib/api/repos";
 import type { EntryKind, TreeListing } from "@/lib/api/schemas";
 import { formatMode } from "@/lib/format/mode";
 import { formatSize } from "@/lib/format/size";
+import { resolveRepoPath } from "@/lib/markdown-url";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import { blameHref, blobHref, logHref, treeHref } from "@/lib/repo-href";
 import IconLink from "@/components/IconLink";
@@ -85,6 +86,33 @@ const KIND_LABEL: Record<EntryKind, string> = {
   symlink: "symlink",
   commit: "submodule",
 };
+
+/** cgit-style `name -> target` suffix for a symlink row. The API stores the
+ *  target verbatim, relative to the entry's own *directory* (docs/API.md), so
+ *  `dir` is the tree being listed — not the entry's own path.
+ *
+ *  Displays the raw target but links the normalized one, reusing
+ *  `resolveRepoPath` (this is its first caller with a non-empty base). A
+ *  target that escapes the repository root, or is absolute/external, comes
+ *  back `null` and renders as plain text — there's nothing in the tree to
+ *  point at. A target naming a directory still gets a blob href; the kind
+ *  isn't knowable from here, and the blob endpoint 404s cleanly. */
+function SymlinkTarget({ repo, dir, target, ref }: { repo: string; dir: string; target: string; ref?: string }) {
+  const resolved = resolveRepoPath(dir, target);
+  const label = <code className="bg-muted/50 rounded px-1 py-0.5 font-mono text-xs">{target}</code>;
+  return (
+    <span className="text-muted-foreground">
+      {" → "}
+      {resolved ? (
+        <a className="hover:underline" href={blobHref(repo, resolved, ref)}>
+          {label}
+        </a>
+      ) : (
+        label
+      )}
+    </span>
+  );
+}
 
 export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
@@ -185,6 +213,9 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
                       </a>
                     ) : (
                       <span title={KIND_LABEL[entry.type]}>{label}</span>
+                    )}
+                    {entry.target && (
+                      <SymlinkTarget repo={resolvedRepo} dir={resolvedPath} target={entry.target} ref={resolvedRef} />
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">

@@ -1671,3 +1671,39 @@ and the tree listing's missing log/raw/blame links (axgit only had those on the 
 - **Skeletons needed no change.** `RepoListSkeleton`/`TreeViewSkeleton` model row *height* as plain
   `h-8` bars, not a mirrored table; a `w-px` icon column adds no height, so DECISIONS #17/#31's
   no-reflow rule was already satisfied.
+
+## #49 Symlink targets in the tree listing (cgit `name -> target` parity)
+
+The blob endpoint has exposed a symlink's target since the file-browsing work — `BlobInfo.content`
+*is* the link target, and `BlobView.tsx` renders "Symlink to `<code>`". The tree listing computed the
+same information and threw it away, so a client had to open every symlink to learn where it points.
+
+- **Served verbatim, resolved client-side.** `TreeEntryInfo.target` is the raw stored path, relative
+  to the entry's own directory, with no server-side normalization — a `../` prefix reaches the
+  caller intact. Resolving it server-side would mean deciding what an escaping target (`../../etc`)
+  becomes in a JSON field whose whole contract is "this is what git stores", and would lose the
+  distinction between a link written relatively and one written from the root.
+- **The existing `odb.read_header` call became the size gate.** It was already in the entry loop for
+  a blob's `size` and is a stat, not a load; widening it from `Blob` to `Blob | Symlink` bounds the
+  target read at `SYMLINK_TARGET_LIMIT` (4096, PATH_MAX) for free. **Over the cap reports `null`
+  rather than truncating** — half a path is a *wrong* target, not a shorter one, and a caller that
+  linked it would silently point somewhere real but incorrect. Non-UTF-8 collapses to `null` too,
+  matching `blob.rs::classify`'s rule for blob content: one nullable field, three benign causes.
+- **`size` stays blob-only.** Populating it for a symlink would contradict `docs/API.md`'s "blob
+  only" line for a value that is just `target.len()`, and would put "4 B" in the Size column where
+  it reads as noise.
+- **`resolveRepoPath` was reused, not reimplemented.** `web/src/lib/markdown-url.ts` already resolves
+  a repository-relative reference against a base directory — drops `.`, pops on `..`, returns `null`
+  on root escape — for README links (#21). Its own docstring anticipated generalizing past the
+  empty base; `TreeView.tsx`'s `SymlinkTarget` is that first caller. The base is the **listed
+  directory**, not the entry's own path, which is what "relative to the entry's own directory"
+  means once the entry is a file inside it.
+- **The raw target is displayed, the normalized one is linked** (cgit does the same), and a `null`
+  resolution renders as plain text — there is nothing in the tree to point at. A target naming a
+  *directory* still gets a blob href: the kind isn't knowable from a listing that only saw the link
+  itself, and the blob endpoint 404s cleanly rather than guessing.
+- **The test fixture's target was chosen not to collide with any row name.** The target renders as
+  its own link, so reusing `README.md` (the actual fixture symlink's target) would re-create #48's
+  strict-mode ambiguity across every non-exact `getByRole("link", { name })` lookup in the file.
+  `scripts/make-fixtures.sh` gained `docs/readme-link -> ../README.md` so the relative case is
+  reachable in a real repository, following #45's git-note precedent.

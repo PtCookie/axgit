@@ -43,6 +43,11 @@ commit "$W" "2026-07-21T09:30:00+09:00" "feat: add compose file"
 COMPOSE_SHA="$(git -C "$W" rev-parse HEAD)"
 GIT_COMMITTER_DATE="2026-07-21T10:00:00+09:00" git -C "$W" notes add -m "Reviewed-by: PtCookie" "$COMPOSE_SHA"
 echo "TLS notes" > "$W/NOTES.md"
+# A symlink in a subdirectory, targeting its parent — exercises the tree
+# listing's `target` field and the web side's relative-path resolution
+# (docs/DECISIONS.md #49), neither of which a flat tree would reach.
+mkdir -p "$W/docs"
+ln -s ../README.md "$W/docs/readme-link"
 git -C "$W" add .
 commit "$W" "2026-07-22T18:45:00+09:00" "docs: add notes"
 GIT_COMMITTER_DATE="2026-07-22T19:00:00+09:00" git -C "$W" tag -a v1.0.0 -m "Release v1.0.0"

@@ -929,6 +929,33 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     Skeletons (`RepoListSkeleton`, `TreeViewSkeleton`) needed no change: both model row *height* as
     plain bars, and a `w-px` icon column adds none.
 
+- **Symlink targets in the tree listing** (DECISIONS.md #49). Closed the "Symlink target display
+  (`name -> target`, linked through the normalized path)" gap under "Tree and blob". Finalized
+  design:
+  - `TreeEntryInfo` gained a required-but-nullable `target` (`api/src/repo/tree.rs`), read from the
+    symlink's blob content. The blob endpoint already exposed the identical value as `content`;
+    only the tree listing discarded it, so a client had to open each symlink to learn its target.
+  - The per-entry `odb.read_header` call (a stat, not a load) was widened from `Blob` to
+    `Blob | Symlink` so it bounds the target read at `SYMLINK_TARGET_LIMIT` (4096, PATH_MAX). Over
+    the cap reports `null` rather than truncating — half a path is a *wrong* target, not a shorter
+    one. Non-UTF-8 collapses to `null` the same way `blob.rs::classify` treats blob content.
+    `size` stays blob-only: for a symlink it would just be `target.len()`.
+  - **The target is served verbatim, relative to the entry's own directory — never resolved
+    server-side**, so a `../` prefix reaches the client intact.
+  - Web resolution **reuses `lib/markdown-url.ts::resolveRepoPath`** rather than adding a second
+    normalizer — `TreeView.tsx`'s new `SymlinkTarget` is its first caller with a non-empty base
+    (the listed directory, not the entry's own path). The raw target is displayed, the normalized
+    one is linked; a target escaping the repository root comes back `null` and renders as plain
+    text. A target naming a directory still gets a blob href — the kind isn't knowable client-side
+    and the blob endpoint 404s cleanly.
+  - The `TreeView` test fixture's symlink target was deliberately given a value no other row's name
+    matches: the target renders as its own link, so a colliding value would re-create #48's
+    strict-mode ambiguity in every non-exact `getByRole("link", { name })` lookup.
+  - `scripts/make-fixtures.sh` gained `docs/readme-link -> ../README.md` so the relative-resolution
+    path is reachable end-to-end (same precedent as #45's git note).
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`TreeEntryInfo` gained
+    `target`).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -941,9 +968,9 @@ link plus a `robots.txt` closed two more of the "Feed and discovery" gaps, log m
 the `git notes` item under "Commit page" (archive download links on the commit page remain open
 there), author/committer/range search (#46/#47) closed the last remaining item under "Log", and
 per-row quick links (#48) closed the `enable-index-links` gap under "Repository index" and the
-log/raw/blame gap under "Tree and blob" (submodule links, symlink target display, single-child
-directory collapsing, and the rest of that section remain open). Pick the next piece of work from
-the candidates below, or from a fresh request.
+log/raw/blame gap under "Tree and blob", and symlink targets (#49) closed one more there (submodule
+links, single-child directory collapsing, the hex dump view, and blob-by-oid remain open). Pick the
+next piece of work from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -986,8 +1013,6 @@ recorded separately below instead of listed as gaps.
 - **Tree and blob**
   - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
-  - Symlink target display (`name -> target`, linked through the normalized path) — currently
-    linked as a plain blob.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
   - Hex dump view for binary blobs (`<table class='bin-blob'>`, 32 bytes/row + ascii) — axgit shows
     only a binary notice and a Raw link.
