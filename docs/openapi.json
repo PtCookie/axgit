@@ -2977,7 +2977,8 @@
           "name",
           "type",
           "mode",
-          "size"
+          "size",
+          "target"
         ],
         "properties": {
           "name": {
@@ -2999,6 +3000,13 @@
             "format": "int64",
             "description": "Object size in bytes; blobs only, `None` otherwise.",
             "minimum": 0
+          },
+          "target": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Symlink target path; symlinks only, `None` otherwise — also `None` for\na non-UTF-8 target or one past `SYMLINK_TARGET_LIMIT`. Relative to the\nentry's own directory, exactly as stored; clients resolve it."
           }
         }
       },

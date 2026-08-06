@@ -931,6 +931,12 @@ export interface components {
        * @description Object size in bytes; blobs only, `None` otherwise.
        */
       size: number | null;
+      /**
+       * @description Symlink target path; symlinks only, `None` otherwise — also `None` for
+       *     a non-UTF-8 target or one past `SYMLINK_TARGET_LIMIT`. Relative to the
+       *     entry's own directory, exactly as stored; clients resolve it.
+       */
+      target: string | null;
     };
     TreeListing: {
       /** @description Resolved commit sha the listing was taken from. */

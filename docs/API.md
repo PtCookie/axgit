@@ -367,14 +367,19 @@ blob/raw follow the same rule. Omitting `{path...}` means the root tree.
   "sha": "<resolved full sha>",
   "path": "src",
   "entries": [
-    { "name": "lib", "type": "tree", "mode": "040000", "size": null },
-    { "name": "main.rs", "type": "blob", "mode": "100644", "size": 13 }
+    { "name": "lib", "type": "tree", "mode": "040000", "size": null, "target": null },
+    { "name": "main.rs", "type": "blob", "mode": "100644", "size": 13, "target": null },
+    { "name": "readme-link", "type": "symlink", "mode": "120000", "size": null, "target": "../README.md" }
   ]
 }
 ```
 
 - `type`: `tree` | `blob` | `symlink` (mode 120000) | `commit` (submodule gitlink).
 - `mode`: a 6-digit octal string. `size`: blob only, otherwise `null`.
+- `target`: the link target path, symlinks only (`null` otherwise, and for a non-UTF-8 target or one
+  larger than 4096 bytes). Stored verbatim and **relative to the entry's own directory** — it is
+  never resolved server-side, so a `../` prefix reaches the client intact; clients resolve it
+  themselves. The blob endpoint exposes the same value as `content`.
 - Sorting: trees first, then name ascending.
 - `404 path_not_found` if the path doesn't exist or isn't a directory. `.`/`..`/empty segments in
   the path are `400 invalid_param`.

@@ -12,6 +12,13 @@ const MODE_TREE: i32 = 0o040000;
 const MODE_LINK: i32 = 0o120000;
 const MODE_COMMIT: i32 = 0o160000; // gitlink (submodule)
 
+/// Cap on a symlink target read inline — a target is a path, so PATH_MAX
+/// (4096) is already generous; anything larger isn't a real link target.
+/// Checked against the object header (a stat) so an oversized blob is never
+/// loaded, and reported as `None` rather than truncated: half a path is a
+/// *wrong* target, not a shorter one.
+const SYMLINK_TARGET_LIMIT: u64 = 4096;
+
 /// What a tree entry points at, derived from its file mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +43,11 @@ pub struct TreeEntryInfo {
     /// Object size in bytes; blobs only, `None` otherwise.
     #[schema(required = true)]
     pub size: Option<u64>,
+    /// Symlink target path; symlinks only, `None` otherwise — also `None` for
+    /// a non-UTF-8 target or one past `SYMLINK_TARGET_LIMIT`. Relative to the
+    /// entry's own directory, exactly as stored; clients resolve it.
+    #[schema(required = true)]
+    pub target: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -79,16 +91,31 @@ pub fn list_tree(repo: &Repository, commit: &Commit, path: &str) -> Result<TreeL
         };
         let mode = entry.filemode();
         let kind = kind_of(mode);
-        // read_header stats the object without loading its content.
-        let size = (kind == EntryKind::Blob)
+        // read_header stats the object without loading its content — it backs
+        // both a blob's reported size and the symlink target's size gate.
+        let object_size = matches!(kind, EntryKind::Blob | EntryKind::Symlink)
             .then(|| odb.read_header(entry.id()).ok())
             .flatten()
             .map(|(size, _)| size as u64);
+        let size = (kind == EntryKind::Blob).then_some(object_size).flatten();
+        // A symlink's target is its blob content. Non-UTF-8 collapses to
+        // `None`, same rule `blob.rs::classify` applies to blob content.
+        let target = match kind {
+            EntryKind::Symlink if object_size.is_some_and(|size| size <= SYMLINK_TARGET_LIMIT) => {
+                entry
+                    .to_object(repo)
+                    .ok()
+                    .and_then(|object| object.into_blob().ok())
+                    .and_then(|blob| str::from_utf8(blob.content()).ok().map(str::to_owned))
+            }
+            _ => None,
+        };
         entries.push(TreeEntryInfo {
             name: name.to_owned(),
             kind,
             mode: format!("{mode:06o}"),
             size,
+            target,
         });
     }
     entries.sort_by(|a, b| {

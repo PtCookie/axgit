@@ -17,7 +17,8 @@ const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 
 /// `files.git` on `main` (returned sha #0):
 ///   README.md, noext, big.txt (1 MiB + 1), link -> README.md (symlink),
-///   src/main.rs, src/lib/util.rs, assets/logo.png (binary),
+///   src/main.rs, src/lib/util.rs, src/readme-link -> ../README.md (symlink
+///   with a target relative to its own directory), assets/logo.png (binary),
 ///   feature/x/inside.txt (directory shadowing the branch name),
 ///   vendor/dep (gitlink).
 /// Branch `feature/x` (returned sha #1) adds branch-file.txt on top.
@@ -40,6 +41,7 @@ fn setup_files_repo(root: &Path) -> (String, String) {
     std::fs::write(w.join("assets/logo.png"), b"\x89PNG\r\n\x1a\n\x00binary").unwrap();
     std::fs::write(w.join("feature/x/inside.txt"), "from main\n").unwrap();
     std::os::unix::fs::symlink("README.md", w.join("link")).unwrap();
+    std::os::unix::fs::symlink("../README.md", w.join("src/readme-link")).unwrap();
     common::git(w, &["add", "-A"]);
     common::git(
         w,
@@ -116,15 +118,16 @@ async fn tree_should_list_root_with_trees_first() {
     };
     assert_eq!(
         by_name("src"),
-        &json!({ "name": "src", "type": "tree", "mode": "040000", "size": null })
+        &json!({ "name": "src", "type": "tree", "mode": "040000", "size": null, "target": null })
     );
     assert_eq!(
         by_name("README.md"),
-        &json!({ "name": "README.md", "type": "blob", "mode": "100644", "size": 16 })
+        &json!({ "name": "README.md", "type": "blob", "mode": "100644", "size": 16, "target": null })
     );
+    // A symlink carries its target; `size` stays blob-only (docs/API.md).
     assert_eq!(
         by_name("link"),
-        &json!({ "name": "link", "type": "symlink", "mode": "120000", "size": null })
+        &json!({ "name": "link", "type": "symlink", "mode": "120000", "size": null, "target": "README.md" })
     );
 }
 
@@ -133,18 +136,21 @@ async fn tree_should_list_subdirectories_and_gitlinks() {
     let (root, _, _) = setup();
     let body = get_ok(root.path(), "/api/v1/repos/files/tree/main/src").await;
     assert_eq!(body["path"], "src");
-    let names: Vec<&str> = body["entries"]
-        .as_array()
-        .unwrap()
+    let entries = body["entries"].as_array().unwrap();
+    let names: Vec<&str> = entries
         .iter()
         .map(|entry| entry["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["lib", "main.rs"]);
+    assert_eq!(names, ["lib", "main.rs", "readme-link"]);
+    // The target is stored verbatim, relative to the entry's own directory —
+    // never resolved server-side, so `..` reaches the caller intact.
+    assert_eq!(entries[2]["target"], "../README.md");
+    assert_eq!(entries[1]["target"], Value::Null, "a blob has no target");
 
     let body = get_ok(root.path(), "/api/v1/repos/files/tree/main/vendor").await;
     assert_eq!(
         body["entries"],
-        json!([{ "name": "dep", "type": "commit", "mode": "160000", "size": null }])
+        json!([{ "name": "dep", "type": "commit", "mode": "160000", "size": null, "target": null }])
     );
 }
 
