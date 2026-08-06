@@ -759,6 +759,18 @@ export interface components {
      */
     LineOrigin: " " | "+" | "-";
     /**
+     * @description Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows
+     *     plus this one always reconcile with the bucket totals.
+     */
+    OtherAuthors: {
+      /** @description Authors folded in here — equals `author_count - authors.len()`. */
+      count: number;
+      /** @description Their combined commits within the window. */
+      commits: number;
+      /** @description Parallel to the response's `buckets`, summed elementwise. */
+      buckets: number[];
+    };
+    /**
      * @description How the frontend should render the README. Only `markdown` is converted to
      *     HTML; the rest are shown as plain text (docs/DECISIONS.md #11).
      * @enum {string}
@@ -905,6 +917,7 @@ export interface components {
       buckets: components["schemas"]["BucketStats"][];
       /** @description Sorted by commit count, descending; capped at `limit`. */
       authors: components["schemas"]["AuthorStats"][];
+      others: null | components["schemas"]["OtherAuthors"];
     };
     /** @description Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md). */
     TagRef: {

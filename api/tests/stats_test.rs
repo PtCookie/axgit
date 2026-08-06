@@ -247,8 +247,9 @@ async fn stats_returns_empty_result_for_empty_repo() {
             json["author_count"].as_i64(),
             json["buckets"].as_array().map(Vec::len),
             json["authors"].as_array().map(Vec::len),
+            json["others"].as_null(),
         ),
-        (Some(()), Some(false), Some(0), Some(0), Some(0)),
+        (Some(()), Some(false), Some(0), Some(0), Some(0), Some(())),
         "unexpected response: {json}"
     );
 
@@ -282,6 +283,32 @@ async fn stats_applies_limit_and_reports_truncation_without_shrinking_bucket_tot
         total, 4,
         "bucket totals must include commits from authors cut by limit"
     );
+
+    // The two cut authors are folded into `others` rather than dropped, so the
+    // visible row plus `others` reconciles with the bucket totals column by
+    // column — the property the stats page's Total footer relies on.
+    let others = &json["others"];
+    assert_eq!(others["count"].as_i64(), Some(2));
+    let shown = json["authors"][0]["commits"].as_i64().unwrap();
+    assert_eq!(shown + others["commits"].as_i64().unwrap(), total);
+    for (index, bucket) in json["buckets"].as_array().unwrap().iter().enumerate() {
+        let column = json["authors"][0]["buckets"][index].as_i64().unwrap()
+            + others["buckets"][index].as_i64().unwrap();
+        assert_eq!(
+            column,
+            bucket["commits"].as_i64().unwrap(),
+            "bucket {index} must reconcile"
+        );
+    }
+}
+
+#[tokio::test]
+async fn stats_omits_others_when_the_limit_cuts_nothing() {
+    let (root, _shas) = setup();
+    let json = get_ok(root.path(), "/api/v1/repos/beta/stats").await;
+    assert_eq!(json["authors"].as_array().map(Vec::len), Some(3));
+    assert_eq!(json["truncated"].as_bool(), Some(false));
+    assert_eq!(json["others"], Value::Null);
 }
 
 #[tokio::test]

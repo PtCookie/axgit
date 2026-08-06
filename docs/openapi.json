@@ -2591,6 +2591,35 @@
           "-"
         ]
       },
+      "OtherAuthors": {
+        "type": "object",
+        "description": "Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows\nplus this one always reconcile with the bucket totals.",
+        "required": [
+          "count",
+          "commits",
+          "buckets"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Authors folded in here — equals `author_count - authors.len()`.",
+            "minimum": 0
+          },
+          "commits": {
+            "type": "integer",
+            "description": "Their combined commits within the window.",
+            "minimum": 0
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Parallel to the response's `buckets`, summed elementwise."
+          }
+        }
+      },
       "ReadmeFormat": {
         "type": "string",
         "description": "How the frontend should render the README. Only `markdown` is converted to\nHTML; the rest are shown as plain text (docs/DECISIONS.md #11).",
@@ -2899,7 +2928,8 @@
           "truncated",
           "author_count",
           "buckets",
-          "authors"
+          "authors",
+          "others"
         ],
         "properties": {
           "sha": {
@@ -2933,6 +2963,17 @@
               "$ref": "#/components/schemas/AuthorStats"
             },
             "description": "Sorted by commit count, descending; capped at `limit`."
+          },
+          "others": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OtherAuthors",
+                "description": "Aggregate of the authors past `limit`; `None` when nothing was cut —\nso this is the precise \"`limit` cut the author list\" signal, where\n`truncated` unions that cause with the commit scan budget."
+              }
+            ]
           }
         }
       },

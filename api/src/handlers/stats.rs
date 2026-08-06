@@ -100,6 +100,7 @@ pub async fn get_stats(
                     author_count: 0,
                     buckets: Vec::new(),
                     authors: Vec::new(),
+                    others: None,
                 };
                 return Ok((false, serde_json::to_vec(&results)?));
             };

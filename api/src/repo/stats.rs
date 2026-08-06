@@ -58,6 +58,18 @@ pub struct AuthorStats {
     pub buckets: Vec<usize>,
 }
 
+/// Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows
+/// plus this one always reconcile with the bucket totals.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OtherAuthors {
+    /// Authors folded in here — equals `author_count - authors.len()`.
+    pub count: usize,
+    /// Their combined commits within the window.
+    pub commits: usize,
+    /// Parallel to the response's `buckets`, summed elementwise.
+    pub buckets: Vec<usize>,
+}
+
 /// Response of `GET /api/v1/repos/{repo}/stats` (docs/API.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct StatsResults {
@@ -75,6 +87,11 @@ pub struct StatsResults {
     pub buckets: Vec<BucketStats>,
     /// Sorted by commit count, descending; capped at `limit`.
     pub authors: Vec<AuthorStats>,
+    /// Aggregate of the authors past `limit`; `None` when nothing was cut —
+    /// so this is the precise "`limit` cut the author list" signal, where
+    /// `truncated` unions that cause with the commit scan budget.
+    #[schema(required = true)]
+    pub others: Option<OtherAuthors>,
 }
 
 /// Runs the stats aggregation for `period`, anchored on `commit`'s
@@ -135,10 +152,27 @@ pub fn stats(
             .cmp(&a.commits)
             .then_with(|| a.author.email_hash.cmp(&b.author.email_hash))
     });
-    if authors.len() > limit {
-        authors.truncate(limit);
+    // The cut tail still carries full per-bucket vectors, so folding it into
+    // `others` is an elementwise sum here — no second revwalk.
+    let others = if authors.len() > limit {
+        let rest = authors.split_off(limit);
         truncated = true;
-    }
+        let mut buckets = vec![0usize; BUCKET_COUNT];
+        let mut commits = 0usize;
+        for author in &rest {
+            commits += author.commits;
+            for (total, n) in buckets.iter_mut().zip(&author.buckets) {
+                *total += n;
+            }
+        }
+        Some(OtherAuthors {
+            count: rest.len(),
+            commits,
+            buckets,
+        })
+    } else {
+        None
+    };
 
     let buckets = starts
         .iter()
@@ -156,6 +190,7 @@ pub fn stats(
         author_count,
         buckets,
         authors,
+        others,
     })
 }
 
@@ -365,5 +400,40 @@ mod tests {
             bucket_total, 3,
             "bucket totals include the truncated-out author"
         );
+
+        let others = results.others.expect("the cut author is aggregated");
+        assert_eq!(others.count, 1);
+        assert_eq!(others.commits, 1);
+        // The visible rows plus `others` reconcile with the bucket totals,
+        // column by column — that's the whole point of the field.
+        let shown: usize = results.authors.iter().map(|author| author.commits).sum();
+        assert_eq!(shown + others.commits, bucket_total);
+        for (index, bucket) in results.buckets.iter().enumerate() {
+            let column: usize = results
+                .authors
+                .iter()
+                .map(|author| author.buckets[index])
+                .sum::<usize>()
+                + others.buckets[index];
+            assert_eq!(column, bucket.commits, "bucket {index} must reconcile");
+        }
+    }
+
+    #[test]
+    fn stats_should_omit_others_when_the_limit_cuts_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let builder = repo.treebuilder(None).unwrap();
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let sig = signature_at("alice", "alice@example.com", "2026-07-01T00:00:00Z");
+        let oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "msg", &tree, &[])
+            .unwrap();
+        let commit = repo.find_commit(oid).unwrap();
+
+        let results = stats(&repo, &commit, StatsPeriod::Month, 50).unwrap();
+        assert_eq!(results.authors.len(), 1);
+        assert!(results.others.is_none());
+        assert!(!results.truncated);
     }
 }

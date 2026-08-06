@@ -594,7 +594,8 @@ persistent index — DECISIONS.md #28), bounded by the same kind of scan budget 
   "buckets": [{ "start": "2025-09-01T00:00:00+00:00", "commits": 12 }],
   "authors": [
     { "author": { "name": "...", "email_hash": "..." }, "commits": 120, "buckets": [3, 0, 7] }
-  ]
+  ],
+  "others": { "count": 12, "commits": 84, "buckets": [1, 0, 3] }
 }
 ```
 
@@ -617,11 +618,17 @@ persistent index — DECISIONS.md #28), bounded by the same kind of scan budget 
 - `limit`: default 50, allowed range 1–100, same rules as the commit log's `limit` (not clamped).
   Caps the number of `authors` rows returned, most active first; `author_count` reports the full
   distinct-author count within the window even when `authors` is cut shorter.
+- `others`: the authors past `limit`, aggregated rather than dropped — `null` when the cut removed
+  nothing. `others.buckets` is a parallel array to the top-level `buckets`, same as
+  `authors[].buckets`, and `others.count` equals `author_count - authors.length`. Every `authors`
+  row plus `others` therefore reconciles with `buckets[].commits`, column by column.
 - `truncated`: `true` when either the commit scan budget (20,000 commits walked) or `limit` cut
-  the results before finishing — the same two-cause rule search's `truncated` uses.
+  the results before finishing — the same two-cause rule search's `truncated` uses. `others` is the
+  precise signal for the `limit` cause: `others != null` means `limit` cut authors, while
+  `truncated && others == null` means the scan budget alone stopped the walk.
 - Empty repository (unborn HEAD): omitting `ref` returns `200` with `"sha": null`, empty
-  `buckets`/`authors`, `author_count: 0`. An explicit `ref` returns `404 ref_not_found` — the same
-  carve-out the commit log and search apply.
+  `buckets`/`authors`, `author_count: 0`, `"others": null`. An explicit `ref` returns
+  `404 ref_not_found` — the same carve-out the commit log and search apply.
 - Caching follows the commit-detail pattern: immutable only when `ref` is given and equals the
   resolved commit's full sha as a string; otherwise `ETag` + `Cache-Control: no-cache`.
 
