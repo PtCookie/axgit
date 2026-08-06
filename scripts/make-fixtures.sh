@@ -51,7 +51,19 @@ ln -s ../README.md "$W/docs/readme-link"
 git -C "$W" add .
 commit "$W" "2026-07-22T18:45:00+09:00" "docs: add notes"
 GIT_COMMITTER_DATE="2026-07-22T19:00:00+09:00" git -C "$W" tag -a v1.0.0 -m "Release v1.0.0"
-git -C "$W" push --quiet "$BARE" main:main refs/tags/v1.0.0 refs/notes/commits:refs/notes/commits
+# A lightweight tag whose name also contains `/`: the tag detail endpoint's
+# lightweight branch (null tag_object/message/tagger) and slash-in-name
+# routing are otherwise unreachable in a local run — v1.0.0 above is the
+# only annotated tag.
+git -C "$W" tag release/0.9 "$COMPOSE_SHA"
+# An annotated tag on a blob, not a commit — the only way to reach
+# `object.type != "commit"` and `target: null` (cgit's `cgit_object_link`
+# case, and the case where the tag has no archive download).
+README_BLOB="$(git -C "$W" rev-parse HEAD:README.md)"
+GIT_COMMITTER_DATE="2026-07-22T19:05:00+09:00" git -C "$W" tag -a readme-blob -m "Tag pointing at a blob" "$README_BLOB"
+git -C "$W" push --quiet "$BARE" main:main \
+    refs/tags/v1.0.0 refs/tags/release/0.9 refs/tags/readme-blob \
+    refs/notes/commits:refs/notes/commits
 mkdir -p "$BARE/info/web"
 echo "2026-07-24 13:06:00 +0900" > "$BARE/info/web/last-modified"
 

@@ -393,6 +393,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/repos/{repo}/tags/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Tag detail
+     * @description Full tag message, tagger, and the tag's one-level dereferenced target —
+     *     closes the gap `GET /refs` leaves open (`tags[].annotation` is only the
+     *     first line, and `tags[].target` is already the fully peeled commit).
+     *     Only a real tag name resolves here: a branch name, a commit sha, or
+     *     `HEAD` all answer `404 ref_not_found` — only `refs/tags/{name}` is
+     *     consulted.
+     */
+    get: operations["get_tag"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/repos/{repo}/tree/{ref}/{path}": {
     parameters: {
       query?: never;
@@ -759,6 +784,14 @@ export interface components {
      */
     LineOrigin: " " | "+" | "-";
     /**
+     * @description What kind of object a tag's one-level dereference points at. Deliberately
+     *     separate from `tree::EntryKind` — that enum's domain is tree entries (it
+     *     carries `symlink`, and its `commit` variant means gitlink), not tag
+     *     targets.
+     * @enum {string}
+     */
+    ObjectKind: "commit" | "tree" | "blob" | "tag";
+    /**
      * @description Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows
      *     plus this one always reconcile with the bucket totals.
      */
@@ -918,6 +951,44 @@ export interface components {
       /** @description Sorted by commit count, descending; capped at `limit`. */
       authors: components["schemas"]["AuthorStats"][];
       others: null | components["schemas"]["OtherAuthors"];
+    };
+    /** @description Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (docs/API.md). */
+    TagDetail: {
+      /** @example v1.0.0 */
+      name: string;
+      /**
+       * @description The annotated tag object's own sha. `None` for a lightweight tag —
+       *     lightweight tags have no tag object, so `message`/`tagger`/`tagged_at`
+       *     are `None` too and `object.sha == target`.
+       */
+      tag_object: string | null;
+      /** @description One dereference of the tag (see [`TagObject`]). */
+      object: components["schemas"]["TagObject"];
+      /**
+       * @description Fully peeled commit sha — the same value `GET /refs`' `tags[].target`
+       *     reports. `None` when the tag chain never reaches a commit (a tag on a
+       *     tree or blob), which is also exactly when an archive download is
+       *     unavailable for this tag.
+       */
+      target: string | null;
+      /**
+       * @description Full tag message, trailing whitespace trimmed. `None` for a
+       *     lightweight tag, a non-utf8 message, or an all-whitespace message.
+       */
+      message: string | null;
+      tagger: null | components["schemas"]["CommitAuthor"];
+      tagged_at: string | null;
+    };
+    /**
+     * @description The object a tag points at, one dereference in. For an annotated tag this
+     *     is the tag object's own `object` header; for a lightweight tag it's the
+     *     ref's direct target. A nested tag (tag-of-tag) or a tag on a tree/blob
+     *     reports that object here, not the fully peeled commit — see
+     *     [`TagDetail::target`].
+     */
+    TagObject: {
+      sha: string;
+      type: components["schemas"]["ObjectKind"];
     };
     /** @description Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md). */
     TagRef: {
@@ -2076,6 +2147,57 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
+      };
+      /** @description `repo_not_found`, `ref_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_tag: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Repository name without the `.git` suffix
+         * @example git-compose
+         */
+        repo: string;
+        /**
+         * @description Tag name exactly as it appears under `refs/tags` — may itself contain `/`
+         * @example v1.0.0
+         */
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Tag detail. Never immutably cached — the URL names a tag ref, not a sha, and a tag can be force-moved onto a different object. */
+      200: {
+        headers: {
+          /** @description `no-cache` */
+          "Cache-Control"?: string;
+          /** @description Validator-derived; opaque */
+          ETag?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TagDetail"];
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description `repo_not_found`, `ref_not_found` */
       404: {

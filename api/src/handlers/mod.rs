@@ -6,6 +6,7 @@ pub mod files;
 pub mod repos;
 pub mod search;
 pub mod stats;
+pub mod tags;
 
 use std::path::PathBuf;
 

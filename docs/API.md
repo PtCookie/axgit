@@ -136,6 +136,46 @@ branch/tag counts, and the clone URL.
   object itself).
 - `tags[].annotation`: the first line of the tag message. `tagged_at`: the tagger timestamp.
   **Both are `null` for lightweight tags.**
+- For the tag object's own sha, its full message, the tagger, and the tag's un-peeled (one
+  dereference) target, see `GET /tags/{name}` below.
+
+### `GET /api/v1/repos/{repo}/tags/{name}`
+
+Tag detail — the tag message body, tagger, and dereferenced target that `GET /refs` leaves out
+(`tags[].annotation` there is only the first line, and `tags[].target` is already the fully
+peeled commit).
+
+```json
+{
+  "name": "v1.0.0",
+  "tag_object": "<tag object sha, or null>",
+  "object": { "sha": "<sha>", "type": "commit" },
+  "target": "<peeled commit sha, or null>",
+  "message": "Release v1.0.0\n\nSecond line.",
+  "tagger": { "name": "...", "email_hash": "<sha256, avatar seed>" },
+  "tagged_at": "..."
+}
+```
+
+- `{name}`: tag name exactly as it appears under `refs/tags` — may itself contain `/`. **Only a
+  real tag resolves here**: a branch name, a commit sha, or `HEAD` all answer `404 ref_not_found`
+  (only `refs/tags/{name}` is consulted), which is an exception to this document's general "the ref
+  parameter accepts branch names, tag names, and commit shas" rule.
+- `tag_object`: the annotated tag object's own sha. `null` for a lightweight tag — a lightweight tag
+  has no tag object, so `message`/`tagger`/`tagged_at` are `null` too, and `object.sha == target`.
+- `object`: one dereference of the tag — the annotated tag's `object` header, or the lightweight
+  tag's direct ref target. `object.type` is one of `commit`, `tree`, `blob`, `tag`. A **nested** tag
+  (a tag pointing at another tag object) reports the inner tag here, with `type: "tag"` — `target`
+  still fully peels through to the eventual commit.
+- `target`: the fully peeled commit sha — the same value `GET /refs`' `tags[].target` reports.
+  `null` when the tag chain never reaches a commit (a tag on a tree or blob), which is also exactly
+  when an archive download is unavailable for this tag.
+- `message`: the full tag message, trailing whitespace trimmed. `null` for a lightweight tag, a
+  non-utf8 message, or a message that is empty or all whitespace.
+- `tagger`/`tagged_at`: `null` for a lightweight tag, and for an annotated tag with no tagger line
+  (git allows creating one without).
+- **Never immutably cached**: the URL names a tag ref, not a sha, and a tag can be force-moved onto
+  a different object without its name changing — always `ETag` + `Cache-Control: no-cache`.
 
 ### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=`
 

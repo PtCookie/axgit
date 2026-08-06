@@ -26,6 +26,7 @@ const EXPECTED_OPERATIONS: &[(&str, &str)] = &[
     ("/api/v1/repos", "get"),
     ("/api/v1/repos/{repo}", "get"),
     ("/api/v1/repos/{repo}/refs", "get"),
+    ("/api/v1/repos/{repo}/tags/{name}", "get"),
     ("/api/v1/repos/{repo}/commits", "get"),
     ("/api/v1/repos/{repo}/commits/{sha}", "get"),
     ("/api/v1/repos/{repo}/commits/{sha}/diff", "get"),

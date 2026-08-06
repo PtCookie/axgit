@@ -8,7 +8,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::error::{ApiError, ErrorResponse};
-use crate::handlers::{archive, commits, diff, feed, files, repos, search, stats};
+use crate::handlers::{archive, commits, diff, feed, files, repos, search, stats, tags};
 use crate::openapi::ApiDoc;
 use crate::shell;
 use crate::smart_http;
@@ -24,6 +24,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/repos", get(repos::list_repos))
         .route("/repos/{repo}", get(repos::get_repo))
         .route("/repos/{repo}/refs", get(repos::get_refs))
+        // A tag name may itself contain `/` (e.g. `release/1.0`), like the
+        // ref half of the `{*rest}` routes below — but unlike those, there is
+        // no ref/path boundary to resolve: the whole remainder is the name.
+        .route("/repos/{repo}/tags/{*name}", get(tags::get_tag))
         .route("/repos/{repo}/commits", get(commits::list_commits))
         .route("/repos/{repo}/commits/{sha}", get(commits::get_commit))
         .route(

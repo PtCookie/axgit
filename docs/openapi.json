@@ -1605,6 +1605,77 @@
         }
       }
     },
+    "/api/v1/repos/{repo}/tags/{name}": {
+      "get": {
+        "tags": [
+          "repos"
+        ],
+        "summary": "Tag detail",
+        "description": "Full tag message, tagger, and the tag's one-level dereferenced target —\ncloses the gap `GET /refs` leaves open (`tags[].annotation` is only the\nfirst line, and `tags[].target` is already the fully peeled commit).\nOnly a real tag name resolves here: a branch name, a commit sha, or\n`HEAD` all answer `404 ref_not_found` — only `refs/tags/{name}` is\nconsulted.",
+        "operationId": "get_tag",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "Repository name without the `.git` suffix",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "git-compose"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Tag name exactly as it appears under `refs/tags` — may itself contain `/`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "v1.0.0"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tag detail. Never immutably cached — the URL names a tag ref, not a sha, and a tag can be force-moved onto a different object.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator-derived; opaque"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagDetail"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`repo_not_found`, `ref_not_found`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/repos/{repo}/tree/{ref}/{path}": {
       "get": {
         "tags": [
@@ -2591,6 +2662,16 @@
           "-"
         ]
       },
+      "ObjectKind": {
+        "type": "string",
+        "description": "What kind of object a tag's one-level dereference points at. Deliberately\nseparate from `tree::EntryKind` — that enum's domain is tree entries (it\ncarries `symlink`, and its `commit` variant means gitlink), not tag\ntargets.",
+        "enum": [
+          "commit",
+          "tree",
+          "blob",
+          "tag"
+        ]
+      },
       "OtherAuthors": {
         "type": "object",
         "description": "Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows\nplus this one always reconcile with the bucket totals.",
@@ -2977,6 +3058,83 @@
           }
         }
       },
+      "TagDetail": {
+        "type": "object",
+        "description": "Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (docs/API.md).",
+        "required": [
+          "name",
+          "tag_object",
+          "object",
+          "target",
+          "message",
+          "tagger",
+          "tagged_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "v1.0.0"
+          },
+          "tag_object": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The annotated tag object's own sha. `None` for a lightweight tag —\nlightweight tags have no tag object, so `message`/`tagger`/`tagged_at`\nare `None` too and `object.sha == target`."
+          },
+          "object": {
+            "$ref": "#/components/schemas/TagObject",
+            "description": "One dereference of the tag (see [`TagObject`])."
+          },
+          "target": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Fully peeled commit sha — the same value `GET /refs`' `tags[].target`\nreports. `None` when the tag chain never reaches a commit (a tag on a\ntree or blob), which is also exactly when an archive download is\nunavailable for this tag."
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Full tag message, trailing whitespace trimmed. `None` for a\nlightweight tag, a non-utf8 message, or an all-whitespace message."
+          },
+          "tagger": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CommitAuthor",
+                "description": "`None` for a lightweight tag, and for an annotated tag with no tagger\nline (git allows creating one)."
+              }
+            ]
+          },
+          "tagged_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TagObject": {
+        "type": "object",
+        "description": "The object a tag points at, one dereference in. For an annotated tag this\nis the tag object's own `object` header; for a lightweight tag it's the\nref's direct target. A nested tag (tag-of-tag) or a tag on a tree/blob\nreports that object here, not the fully peeled commit — see\n[`TagDetail::target`].",
+        "required": [
+          "sha",
+          "type"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ObjectKind"
+          }
+        }
+      },
       "TagRef": {
         "type": "object",
         "description": "Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).",
@@ -3081,7 +3239,7 @@
   "tags": [
     {
       "name": "repos",
-      "description": "Repository discovery, summary, refs, feed, and commit statistics"
+      "description": "Repository discovery, summary, refs, tag detail, feed, and commit statistics"
     },
     {
       "name": "commits",

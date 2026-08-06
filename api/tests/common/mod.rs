@@ -204,6 +204,12 @@ pub fn add_annotated_tag(bare: &Path, name: &str, message: &str) {
     git(bare, &["tag", "-a", "-m", message, name, "main"]);
 }
 
+/// Creates annotated tag `{name}` on an arbitrary object (a blob, tree, or
+/// another tag's oid) — [`add_annotated_tag`] only ever tags `main`.
+pub fn add_annotated_tag_on(bare: &Path, name: &str, message: &str, object: &str) {
+    git(bare, &["tag", "-a", "-m", message, name, object]);
+}
+
 /// Attaches a `git notes` message to `sha` on the repository's default notes
 /// ref (`refs/notes/commits`). Works directly against a bare repository.
 pub fn add_note(bare: &Path, sha: &str, message: &str) {
