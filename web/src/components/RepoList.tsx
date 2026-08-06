@@ -1,3 +1,5 @@
+import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ClockCounterClockwise";
+import { FolderOpenIcon } from "@phosphor-icons/react/dist/ssr/FolderOpen";
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
@@ -7,6 +9,8 @@ import type { RepoInfo } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { filterRepos } from "@/lib/repo-filter";
 import { paramFromSearch } from "@/lib/repo-param";
+import { logHref, treeHref } from "@/lib/repo-href";
+import IconLink from "@/components/IconLink";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -157,6 +161,9 @@ export default function RepoList() {
                     <TableHead>Description</TableHead>
                     <TableHead>Owner</TableHead>
                     <TableHead>Last activity</TableHead>
+                    <TableHead className="w-px">
+                      <span className="sr-only">Links</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -177,6 +184,20 @@ export default function RepoList() {
                         ) : (
                           "—"
                         )}
+                      </TableCell>
+                      <TableCell className="w-px">
+                        <div className="flex items-center gap-2">
+                          <IconLink
+                            href={logHref(repo.name)}
+                            label={`Log for ${repo.name}`}
+                            Icon={ClockCounterClockwiseIcon}
+                          />
+                          <IconLink
+                            href={treeHref(repo.name, "", undefined)}
+                            label={`Tree for ${repo.name}`}
+                            Icon={FolderOpenIcon}
+                          />
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

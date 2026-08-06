@@ -20,12 +20,12 @@ test("filters the repository list and syncs the query into the URL", async ({ pa
   });
 
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "dotfiles" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "dotfiles", exact: true })).toBeVisible();
 
   await page.getByRole("searchbox", { name: "Filter repositories" }).fill("dotfiles");
 
-  await expect(page.getByRole("link", { name: "dotfiles" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "git-compose" })).not.toBeVisible();
+  await expect(page.getByRole("link", { name: "dotfiles", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "git-compose", exact: true })).not.toBeVisible();
   await expect(page).toHaveURL(/\?q=dotfiles$/);
 });
 
@@ -38,7 +38,21 @@ test("deep-links a filtered list from ?q=", async ({ page }) => {
 
   await expect(page.getByRole("searchbox", { name: "Filter repositories" })).toHaveValue("axgit");
   await expect(page.getByRole("link", { name: "axgit", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "git-compose" })).not.toBeVisible();
+  await expect(page.getByRole("link", { name: "git-compose", exact: true })).not.toBeVisible();
+});
+
+test("follows a row's Tree quick link into the repository's tree page", async ({ page }) => {
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({ json: fixture });
+  });
+  await page.route("**/api/v1/repos/git-compose/tree/HEAD", async (route) => {
+    await route.fulfill({ json: { sha: "abc123def456abc123def456abc123def456abc", path: "", entries: [] } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "Tree for git-compose" }).click();
+
+  await expect(page).toHaveURL("/git-compose/tree");
 });
 
 // robots.txt is a real static file (`web/public/robots.txt`), served ahead of

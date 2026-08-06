@@ -33,9 +33,21 @@ describe("RepoList", () => {
     const headings = page.getByRole("heading", { level: 2 });
     await expect.element(headings.first()).toHaveTextContent("infra");
     await expect.element(headings.last()).toHaveTextContent("Other");
-    const link = page.getByRole("link", { name: "git-compose" });
+    const link = page.getByRole("link", { name: "git-compose", exact: true });
     await expect.element(link).toBeVisible();
     await expect.element(link).toHaveAttribute("href", "/git-compose");
+  });
+
+  it("gives each row a Log and Tree quick link (enable-index-links parity)", async () => {
+    mockedListRepos.mockResolvedValue(fixture);
+    render(<RepoList />);
+
+    await expect
+      .element(page.getByRole("link", { name: "Log for git-compose" }))
+      .toHaveAttribute("href", "/git-compose/log");
+    await expect
+      .element(page.getByRole("link", { name: "Tree for git-compose" }))
+      .toHaveAttribute("href", "/git-compose/tree");
   });
 
   it("shows an empty-state message when there are no repositories", async () => {
@@ -60,8 +72,8 @@ describe("RepoList", () => {
     await expect.element(input).toBeVisible();
     await userEvent.type(input, "dotfiles");
 
-    await expect.element(page.getByRole("link", { name: "dotfiles" })).toBeVisible();
-    await expect.element(page.getByRole("link", { name: "git-compose" })).not.toBeInTheDocument();
+    await expect.element(page.getByRole("link", { name: "dotfiles", exact: true })).toBeVisible();
+    await expect.element(page.getByRole("link", { name: "git-compose", exact: true })).not.toBeInTheDocument();
     await expect.element(page.getByRole("status")).toHaveTextContent("1 of 4 repositories");
     expect(new URLSearchParams(window.location.search).get("q")).toBe("dotfiles");
   });
@@ -84,6 +96,6 @@ describe("RepoList", () => {
     const input = page.getByRole("searchbox", { name: "Filter repositories" });
     await expect.element(input).toHaveValue("axgit");
     await expect.element(page.getByRole("link", { name: "axgit", exact: true })).toBeVisible();
-    await expect.element(page.getByRole("link", { name: "git-compose" })).not.toBeInTheDocument();
+    await expect.element(page.getByRole("link", { name: "git-compose", exact: true })).not.toBeInTheDocument();
   });
 });
