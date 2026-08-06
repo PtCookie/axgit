@@ -237,7 +237,27 @@ function StatsResultsView({ results, period }: StatsResultsViewProps) {
                 </TableRow>
               ))
             )}
+            {/* The authors cut by `limit`, aggregated rather than dropped
+             *  (docs/API.md). No `AuthorAvatar`: the identicon seeds from
+             *  `email_hash` and this row has no identity — reading as plainly
+             *  different from a real author is the point. */}
+            {results.others && (
+              <TableRow>
+                <TableCell className="text-muted-foreground font-medium">Others ({results.others.count})</TableCell>
+                <TableCell className="text-muted-foreground text-right">{results.others.commits}</TableCell>
+                {results.others.buckets.map((commits, index) => (
+                  <TableCell key={bucketColumns[index].start} className="text-muted-foreground text-right">
+                    {commits}
+                  </TableCell>
+                ))}
+              </TableRow>
+            )}
           </TableBody>
+          {/* Totals come from the top-level `buckets`, not from summing the
+           *  rows above — they have always included authors cut by `limit`
+           *  (docs/API.md). Since `others` landed those authors get their own
+           *  row, so the two now agree column for column; that's a property of
+           *  the response, not something to enforce by re-deriving here. */}
           <TableFooter>
             <TableRow>
               <TableCell>Total</TableCell>

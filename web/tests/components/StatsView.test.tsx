@@ -45,6 +45,7 @@ const RESULTS: StatsResults = {
       buckets: monthlyBuckets({ [JULY_START]: 1 }).map((bucket) => bucket.commits),
     },
   ],
+  others: null,
 };
 
 const EMPTY_REPO_RESULTS: StatsResults = {
@@ -54,6 +55,7 @@ const EMPTY_REPO_RESULTS: StatsResults = {
   author_count: 0,
   buckets: [],
   authors: [],
+  others: null,
 };
 
 describe("StatsView", () => {
@@ -119,6 +121,37 @@ describe("StatsView", () => {
     render(<StatsView repo="git-compose" period="month" />);
 
     await expect.element(page.getByText("Showing top 1 of 5 authors.")).toBeVisible();
+  });
+
+  it("renders an Others row that reconciles the visible authors with the totals", async () => {
+    // Alice alone is shown; Bob plus two more are folded into `others`, so the
+    // July column reads 2 (Alice) + 3 (Others) = 5 (Total).
+    mockedGetStats.mockResolvedValue({
+      ...RESULTS,
+      truncated: true,
+      author_count: 4,
+      buckets: monthlyBuckets({ [JULY_START]: 5 }),
+      authors: [RESULTS.authors[0]],
+      others: {
+        count: 3,
+        commits: 3,
+        buckets: monthlyBuckets({ [JULY_START]: 3 }).map((bucket) => bucket.commits),
+      },
+    });
+    render(<StatsView repo="git-compose" period="month" />);
+
+    await expect.element(page.getByRole("row", { name: /Others \(3\)/ })).toBeVisible();
+    // The aggregate is deliberately not an author row — no avatar, no name.
+    await expect.element(page.getByText("Bob")).not.toBeInTheDocument();
+    await expect.element(page.getByText("Showing top 1 of 4 authors.")).toBeVisible();
+  });
+
+  it("omits the Others row when the limit cut nothing", async () => {
+    mockedGetStats.mockResolvedValue(RESULTS);
+    render(<StatsView repo="git-compose" period="month" />);
+
+    await expect.element(page.getByText("Alice")).toBeVisible();
+    expect(page.getByRole("row", { name: /Others/ }).elements().length).toBe(0);
   });
 
   it("shows the empty state for a repository with no commits", async () => {

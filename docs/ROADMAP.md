@@ -956,6 +956,29 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`TreeEntryInfo` gained
     `target`).
 
+- **`Others (N)` row on the stats page** (DECISIONS.md #50). Closed the "An `Others (N)` row
+  aggregating authors past the limit" gap under "Stats". Finalized design:
+  - `StatsResults` gained a required-but-nullable `others` (`{ count, commits, buckets }`,
+    `api/src/repo/stats.rs`) — the authors cut by `limit`, folded into one row instead of dropped.
+    Their per-bucket counts were already in memory (each `AuthorStats` carries its own 12-length
+    `buckets`), so it's an elementwise sum over the tail `split_off` leaves behind: no second
+    revwalk, no extra accumulator.
+  - **A separate field, not a synthetic entry appended to `authors`**: `AuthorStats` requires a
+    `CommitAuthor` with a name and `email_hash`, which an aggregate has neither of — a sentinel
+    would break `AuthorAvatar`'s identicon seed and would shift `authors.length`, which
+    `StatsView`'s "Showing top N of M" hint compares against `author_count`. With `others` separate,
+    that comparison needed no change at all.
+  - `others != null` is now the precise "`limit` cut the author list" signal, while `truncated`
+    still unions that cause with the commit scan budget — documented in `docs/API.md`.
+  - **The Total footer now reconciles with the visible rows for the first time** (authors + Others =
+    Total, column by column). The footer still reads the top-level `buckets` rather than summing
+    rows — that's a property of the response, not something to re-derive — and a comment says so.
+    Asserted on both sides: the api tests check the column-by-column identity directly.
+  - The `Others` row deliberately renders without an avatar or a name, reading as plainly different
+    from a real author row.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`StatsResults` gained
+    `others`, new `OtherAuthors` schema).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -968,9 +991,10 @@ link plus a `robots.txt` closed two more of the "Feed and discovery" gaps, log m
 the `git notes` item under "Commit page" (archive download links on the commit page remain open
 there), author/committer/range search (#46/#47) closed the last remaining item under "Log", and
 per-row quick links (#48) closed the `enable-index-links` gap under "Repository index" and the
-log/raw/blame gap under "Tree and blob", and symlink targets (#49) closed one more there (submodule
-links, single-child directory collapsing, the hex dump view, and blob-by-oid remain open). Pick the
-next piece of work from the candidates below, or from a fresh request.
+log/raw/blame gap under "Tree and blob", symlink targets (#49) closed one more there (submodule
+links, single-child directory collapsing, the hex dump view, and blob-by-oid remain open), and the
+`Others (N)` row (#50) left `path=` as the only open item under "Stats". Pick the next piece of work
+from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1037,7 +1061,6 @@ recorded separately below instead of listed as gaps.
     it from HEAD).
 - **Stats**
   - `path=` pathspec filter — `/stats` only takes `ref`/`period`/`limit`.
-  - An `Others (N)` row aggregating authors past the limit — axgit just truncates.
 - **Commit page**
   - Archive download links on the commit page (Tree link, per-parent `(diff)` link, and patch/raw
     diff links were closed alongside the rest of the diff/patch work, see Done).

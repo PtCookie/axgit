@@ -1707,3 +1707,33 @@ same information and threw it away, so a client had to open every symlink to lea
   strict-mode ambiguity across every non-exact `getByRole("link", { name })` lookup in the file.
   `scripts/make-fixtures.sh` gained `docs/readme-link -> ../README.md` so the relative case is
   reachable in a real repository, following #45's git-note precedent.
+
+## #50 `Others (N)` on the stats page, instead of silently truncating authors
+
+`limit` capped the `authors` array and threw the rest away, so the rows on screen never added up to
+the Total footer — the bucket totals had always included the cut authors (deliberately), leaving a
+visible, unexplained discrepancy on any repository with more than `limit` contributors.
+
+- **A separate `others` object, not a synthetic entry appended to `authors`.** `AuthorStats`
+  requires a `CommitAuthor` with a `name` and an `email_hash`; an aggregate has neither. A sentinel
+  author would break `AuthorAvatar`, whose identicon seeds from `email_hash`, and would push
+  `authors.length` to `limit + 1` — which `StatsView`'s "Showing top N of M authors" hint compares
+  against `author_count`. Keeping `others` separate meant that comparison, and the chart (which
+  reads only the top-level `buckets`), needed no change whatsoever.
+- **`count` is carried explicitly even though it equals `author_count - authors.len()`.** The
+  arithmetic is only correct if the caller already knows `authors` is exactly the capped list; an
+  object that states its own size is usable without that assumption, and the row's label is
+  literally that number.
+- **The aggregation is free.** Each `AuthorStats` already carries its own `BUCKET_COUNT`-length
+  bucket vector, so `split_off(limit)` hands back a tail that only needs an elementwise sum — no
+  second revwalk, no extra accumulator threaded through the walk. `author_count` is read before the
+  cut and the top-level `buckets` are built from `bucket_totals`, so nothing else depended on the
+  tail still being attached.
+- **`others != null` is the precise "`limit` cut authors" signal.** `truncated` deliberately stays
+  the union of two causes (scan budget, limit cut) to match search's rule, but callers that need to
+  distinguish them now can: `truncated && others == null` is the scan budget alone.
+- **The footer still reads the top-level `buckets` rather than summing the rows.** Authors + Others
+  now agree with it column for column, but that's a property of the response worth asserting in
+  tests, not an invariant to re-derive in the view — a comment above `TableFooter` says so, since
+  the reconciliation is exactly the kind of thing a later reader would "simplify".
+- The `Others` row renders with no avatar and no name, so it reads as plainly not-an-author.
