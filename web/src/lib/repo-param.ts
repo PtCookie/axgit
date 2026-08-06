@@ -31,6 +31,20 @@ export function commitShaFromPathname(pathname: string): string {
 }
 
 /**
+ * Every segment of a page URL from the third onward, decoded independently
+ * and rejoined with `/`. Shared by [`filePathFromPathname`] and
+ * [`tagNameFromPathname`] — both read a `/`-containing rest param the same
+ * way, only the URL shape they're named for differs.
+ */
+function restFromPathname(pathname: string): string {
+  const segments = pathname
+    .split("/")
+    .filter((part) => part.length > 0)
+    .slice(2);
+  return segments.map(decodeSegment).join("/");
+}
+
+/**
  * The `{path...}` remainder of a `/{repo}/(tree|blob)/{path...}` page URL,
  * decoded segment-by-segment and rejoined with `/`. Used by `TreeView`/
  * `BlobView`, mounted on the placeholder `/{repo}/tree` or `/{repo}/blob`
@@ -38,11 +52,17 @@ export function commitShaFromPathname(pathname: string): string {
  * prop. Empty for the tree root (`/{repo}/tree`).
  */
 export function filePathFromPathname(pathname: string): string {
-  const segments = pathname
-    .split("/")
-    .filter((part) => part.length > 0)
-    .slice(2);
-  return segments.map(decodeSegment).join("/");
+  return restFromPathname(pathname);
+}
+
+/**
+ * The `{name...}` remainder of a `/{repo}/tag/{name...}` page URL, decoded
+ * segment-by-segment and rejoined with `/` — a rest param because a tag name
+ * may itself contain `/` (`release/1.0`), the same reason `blob`'s path is.
+ * Used by `TagView`, mounted on the placeholder `/{repo}/tag` shell.
+ */
+export function tagNameFromPathname(pathname: string): string {
+  return restFromPathname(pathname);
 }
 
 /**

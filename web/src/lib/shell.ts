@@ -34,5 +34,9 @@ export function shellFor(pathname: string): string {
   if (segments.length >= 3 && segments[1] === "blob") return `/${REPO_SHELL_PARAM}/blob`;
   // blame: same "at least one path segment" rule as blob.
   if (segments.length >= 3 && segments[1] === "blame") return `/${REPO_SHELL_PARAM}/blame`;
+  // tag: at least one name segment is required (a tag name may itself
+  // contain `/`) — there's nothing to show for `/{repo}/tag` itself, and the
+  // refs page already is the tag listing.
+  if (segments.length >= 3 && segments[1] === "tag") return `/${REPO_SHELL_PARAM}/tag`;
   return "/404";
 }

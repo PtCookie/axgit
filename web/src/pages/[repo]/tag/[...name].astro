@@ -1,0 +1,23 @@
+---
+import RepoLayout from "../../../layouts/RepoLayout.astro";
+import TagView, { TagViewSkeleton } from "../../../components/repo/TagView";
+import { REPO_SHELL_PARAM } from "../../../lib/shell";
+
+/**
+ * One shell per route shape, not per repository — see `[repo]/index.astro`
+ * (`api/src/shell.rs`, docs/DECISIONS.md #17). `name` is a rest param, same
+ * reason as `commit/[...sha].astro`'s `sha` — a tag name may itself contain
+ * `/` (`release/1.0`), and passing `undefined` builds exactly one file
+ * (`tag/index.html`) with no `name` segment appended. The real name is read
+ * from `location.pathname` at runtime by `TagView`.
+ */
+export function getStaticPaths() {
+  return [{ params: { repo: REPO_SHELL_PARAM, name: undefined } }];
+}
+---
+
+<RepoLayout active="tag" title="Tag — Axgit">
+  <TagView client:only="react">
+    <div slot="fallback"><TagViewSkeleton /></div>
+  </TagView>
+</RepoLayout>

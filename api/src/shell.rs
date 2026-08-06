@@ -86,6 +86,13 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
             Path::new(REPO_SHELL_PARAM).join("blame").join("index.html"),
             StatusCode::OK,
         ),
+        // Same "at least one segment" rule as blob/blame — a tag name may
+        // itself contain `/`, and there's nothing to show for `/{repo}/tag`
+        // itself (the refs page already is the tag listing).
+        [_repo, "tag", _first, ..] => (
+            Path::new(REPO_SHELL_PARAM).join("tag").join("index.html"),
+            StatusCode::OK,
+        ),
         _ => (PathBuf::from("404.html"), StatusCode::NOT_FOUND),
     }
 }
@@ -273,6 +280,24 @@ mod tests {
     }
 
     #[test]
+    fn repo_tag_paths_map_to_the_tag_shell() {
+        for path in [
+            "/git-compose/tag/v1.0.0",
+            "/git-compose/tag/v1.0.0/",
+            "/git-compose/tag/release/1.0",
+        ] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM).join("tag").join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
     fn repo_stats_paths_map_to_the_stats_shell() {
         for path in ["/git-compose/stats", "/git-compose/stats/"] {
             assert_eq!(
@@ -311,6 +336,8 @@ mod tests {
             "/git-compose/commit/abc123/extra",
             "/git-compose/stats/extra",
             "/git-compose/diff/extra",
+            "/git-compose/tag",
+            "/git-compose/tag/",
             "/a/b/c",
         ] {
             assert_eq!(

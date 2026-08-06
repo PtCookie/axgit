@@ -15,6 +15,7 @@ import type {
   SearchResults,
   StatsPeriod,
   StatsResults,
+  TagDetail,
   TreeListing,
 } from "./schemas";
 
@@ -42,6 +43,12 @@ export function getRepo(name: string): Promise<RepoSummary> {
 
 export function getRefs(name: string): Promise<RefsInfo> {
   return apiFetch<RefsInfo>(`/repos/${encodeSegment(name)}/refs`);
+}
+
+/** `encodePath`, not `encodeSegment` — a tag name may itself contain `/`
+ *  (`release/1.0`), same reasoning as `refPathSegment`. */
+export function getTag(name: string, tagName: string): Promise<TagDetail> {
+  return apiFetch<TagDetail>(`/repos/${encodeSegment(name)}/tags/${encodePath(tagName)}`);
 }
 
 export interface ListCommitsParams {

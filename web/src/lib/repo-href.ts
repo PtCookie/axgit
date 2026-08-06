@@ -26,6 +26,15 @@ export function refsHref(repo: string): string {
   return `/${encodeSegment(repo)}/refs`;
 }
 
+/** Builds a `/{repo}/tag/{name}` href. `encodePath`, not `encodeSegment` — a
+ *  literal `/` inside `name` (e.g. `release/1.0`) must survive into the URL
+ *  for `shellFor`'s tag arm to match and for `tagNameFromPathname` to
+ *  rejoin it, same as `blobHref`'s path. No `?ref=`: the tag name *is* the
+ *  ref, same reasoning as `refsHref`. */
+export function tagHref(repo: string, name: string): string {
+  return `/${encodeSegment(repo)}/tag/${encodePath(name)}`;
+}
+
 /** Builds a `/{repo}/log` href from the given params, omitting any left
  *  unset — same shape as `searchHref`/`statsHref`. Moved out of
  *  `CommitLog.tsx` (docs/DECISIONS.md #34) so `RefBadges`' ref links can

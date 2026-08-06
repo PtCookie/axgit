@@ -26,15 +26,16 @@ const COMMIT_HTML: &str = "<!doctype html><html><body>REPO COMMIT</body></html>"
 const TREE_HTML: &str = "<!doctype html><html><body>REPO TREE</body></html>";
 const BLOB_HTML: &str = "<!doctype html><html><body>REPO BLOB</body></html>";
 const BLAME_HTML: &str = "<!doctype html><html><body>REPO BLAME</body></html>";
+const TAG_HTML: &str = "<!doctype html><html><body>REPO TAG</body></html>";
 const NOT_FOUND_HTML: &str = "<!doctype html><html><body>NOT FOUND</body></html>";
 const ASSET_JS: &str = "console.log('app');";
 
-/// A repo root with one repository, and a static dir with the nine page
+/// A repo root with one repository, and a static dir with the ten page
 /// shells (`index.html`, `__repo__/index.html`, `__repo__/refs/index.html`,
 /// `__repo__/log/index.html`, `__repo__/commit/index.html`,
 /// `__repo__/tree/index.html`, `__repo__/blob/index.html`,
-/// `__repo__/blame/index.html`, `404.html`) plus a real asset under
-/// `_astro/`.
+/// `__repo__/blame/index.html`, `__repo__/tag/index.html`, `404.html`) plus
+/// a real asset under `_astro/`.
 fn setup_fixtures() -> (TempDir, TempDir) {
     let repo_root = tempfile::tempdir().expect("failed to create repo root");
     common::create_bare_repo(repo_root.path(), "git-compose.git");
@@ -48,6 +49,7 @@ fn setup_fixtures() -> (TempDir, TempDir) {
     std::fs::create_dir_all(static_dir.path().join("__repo__/tree")).unwrap();
     std::fs::create_dir_all(static_dir.path().join("__repo__/blob")).unwrap();
     std::fs::create_dir_all(static_dir.path().join("__repo__/blame")).unwrap();
+    std::fs::create_dir_all(static_dir.path().join("__repo__/tag")).unwrap();
     std::fs::write(static_dir.path().join("__repo__/index.html"), REPO_HTML).unwrap();
     std::fs::write(
         static_dir.path().join("__repo__/refs/index.html"),
@@ -75,6 +77,7 @@ fn setup_fixtures() -> (TempDir, TempDir) {
         BLAME_HTML,
     )
     .unwrap();
+    std::fs::write(static_dir.path().join("__repo__/tag/index.html"), TAG_HTML).unwrap();
     std::fs::create_dir_all(static_dir.path().join("_astro")).unwrap();
     std::fs::write(static_dir.path().join("_astro/app.js"), ASSET_JS).unwrap();
 
@@ -190,6 +193,16 @@ async fn repo_blame_paths_should_serve_the_blame_shell() {
 }
 
 #[tokio::test]
+async fn repo_tag_paths_should_serve_the_tag_shell() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/git-compose/tag/v1.0.0", "/git-compose/tag/release/1.0"] {
+        let router = router_with_static(repo_root.path(), static_dir.path());
+        assert_html_shell(router, uri, StatusCode::OK, TAG_HTML).await;
+    }
+}
+
+#[tokio::test]
 async fn unknown_paths_should_serve_the_404_shell_with_a_404_status() {
     let (repo_root, static_dir) = setup_fixtures();
 
@@ -201,6 +214,8 @@ async fn unknown_paths_should_serve_the_404_shell_with_a_404_status() {
         "/git-compose/commit",
         "/git-compose/commit/abc123/extra",
         "/git-compose/stats/extra",
+        "/git-compose/tag",
+        "/git-compose/tag/",
         "/a/b/c",
     ] {
         let router = router_with_static(repo_root.path(), static_dir.path());

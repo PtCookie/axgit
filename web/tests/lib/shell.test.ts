@@ -71,6 +71,12 @@ describe("shellFor", () => {
     }
   });
 
+  it("maps repo tag paths to the placeholder tag shell", () => {
+    for (const path of ["/git-compose/tag/v1.0.0", "/git-compose/tag/v1.0.0/", "/git-compose/tag/release/1.0"]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/tag`);
+    }
+  });
+
   it("maps repo stats paths to the placeholder stats shell", () => {
     for (const path of ["/git-compose/stats", "/git-compose/stats/"]) {
       expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/stats`);
@@ -93,6 +99,8 @@ describe("shellFor", () => {
       "/git-compose/commit/abc123/extra",
       "/git-compose/stats/extra",
       "/git-compose/diff/extra",
+      "/git-compose/tag",
+      "/git-compose/tag/",
       "/a/b/c",
     ]) {
       expect(shellFor(path)).toBe("/404");
