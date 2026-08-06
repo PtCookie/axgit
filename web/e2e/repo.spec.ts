@@ -142,7 +142,10 @@ test("shows the repository summary, README, and links to refs", async ({ page })
   await page.getByRole("link", { name: "Refs" }).click();
 
   await expect(page).toHaveURL("/git-compose/refs");
-  await expect(page.getByText("v1.0.0")).toBeVisible();
+  // Now a link to the tag page (this commit) — `exact: true` disambiguates
+  // from "Compare v1.0.0 with main" and "Download v1.0.0 as tar.gz", both of
+  // which contain this string too.
+  await expect(page.getByRole("link", { name: "v1.0.0", exact: true })).toBeVisible();
 });
 
 test("navigates from the log to a commit's detail, showing its ref badge on both pages", async ({ page }) => {
@@ -311,6 +314,9 @@ test("tab navigation is client-side, not a full page reload", async ({ page }) =
   await page.getByRole("link", { name: "Refs" }).click();
 
   await expect(page).toHaveURL("/git-compose/refs");
-  await expect(page.getByText("v1.0.0")).toBeVisible();
+  // Now a link to the tag page (this commit) — `exact: true` disambiguates
+  // from "Compare v1.0.0 with main" and "Download v1.0.0 as tar.gz", both of
+  // which contain this string too.
+  await expect(page.getByRole("link", { name: "v1.0.0", exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { __navMarker?: number }).__navMarker)).toBe(1);
 });

@@ -138,4 +138,25 @@ describe("RefsView", () => {
 
     await expect.element(page.getByRole("link", { name: "Download main as tar.gz" })).not.toBeInTheDocument();
   });
+
+  it("links a tag name to its tag detail page", async () => {
+    mockedGetRefs.mockResolvedValue(REFS);
+    render(<RefsView repo="git-compose" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "v1.0.0", exact: true }))
+      .toHaveAttribute("href", "/git-compose/tag/v1.0.0");
+  });
+
+  it("keeps a tag name's slash intact in its tag detail href", async () => {
+    mockedGetRefs.mockResolvedValue({
+      branches: REFS.branches,
+      tags: [...REFS.tags, { name: "release/1.0", target: "abc123", annotation: null, tagged_at: null }],
+    });
+    render(<RefsView repo="git-compose" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "release/1.0", exact: true }))
+      .toHaveAttribute("href", "/git-compose/tag/release/1.0");
+  });
 });

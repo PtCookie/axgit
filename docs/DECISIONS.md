@@ -1737,3 +1737,66 @@ visible, unexplained discrepancy on any repository with more than `limit` contri
   tests, not an invariant to re-derive in the view — a comment above `TableFooter` says so, since
   the reconciliation is exactly the kind of thing a later reader would "simplify".
 - The `Others` row renders with no avatar and no name, so it reads as plainly not-an-author.
+
+## #51 Tag detail endpoint + page, and per-tag archive downloads
+
+Closed most of the "Tags and refs" cgit-parity gap: `GET /refs` only ever surfaced a tag's peeled
+commit sha and the first line of its message — no tagger, no full message, no way to tell a tag on
+a tree/blob apart from one on a commit, and no download link. Three separate commits, landed in
+this order: the download links (web-only, no API change), the API endpoint, then the page.
+
+- **`TagRef.target`'s existing meaning (the peeled commit sha) is preserved on the new endpoint
+  too, under the same name.** The two designs floated during planning disagreed here — one wanted
+  the new endpoint's `target` to mean the tag's one-level dereference. Rejected: `TagRef.target` is
+  already documented as "peeled commit sha" (`docs/API.md`) and `web/src/lib/commit-refs.ts` already
+  keys ref badges off exactly that meaning. Redefining it on a sibling endpoint would make one word
+  mean two things across the same resource family. The one-level dereference instead got its own
+  name, `object: { sha, type }` — cgit's own vocabulary (`git cat-file tag` prints `object`/`type`).
+- **`target` is `null`, not an error, when the tag never reaches a commit** (a tag on a tree or
+  blob). That's deliberately the same condition under which an archive download is unavailable for
+  the tag — one field answers both questions.
+- **Lightweight tags resolve `200`, not `404`.** `GET /refs` already lists them, so a `404` would
+  make every lightweight tag's link on the refs page dead. `tag_object`/`message`/`tagger`/
+  `tagged_at` are `null` instead — the precise "this is lightweight" signal.
+- **Never immutably cached**, unlike almost every other sha-addressed-looking endpoint in this API.
+  The URL names a tag *ref*, not a sha, and a tag can be force-moved onto a different object without
+  its name changing — immutability is a property of the address, and this address is mutable by
+  construction. (Known pre-existing limitation, not new here: the validator is HEAD sha + agefile
+  mtime, so a tag move alone — without a HEAD move or an agefile touch — can stay invisible for one
+  `AXGIT_CACHE_RESPONSE_TTL` window, same as `GET /refs` itself.)
+- **`repo::tag` is a new module, not folded into `refs.rs`.** `TagDetail` isn't a superset of
+  `TagRef` the way `CommitDetail` is of `CommitInfo` — `object` has no analogue on `TagRef` and
+  `target` needs the same meaning on both, so there's no natural "extend the log entry" shape here.
+  `repo::commits::{signature_info, time_rfc3339}` (already `pub(crate)`) are reused for the tagger,
+  keeping the "no raw email address in any response" invariant intact (DECISIONS #8) — `tagger` is
+  the same `CommitAuthor` shape as everywhere else.
+- **Web: reached only as a drill-down from the Refs page, not a `RepoNav` tab.** `RepoNav.astro`'s
+  tabs each carry a single fixed path segment (`Layout.astro` builds `href` as `/${repo}/${sub}`); a
+  tag name is unbounded and unknown at build time, so it structurally can't be one. `shellFor`/
+  `shell_for` gained a `tag` arm with the same "at least one segment" rule as `blob`/`blame` (a tag
+  name may itself contain `/`, e.g. `release/1.0`) — `/{repo}/tag` alone 404s, since the refs page
+  already is the tag listing.
+- **Only `object.type === "commit"` gets a link on the tag page.** axgit's tree/raw routes are
+  ref+path based with no by-oid equivalent, so a tree/blob/tag target is rendered as inert
+  monospace text (same shape `TreeView.tsx` already uses for an unlinkable submodule row). This
+  narrows, but doesn't close, `docs/ROADMAP.md`'s separate "Object links for non-commit refs" gap —
+  left open on purpose rather than growing a by-oid route as a side effect of this page.
+- **Download column is tags-only, not also on branches**, matching cgit's own `print_tag_downloads()`
+  scope. A branch archive's filename (`{repo}-{branch}.{format}`) names a moving target that changes
+  meaning on every push; a tag's is reproducible. `archiveUrl` itself accepts any ref (branches
+  included) — this is a scope choice, not a capability gap.
+- **Download links use visible text + an overriding `aria-label`** (`Download {tag} as {format}`),
+  the table's existing `Compare`-column convention — not `IconLink` (#48). `IconLink` fits when a
+  distinct icon carries the row's information; here the format name (`tar.gz`/`zip`) *is* the
+  information, and two identical download glyphs side by side would be indistinguishable without a
+  hover.
+- **Refs page tag names became links** once the API guaranteed every tag resolves (lightweight
+  included). This reproduces #48's fallout: a bare `v1.0.0` link is now a substring of both
+  `Compare v1.0.0 with main` and `Download v1.0.0 as tar.gz`'s accessible names, so every lookup by
+  that name in tests/e2e needed `exact: true`.
+- **`RefBadges.tsx` is left unchanged** — its tag badge intentionally links to `logHref` ("commits
+  at this ref"), a different intent from the new tag page ("this tag itself"). Noted as a candidate,
+  not folded in here.
+- Fixtures gained a lightweight, slash-named tag and a tag on a blob (`scripts/make-fixtures.sh`),
+  so every response shape — lightweight, slash-in-name, non-commit target — is reachable in a local
+  run, not just in tests.

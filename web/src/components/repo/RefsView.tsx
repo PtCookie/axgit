@@ -5,7 +5,7 @@ import { archiveUrl, getRefs, type ArchiveFormat } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
 import { useDefaultBranch } from "@/lib/default-branch";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
-import { compareHref } from "@/lib/repo-href";
+import { compareHref, tagHref } from "@/lib/repo-href";
 import { repoFromPathname } from "@/lib/repo-param";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -180,7 +180,11 @@ export default function RefsView({ repo }: RefsViewProps) {
             <TableBody>
               {refs.tags.map((tag) => (
                 <TableRow key={tag.name}>
-                  <TableCell className="font-medium">{tag.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <a className="hover:underline" href={tagHref(resolvedRepo, tag.name)}>
+                      {tag.name}
+                    </a>
+                  </TableCell>
                   <TableCell className="text-muted-foreground font-mono">{tag.target.slice(0, 12)}</TableCell>
                   <TableCell className="text-muted-foreground">{tag.annotation ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">

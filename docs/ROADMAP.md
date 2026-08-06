@@ -979,6 +979,27 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`StatsResults` gained
     `others`, new `OtherAuthors` schema).
 
+- **Tag detail endpoint + page, and per-tag archive downloads on the refs page** (DECISIONS.md #51).
+  Closed most of the "Tags and refs" cgit-parity gap in three commits (download links, then the API,
+  then the page):
+  - `GET /api/v1/repos/{repo}/tags/{name}` (`api/src/repo/tag.rs`, new `handlers/tags.rs`) — full tag
+    message, tagger, and the tag's one-level dereference (`object: { sha, type }`); `target` keeps
+    `TagRef.target`'s existing "peeled commit sha" meaning across both endpoints rather than
+    overloading the name. `null` on `target` is both "tag doesn't reach a commit" and "archive
+    unavailable for this tag." Lightweight tags resolve `200` (not `404`) since `/refs` already lists
+    them; every other field goes `null` instead. Never immutably cached — the URL names a mutable tag
+    ref, not a sha.
+  - `web/src/pages/[repo]/tag/[...name].astro` + `TagView.tsx` — a Refs drill-down, not a `RepoNav`
+    tab (a tag name is unbounded, unlike every existing tab's fixed segment). `shellFor`/`shell_for`
+    gained a `tag` arm (blob/blame's "≥1 segment" rule). Only `object.type === "commit"` gets a link;
+    tree/blob/tag targets render as inert text (no by-oid route exists).
+  - `RefsView.tsx`'s tag rows gained a Download column (tags-only, cgit's `print_tag_downloads()`
+    scope) and their names became links to the new page — the latter needed `exact: true` added to
+    several existing accessible-name lookups (#48's fallout, recurring).
+  - Fixtures gained a lightweight slash-named tag and a tag on a blob so every response shape is
+    reachable in a local run.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (new endpoint).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -992,9 +1013,12 @@ the `git notes` item under "Commit page" (archive download links on the commit p
 there), author/committer/range search (#46/#47) closed the last remaining item under "Log", and
 per-row quick links (#48) closed the `enable-index-links` gap under "Repository index" and the
 log/raw/blame gap under "Tree and blob", symlink targets (#49) closed one more there (submodule
-links, single-child directory collapsing, the hex dump view, and blob-by-oid remain open), and the
-`Others (N)` row (#50) left `path=` as the only open item under "Stats". Pick the next piece of work
-from the candidates below, or from a fresh request.
+links, single-child directory collapsing, the hex dump view, and blob-by-oid remain open), the
+`Others (N)` row (#50) left `path=` as the only open item under "Stats", and the tag detail page
+plus per-tag downloads (#51) closed all but two items under "Tags and refs" — remote branches and
+object links for non-commit refs (narrowed, not closed: the `/refs` list rows themselves still link
+blind) remain open there. Pick the next piece of work from the candidates below, or from a fresh
+request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1027,13 +1051,12 @@ recorded separately below instead of listed as gaps.
     too.
   - Files / Lines changed columns (`enable-log-filecount`, `enable-log-linecount`).
 - **Tags and refs**
-  - Dedicated tag detail page + API (`cmd=tag`, `ui-tag.c`) — tag message body, tagger, target
-    object kind, download link. `/refs` only surfaces the annotation's first line.
-  - Per-tag archive download links on the refs page (cgit's Download column,
-    `print_tag_downloads()`).
   - Remote branches (`enable-remote-branches`) — `/refs` lists local branches and tags only; a
     mirror repository could have remotes worth showing.
-  - Object links for non-commit refs (`cgit_object_link`).
+  - Object links for non-commit refs (`cgit_object_link`) — narrowed but not closed by the tag
+    detail page (#51): a tree/blob/tag target renders as inert text there, since axgit's tree/raw
+    routes are ref+path based with no by-oid equivalent. The `/refs` list rows still link every tag
+    blind to the commit page regardless of target kind.
 - **Tree and blob**
   - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
