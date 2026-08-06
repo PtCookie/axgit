@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { encodeSegment } from "@/lib/api/path";
 import { getBlob, rawUrl } from "@/lib/api/repos";
 import type { BlobInfo } from "@/lib/api/schemas";
 import { formatSize } from "@/lib/format/size";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
-import { blameHref } from "@/lib/repo-href";
+import { blameHref, logHref } from "@/lib/repo-href";
 import CodeBlock from "@/components/repo/CodeBlock";
 import PathBreadcrumbs from "@/components/repo/PathBreadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,7 +88,7 @@ export default function BlobView({ repo, path, ref: refParam }: BlobViewProps) {
 
   const { blob } = state;
   const raw = rawUrl(resolvedRepo, resolvedRef, resolvedPath);
-  const logHref = `/${encodeSegment(resolvedRepo)}/log?path=${encodeSegment(blob.path)}${resolvedRef ? `&ref=${encodeSegment(resolvedRef)}` : ""}`;
+  const historyHref = logHref(resolvedRepo, { path: blob.path, ref: resolvedRef });
 
   return (
     <div className="space-y-4">
@@ -103,7 +102,7 @@ export default function BlobView({ repo, path, ref: refParam }: BlobViewProps) {
         <a className="hover:text-foreground hover:underline" href={blameHref(resolvedRepo, resolvedPath, resolvedRef)}>
           Blame
         </a>
-        <a className="hover:text-foreground hover:underline" href={logHref}>
+        <a className="hover:text-foreground hover:underline" href={historyHref}>
           History
         </a>
       </div>

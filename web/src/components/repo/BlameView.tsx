@@ -6,7 +6,7 @@ import { getBlame, getBlob, rawUrl } from "@/lib/api/repos";
 import type { BlameInfo, BlameRange, BlobInfo } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
-import { blameHref, blobHref } from "@/lib/repo-href";
+import { blameHref, blobHref, logHref } from "@/lib/repo-href";
 import CodeBlock, { type GutterCell } from "@/components/repo/CodeBlock";
 import PathBreadcrumbs from "@/components/repo/PathBreadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -154,7 +154,7 @@ export default function BlameView({ repo, path, ref: refParam }: BlameViewProps)
 
   const { blame, blob } = state;
   const raw = rawUrl(resolvedRepo, resolvedRef, resolvedPath);
-  const logHref = `/${encodeSegment(resolvedRepo)}/log?path=${encodeSegment(blame.path)}${resolvedRef ? `&ref=${encodeSegment(resolvedRef)}` : ""}`;
+  const historyHref = logHref(resolvedRepo, { path: blame.path, ref: resolvedRef });
 
   return (
     <div className="space-y-4">
@@ -167,7 +167,7 @@ export default function BlameView({ repo, path, ref: refParam }: BlameViewProps)
         <a className="hover:text-foreground hover:underline" href={raw}>
           Raw
         </a>
-        <a className="hover:text-foreground hover:underline" href={logHref}>
+        <a className="hover:text-foreground hover:underline" href={historyHref}>
           History
         </a>
       </div>
