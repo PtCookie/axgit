@@ -20,16 +20,44 @@ const mockedGetTree = vi.mocked(getTree);
 // Deliberately not a target any other row's name matches — the target renders
 // as its own link, so a colliding value would make every non-exact
 // `getByRole("link", { name })` lookup below ambiguous.
-const SYMLINK: TreeEntryInfo = { name: "link", type: "symlink", mode: "120000", size: 4, target: "docs/guide.md" };
+const SYMLINK: TreeEntryInfo = {
+  name: "link",
+  type: "symlink",
+  mode: "120000",
+  sha: "1111111111111111111111111111111111111c",
+  size: 4,
+  target: "docs/guide.md",
+};
 
 const ROOT_TREE: TreeListing = {
   sha: "abc123def456abc123def456abc123def456abc",
   path: "",
   entries: [
-    { name: "src", type: "tree", mode: "040000", size: null, target: null },
-    { name: "README.md", type: "blob", mode: "100644", size: 16, target: null },
+    {
+      name: "src",
+      type: "tree",
+      mode: "040000",
+      sha: "1111111111111111111111111111111111111a",
+      size: null,
+      target: null,
+    },
+    {
+      name: "README.md",
+      type: "blob",
+      mode: "100644",
+      sha: "1111111111111111111111111111111111111b",
+      size: 16,
+      target: null,
+    },
     SYMLINK,
-    { name: "vendor", type: "commit", mode: "160000", size: null, target: null },
+    {
+      name: "vendor",
+      type: "commit",
+      mode: "160000",
+      sha: "1111111111111111111111111111111111111d",
+      size: null,
+      target: null,
+    },
   ],
 };
 

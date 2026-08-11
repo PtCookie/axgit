@@ -40,6 +40,10 @@ pub struct TreeEntryInfo {
     /// Octal file mode, e.g. `"100644"`.
     #[schema(example = "100644")]
     pub mode: String,
+    /// The entry's own object id — a gitlink entry's `sha` is the submodule
+    /// commit in the *other* repository, not reachable through this one.
+    /// Lets a by-oid object page (`GET /objects/{oid}`) link each row onward.
+    pub sha: String,
     /// Object size in bytes; blobs only, `None` otherwise.
     #[schema(required = true)]
     pub size: Option<u64>,
@@ -69,20 +73,14 @@ fn kind_of(mode: i32) -> EntryKind {
     }
 }
 
-/// Lists the tree at `path` (empty = root), trees first then by name.
-pub fn list_tree(repo: &Repository, commit: &Commit, path: &str) -> Result<TreeListing, ApiError> {
-    let root = commit.tree()?;
-    let tree = if path.is_empty() {
-        root
-    } else {
-        root.get_path(Path::new(path))
-            .ok()
-            .and_then(|entry| entry.to_object(repo).ok())
-            .and_then(|object| object.into_tree().ok())
-            // Missing path and blob-at-path both land here: not a directory.
-            .ok_or_else(|| ApiError::PathNotFound(path.to_owned()))?
-    };
-
+/// Builds one tree's entries, trees first then by name — shared by
+/// [`list_tree`] and `repo::object::read_object`'s tree case (a tree reached
+/// directly by its own oid has no commit/path context to build the rest of
+/// [`TreeListing`] from, just the entries).
+pub(crate) fn entries_of(
+    repo: &Repository,
+    tree: &git2::Tree,
+) -> Result<Vec<TreeEntryInfo>, ApiError> {
     let odb = repo.odb()?;
     let mut entries = Vec::new();
     for entry in tree.iter() {
@@ -114,6 +112,7 @@ pub fn list_tree(repo: &Repository, commit: &Commit, path: &str) -> Result<TreeL
             name: name.to_owned(),
             kind,
             mode: format!("{mode:06o}"),
+            sha: entry.id().to_string(),
             size,
             target,
         });
@@ -123,6 +122,24 @@ pub fn list_tree(repo: &Repository, commit: &Commit, path: &str) -> Result<TreeL
             .cmp(&(b.kind != EntryKind::Tree))
             .then_with(|| a.name.cmp(&b.name))
     });
+    Ok(entries)
+}
+
+/// Lists the tree at `path` (empty = root), trees first then by name.
+pub fn list_tree(repo: &Repository, commit: &Commit, path: &str) -> Result<TreeListing, ApiError> {
+    let root = commit.tree()?;
+    let tree = if path.is_empty() {
+        root
+    } else {
+        root.get_path(Path::new(path))
+            .ok()
+            .and_then(|entry| entry.to_object(repo).ok())
+            .and_then(|object| object.into_tree().ok())
+            // Missing path and blob-at-path both land here: not a directory.
+            .ok_or_else(|| ApiError::PathNotFound(path.to_owned()))?
+    };
+
+    let entries = entries_of(repo, &tree)?;
 
     Ok(TreeListing {
         sha: commit.id().to_string(),

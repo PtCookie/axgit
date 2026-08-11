@@ -226,6 +226,56 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/repos/{repo}/objects/{oid}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Object detail, by id
+     * @description Every other route in this API resolves an object through a ref (and, for
+     *     trees/blobs, a path); this is the one exception. `{oid}` must be a full
+     *     40-character hex object id — abbreviations are rejected, since every
+     *     link axgit itself emits carries a full oid, and requiring one is what
+     *     lets this endpoint be unconditionally immutable-cached (the address pins
+     *     the content, unlike `GET /tags/{name}`). Only the `type`-matching payload
+     *     (`tree`/`blob`/`tag`) is non-null; a commit has none — link to
+     *     `GET /commits/{sha}` instead.
+     */
+    get: operations["get_object"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/repos/{repo}/objects/{oid}/raw": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Raw object bytes, by id
+     * @description The by-oid analogue of `GET /raw/{ref}/{path}` — blob bytes only, any
+     *     other kind is `404 object_not_found`. With no filename behind an oid
+     *     there's no extension to guess a `Content-Type` from, so it's always
+     *     `text/plain; charset=utf-8` or `application/octet-stream`.
+     */
+    get: operations["get_object_raw"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/repos/{repo}/patch": {
     parameters: {
       query?: never;
@@ -707,7 +757,8 @@ export interface components {
     ErrorBody: {
       /**
        * @description One of `repo_not_found`, `ref_not_found`, `path_not_found`,
-       *     `invalid_param`, `read_only`, `not_found`, `internal`.
+       *     `object_not_found`, `invalid_param`, `read_only`, `not_found`,
+       *     `internal`.
        * @example repo_not_found
        */
       code: string;
@@ -785,6 +836,36 @@ export interface components {
      */
     LineOrigin: " " | "+" | "-";
     /**
+     * @description Blob payload of the object endpoint. Same fields as `BlobInfo`
+     *     (`repo::blob`) minus `sha`/`path`/`mode` — an oid alone has neither a
+     *     path nor a mode; mode lives on the tree entry that references it.
+     */
+    ObjectBlob: {
+      /**
+       * Format: int64
+       * @description Full size in bytes, regardless of `too_large`.
+       */
+      size: number;
+      /** @description libgit2's NUL heuristic, or content that is not valid UTF-8. */
+      binary: boolean;
+      /** @description `true` past the 1 MiB inline-content cap; fetch `.../raw` instead. */
+      too_large: boolean;
+      /** @description UTF-8 content; `None` when `binary` or `too_large`. */
+      content: string | null;
+    };
+    /**
+     * @description Response of `GET /objects/{oid}` (docs/API.md). Every key is always
+     *     present (this document's general rule) rather than a `oneOf` union — one
+     *     envelope, with only the `type`-matching payload populated.
+     */
+    ObjectDetail: {
+      sha: string;
+      type: components["schemas"]["ObjectKind"];
+      tree: null | components["schemas"]["ObjectTree"];
+      blob: null | components["schemas"]["ObjectBlob"];
+      tag: null | components["schemas"]["ObjectTag"];
+    };
+    /**
      * @description What kind of object a tag's one-level dereference points at. Deliberately
      *     separate from `tree::EntryKind` — that enum's domain is tree entries (it
      *     carries `symlink`, and its `commit` variant means gitlink), not tag
@@ -792,6 +873,34 @@ export interface components {
      * @enum {string}
      */
     ObjectKind: "commit" | "tree" | "blob" | "tag";
+    /**
+     * @description Tag payload of the object endpoint — a nested tag's own detail, same
+     *     shape and rules `GET /tags/{name}` reports, minus `name`/`tag_object`
+     *     (an oid alone has neither a ref name nor a need to restate its own sha,
+     *     already reported as the envelope's `sha`).
+     */
+    ObjectTag: {
+      /** @description One-level dereference of this tag (see `repo::tag::TagObject`). */
+      object: components["schemas"]["TagObject"];
+      /** @description Fully peeled commit sha. `None` when the chain never reaches one. */
+      target: string | null;
+      /**
+       * @description Full tag message, trailing whitespace trimmed. `None` for a
+       *     non-utf8 or all-whitespace message.
+       */
+      message: string | null;
+      tagger: null | components["schemas"]["CommitAuthor"];
+      tagged_at: string | null;
+    };
+    /**
+     * @description Tree payload of the object endpoint. Entries link onward by their own
+     *     `sha` (`TreeEntryInfo::sha`) — there's no root commit here to build a
+     *     path from, so by-oid navigation is oid-to-oid rather than path-based.
+     */
+    ObjectTree: {
+      /** @description Trees first, then by name ascending — same ordering as `GET /tree`. */
+      entries: components["schemas"]["TreeEntryInfo"][];
+    };
     /**
      * @description Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows
      *     plus this one always reconcile with the bucket totals.
@@ -1035,6 +1144,12 @@ export interface components {
        * @example 100644
        */
       mode: string;
+      /**
+       * @description The entry's own object id — a gitlink entry's `sha` is the submodule
+       *     commit in the *other* repository, not reachable through this one.
+       *     Lets a by-oid object page (`GET /objects/{oid}`) link each row onward.
+       */
+      sha: string;
       /**
        * Format: int64
        * @description Object size in bytes; blobs only, `None` otherwise.
@@ -1692,6 +1807,110 @@ export interface operations {
         content?: never;
       };
       /** @description `repo_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_object: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Repository name without the `.git` suffix
+         * @example git-compose
+         */
+        repo: string;
+        /**
+         * @description Full 40-character hex object id
+         * @example 94739392266bcbd2a4dcc7e02f57b7cf4ba7ec02
+         */
+        oid: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Object detail. Always immutably cached — the address is the content. */
+      200: {
+        headers: {
+          /** @description `public, max-age=31536000, immutable` */
+          "Cache-Control"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ObjectDetail"];
+        };
+      };
+      /** @description `invalid_param` — `{oid}` is not a full 40-character hex id */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description `repo_not_found`, `object_not_found` */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_object_raw: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Repository name without the `.git` suffix
+         * @example git-compose
+         */
+        repo: string;
+        /**
+         * @description Full 40-character hex object id
+         * @example 94739392266bcbd2a4dcc7e02f57b7cf4ba7ec02
+         */
+        oid: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Blob bytes. Always immutably cached. */
+      200: {
+        headers: {
+          /** @description `public, max-age=31536000, immutable` */
+          "Cache-Control"?: string;
+          /** @description Always `nosniff` — repository contents are untrusted */
+          "X-Content-Type-Options"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/octet-stream": string;
+        };
+      };
+      /** @description `invalid_param` — `{oid}` is not a full 40-character hex id */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description `repo_not_found`, `object_not_found` (missing, or not a blob) */
       404: {
         headers: {
           [name: string]: unknown;

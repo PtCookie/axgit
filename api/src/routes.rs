@@ -8,7 +8,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::error::{ApiError, ErrorResponse};
-use crate::handlers::{archive, commits, diff, feed, files, repos, search, stats, tags};
+use crate::handlers::{archive, commits, diff, feed, files, objects, repos, search, stats, tags};
 use crate::openapi::ApiDoc;
 use crate::shell;
 use crate::smart_http;
@@ -28,6 +28,14 @@ pub fn build_router(state: AppState) -> Router {
         // ref half of the `{*rest}` routes below — but unlike those, there is
         // no ref/path boundary to resolve: the whole remainder is the name.
         .route("/repos/{repo}/tags/{*name}", get(tags::get_tag))
+        // The one by-oid entry point in this API (docs/API.md) — `{oid}` is
+        // a fixed-length hex id with no `/`, so a plain segment (not a
+        // wildcard) is enough, unlike every ref-addressed route above/below.
+        .route("/repos/{repo}/objects/{oid}", get(objects::get_object))
+        .route(
+            "/repos/{repo}/objects/{oid}/raw",
+            get(objects::get_object_raw),
+        )
         .route("/repos/{repo}/commits", get(commits::list_commits))
         .route("/repos/{repo}/commits/{sha}", get(commits::get_commit))
         .route(

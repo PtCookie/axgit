@@ -3,6 +3,7 @@ pub mod blob;
 pub mod commits;
 pub mod diff;
 pub mod meta;
+pub mod object;
 pub mod open;
 pub mod readme;
 pub mod refs;

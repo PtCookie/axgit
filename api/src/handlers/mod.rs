@@ -3,6 +3,7 @@ pub mod commits;
 pub mod diff;
 pub mod feed;
 pub mod files;
+pub mod objects;
 pub mod repos;
 pub mod search;
 pub mod stats;

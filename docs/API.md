@@ -31,6 +31,7 @@ limits, refs longest-match, merge simplification, conditions under which a field
 | 404  | `repo_not_found`    | Repository does not exist |
 | 404  | `ref_not_found`     | ref/sha resolution failed |
 | 404  | `path_not_found`    | tree/blob path does not exist |
+| 404  | `object_not_found`  | `GET /objects/{oid}` — no object with that id (or the wrong kind for `/raw`) |
 | 400  | `invalid_param`     | Malformed parameter |
 | 403  | `read_only`         | Write attempt (e.g. receive-pack) |
 | 404  | `not_found`         | No route matched under `/api/v1/...` (DECISIONS.md #16) |
@@ -200,6 +201,52 @@ peeled commit).
   (git allows creating one without).
 - **Never immutably cached**: the URL names a tag ref, not a sha, and a tag can be force-moved onto
   a different object without its name changing — always `ETag` + `Cache-Control: no-cache`.
+
+### `GET /api/v1/repos/{repo}/objects/{oid}`
+
+Object detail, addressed by its own id — the one exception to every other endpoint's "resolve
+through a ref, plus a path for trees/blobs" shape (cgit's `cgit_object_link()`: a tag's target that
+isn't a commit — `GET /refs`' `tags[].object`, `GET /tags/{name}`'s `object` — has nowhere else to
+link to).
+
+```json
+{
+  "sha": "<oid>",
+  "type": "tree",
+  "tree": { "entries": [ /* same entry shape as GET /tree, plus each entry's own sha */ ] },
+  "blob": null,
+  "tag": null
+}
+```
+
+- `{oid}`: **must be a full 40-character hex object id.** Unlike the `ref` parameter used
+  everywhere else in this document, an abbreviation is `400 invalid_param` — every link axgit
+  itself emits carries a full oid, and requiring one is what makes this endpoint unconditionally
+  immutable (see below).
+- `type`: one of `commit`, `tree`, `blob`, `tag`. Only the matching payload key is non-null; the
+  other two are always present as `null` (this document's general "every key always present" rule).
+- `tree`: `{ "entries": [...] }`, same entry shape `GET /tree` reports (`name`/`type`/`mode`/`sha`/
+  `size`/`target`) — trees first, then by name ascending. Each entry's own `sha` links onward to
+  another `GET /objects/{oid}` call; there's no commit or path behind an oid, so navigation here is
+  oid-to-oid, not path-based.
+- `blob`: `{ "size", "binary", "too_large", "content" }` — same fields and truncation rule as
+  `GET /blob`'s response, minus `path`/`mode` (an oid alone has neither; mode lives on the tree
+  entry that references it).
+- `tag`: `{ "object", "target", "message", "tagger", "tagged_at" }` — same fields and rules as
+  `GET /tags/{name}`, minus `name`/`tag_object` (an oid alone has no ref name, and needs no second
+  copy of its own sha). Lets a nested tag be followed one hop at a time.
+- `commit`: no payload — link to `GET /commits/{sha}` instead.
+- `404 object_not_found` for an oid the repository's object database has nothing for. Distinct from
+  `ref_not_found`: there's no ref or sha resolution involved, just a direct lookup.
+- **Always immutably cached**: the address *is* the content, unlike every other tag/branch-name-
+  shaped URL in this document.
+
+### `GET /api/v1/repos/{repo}/objects/{oid}/raw`
+
+Blob bytes by id — the by-oid analogue of `GET /raw/{ref}/{path...}`. Same `{oid}` rule as above.
+`404 object_not_found` for a missing oid or one that isn't a blob. With no filename behind an oid
+there's no extension to guess a `Content-Type` from: always `text/plain; charset=utf-8` or
+`application/octet-stream`, and always `X-Content-Type-Options: nosniff`. Always immutably cached.
 
 ### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=`
 
@@ -431,15 +478,18 @@ blob/raw follow the same rule. Omitting `{path...}` means the root tree.
   "sha": "<resolved full sha>",
   "path": "src",
   "entries": [
-    { "name": "lib", "type": "tree", "mode": "040000", "size": null, "target": null },
-    { "name": "main.rs", "type": "blob", "mode": "100644", "size": 13, "target": null },
-    { "name": "readme-link", "type": "symlink", "mode": "120000", "size": null, "target": "../README.md" }
+    { "name": "lib", "type": "tree", "mode": "040000", "sha": "<oid>", "size": null, "target": null },
+    { "name": "main.rs", "type": "blob", "mode": "100644", "sha": "<oid>", "size": 13, "target": null },
+    { "name": "readme-link", "type": "symlink", "mode": "120000", "sha": "<oid>", "size": null, "target": "../README.md" }
   ]
 }
 ```
 
 - `type`: `tree` | `blob` | `symlink` (mode 120000) | `commit` (submodule gitlink).
 - `mode`: a 6-digit octal string. `size`: blob only, otherwise `null`.
+- `sha`: the entry's own object id — feeds `GET /objects/{oid}` for a by-oid link onward. For a
+  `commit`-typed (gitlink) entry, this is the submodule commit **in the other repository**, not
+  reachable through this one.
 - `target`: the link target path, symlinks only (`null` otherwise, and for a non-UTF-8 target or one
   larger than 4096 bytes). Stored verbatim and **relative to the entry's own directory** — it is
   never resolved server-side, so a `../` prefix reaches the client intact; clients resolve it

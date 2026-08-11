@@ -13,7 +13,8 @@ pub struct ErrorResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorBody {
     /// One of `repo_not_found`, `ref_not_found`, `path_not_found`,
-    /// `invalid_param`, `read_only`, `not_found`, `internal`.
+    /// `object_not_found`, `invalid_param`, `read_only`, `not_found`,
+    /// `internal`.
     #[schema(example = "repo_not_found")]
     pub code: String,
     /// Human-readable detail. Internal errors report a generic message; the
@@ -31,6 +32,11 @@ pub enum ApiError {
     RefNotFound(String),
     #[error("path '{0}' not found")]
     PathNotFound(String),
+    /// `GET /objects/{oid}` addressing a full oid the odb has no object for
+    /// (docs/API.md) — distinct from [`Self::RefNotFound`], which describes
+    /// a ref/sha *resolution* failure rather than an outright-missing object.
+    #[error("object '{0}' not found")]
+    ObjectNotFound(String),
     #[error("invalid parameter: {0}")]
     InvalidParam(String),
     #[error("repository is read-only over HTTP; push via SSH")]
@@ -69,6 +75,7 @@ impl ApiError {
             Self::RepoNotFound(_) => (StatusCode::NOT_FOUND, "repo_not_found"),
             Self::RefNotFound(_) => (StatusCode::NOT_FOUND, "ref_not_found"),
             Self::PathNotFound(_) => (StatusCode::NOT_FOUND, "path_not_found"),
+            Self::ObjectNotFound(_) => (StatusCode::NOT_FOUND, "object_not_found"),
             Self::InvalidParam(_) => (StatusCode::BAD_REQUEST, "invalid_param"),
             Self::ReadOnly => (StatusCode::FORBIDDEN, "read_only"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),

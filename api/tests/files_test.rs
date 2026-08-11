@@ -116,18 +116,31 @@ async fn tree_should_list_root_with_trees_first() {
             .find(|entry| entry["name"] == name)
             .unwrap_or_else(|| panic!("missing entry {name}"))
     };
+    // `sha` is a real git-computed oid (unlike the fixed `GITLINK_SHA`
+    // below), so it's checked for shape here and stripped before the
+    // literal comparison rather than hardcoded.
+    let without_sha = |entry: &Value| {
+        let mut entry = entry.clone();
+        let sha = entry.as_object_mut().unwrap().remove("sha");
+        assert_eq!(
+            sha.as_ref().and_then(Value::as_str).map(str::len),
+            Some(40),
+            "entry sha is not a full oid: {sha:?}"
+        );
+        entry
+    };
     assert_eq!(
-        by_name("src"),
-        &json!({ "name": "src", "type": "tree", "mode": "040000", "size": null, "target": null })
+        without_sha(by_name("src")),
+        json!({ "name": "src", "type": "tree", "mode": "040000", "size": null, "target": null })
     );
     assert_eq!(
-        by_name("README.md"),
-        &json!({ "name": "README.md", "type": "blob", "mode": "100644", "size": 16, "target": null })
+        without_sha(by_name("README.md")),
+        json!({ "name": "README.md", "type": "blob", "mode": "100644", "size": 16, "target": null })
     );
     // A symlink carries its target; `size` stays blob-only (docs/API.md).
     assert_eq!(
-        by_name("link"),
-        &json!({ "name": "link", "type": "symlink", "mode": "120000", "size": null, "target": "README.md" })
+        without_sha(by_name("link")),
+        json!({ "name": "link", "type": "symlink", "mode": "120000", "size": null, "target": "README.md" })
     );
 }
 
@@ -150,7 +163,7 @@ async fn tree_should_list_subdirectories_and_gitlinks() {
     let body = get_ok(root.path(), "/api/v1/repos/files/tree/main/vendor").await;
     assert_eq!(
         body["entries"],
-        json!([{ "name": "dep", "type": "commit", "mode": "160000", "size": null, "target": null }])
+        json!([{ "name": "dep", "type": "commit", "mode": "160000", "sha": GITLINK_SHA, "size": null, "target": null }])
     );
 }
 

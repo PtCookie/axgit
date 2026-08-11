@@ -110,6 +110,31 @@ pub(crate) fn dereference(
     Ok((object, target))
 }
 
+/// One-level dereference of a tag object reached directly by its own oid
+/// (`repo::object::read_object`'s tag case — following a nested tag one hop
+/// at a time from the by-oid object page), plus the fully peeled commit sha.
+/// Same shape and rules as [`dereference`], but starting from a resolved
+/// [`git2::Tag`] instead of a [`Reference`] — there's no ref name behind an
+/// oid lookup to peel from, so this uses [`git2::Object::peel`] rather than
+/// [`Reference::peel_to_commit`] to walk any further nested tags to a
+/// commit; both are thin wrappers over the same libgit2 peeling behavior.
+pub(crate) fn dereference_object(
+    tag: &git2::Tag,
+    not_found: impl Fn() -> ApiError,
+) -> Result<(TagObject, Option<String>), ApiError> {
+    let kind = tag.target_type().ok_or_else(&not_found)?;
+    let object = TagObject {
+        sha: tag.target_id().to_string(),
+        kind: object_kind(kind),
+    };
+    let target = tag
+        .as_object()
+        .peel(ObjectType::Commit)
+        .ok()
+        .map(|commit| commit.id().to_string());
+    Ok((object, target))
+}
+
 /// Reads one tag's detail off `refs/tags/{name}`. Never `?`-propagates a
 /// git2 error — like `repo::resolve::resolve_commit`, any lookup or peeling
 /// failure becomes [`ApiError::RefNotFound`] so a corrupt or dangling ref
