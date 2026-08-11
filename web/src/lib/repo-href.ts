@@ -35,6 +35,14 @@ export function tagHref(repo: string, name: string): string {
   return `/${encodeSegment(repo)}/tag/${encodePath(name)}`;
 }
 
+/** Builds a `/{repo}/object/{oid}` href. `encodeSegment`, not `encodePath` —
+ *  unlike a tag name, an oid never contains `/`, same reasoning as
+ *  `commitHref`. No `?ref=`: the oid *is* the address, same reasoning as
+ *  `tagHref`. */
+export function objectHref(repo: string, oid: string): string {
+  return `/${encodeSegment(repo)}/object/${encodeSegment(oid)}`;
+}
+
 /** Builds a `/{repo}/log` href from the given params, omitting any left
  *  unset — same shape as `searchHref`/`statsHref`. Moved out of
  *  `CommitLog.tsx` (docs/DECISIONS.md #34) so `RefBadges`' ref links can

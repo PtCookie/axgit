@@ -66,4 +66,7 @@ test("serves a robots.txt disallowing the expensive endpoints", async ({ page })
   const body = await response.text();
   expect(body).toContain("Disallow: /api/v1/");
   expect(body).toContain("Disallow: /*/search");
+  // The object graph is walkable link-by-link — cheap per request, but not
+  // something to hand a crawler (docs/DECISIONS.md #53).
+  expect(body).toContain("Disallow: /*/object/");
 });

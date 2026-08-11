@@ -31,6 +31,17 @@ export function commitShaFromPathname(pathname: string): string {
 }
 
 /**
+ * The `{oid}` segment of a `/{repo}/object/{oid}` page URL, decoded. Used by
+ * `ObjectView`, mounted on the placeholder `/{repo}/object` shell — an oid
+ * never contains `/`, same fixed-segment shape as [`commitShaFromPathname`].
+ */
+export function objectOidFromPathname(pathname: string): string {
+  const [, , oid] = pathname.split("/").filter((part) => part.length > 0);
+  if (oid === undefined) return "";
+  return decodeSegment(oid);
+}
+
+/**
  * Every segment of a page URL from the third onward, decoded independently
  * and rejoined with `/`. Shared by [`filePathFromPathname`] and
  * [`tagNameFromPathname`] — both read a `/`-containing rest param the same

@@ -6,6 +6,7 @@ import type {
   CommitDetail,
   CommitDiff,
   CommitsPage,
+  ObjectDetail,
   ReadmeInfo,
   RefsInfo,
   ReposResponse,
@@ -49,6 +50,16 @@ export function getRefs(name: string): Promise<RefsInfo> {
  *  (`release/1.0`), same reasoning as `refPathSegment`. */
 export function getTag(name: string, tagName: string): Promise<TagDetail> {
   return apiFetch<TagDetail>(`/repos/${encodeSegment(name)}/tags/${encodePath(tagName)}`);
+}
+
+/** `encodeSegment`, not `encodePath` — an oid never contains `/`. */
+export function getObject(name: string, oid: string): Promise<ObjectDetail> {
+  return apiFetch<ObjectDetail>(`/repos/${encodeSegment(name)}/objects/${encodeSegment(oid)}`);
+}
+
+/** Link-only — the by-oid analogue of `rawUrl`. */
+export function objectRawUrl(name: string, oid: string): string {
+  return apiUrl(`/repos/${encodeSegment(name)}/objects/${encodeSegment(oid)}/raw`);
 }
 
 export interface ListCommitsParams {

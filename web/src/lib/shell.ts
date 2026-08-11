@@ -27,6 +27,9 @@ export function shellFor(pathname: string): string {
   // bare 2-segment shape is the whole story, unlike commit's 3-segment one.
   if (segments.length === 2 && segments[1] === "diff") return `/${REPO_SHELL_PARAM}/diff`;
   if (segments.length === 3 && segments[1] === "commit") return `/${REPO_SHELL_PARAM}/commit`;
+  // object: an oid is a single fixed segment, never containing `/` — same
+  // exactly-3-segment shape as commit.
+  if (segments.length === 3 && segments[1] === "object") return `/${REPO_SHELL_PARAM}/object`;
   // tree: the path after `/tree/` is optional (empty means the root tree).
   if (segments.length >= 2 && segments[1] === "tree") return `/${REPO_SHELL_PARAM}/tree`;
   // blob: at least one path segment is required — there's nothing to show

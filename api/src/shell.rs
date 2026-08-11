@@ -69,6 +69,14 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
                 .join("index.html"),
             StatusCode::OK,
         ),
+        // An oid is a single fixed segment, never containing `/` — same
+        // exactly-3-segment shape as commit.
+        [_repo, "object", _oid] => (
+            Path::new(REPO_SHELL_PARAM)
+                .join("object")
+                .join("index.html"),
+            StatusCode::OK,
+        ),
         // The path after `/tree/` is optional (empty means the root tree).
         [_repo, "tree", ..] => (
             Path::new(REPO_SHELL_PARAM).join("tree").join("index.html"),
@@ -298,6 +306,22 @@ mod tests {
     }
 
     #[test]
+    fn repo_object_paths_map_to_the_object_shell() {
+        for path in ["/git-compose/object/abc123", "/git-compose/object/abc123/"] {
+            assert_eq!(
+                shell_for(path),
+                (
+                    Path::new(REPO_SHELL_PARAM)
+                        .join("object")
+                        .join("index.html"),
+                    StatusCode::OK
+                ),
+                "path {path}"
+            );
+        }
+    }
+
+    #[test]
     fn repo_stats_paths_map_to_the_stats_shell() {
         for path in ["/git-compose/stats", "/git-compose/stats/"] {
             assert_eq!(
@@ -334,6 +358,9 @@ mod tests {
             "/git-compose/blame/",
             "/git-compose/commit",
             "/git-compose/commit/abc123/extra",
+            "/git-compose/object",
+            "/git-compose/object/",
+            "/git-compose/object/abc123/extra",
             "/git-compose/stats/extra",
             "/git-compose/diff/extra",
             "/git-compose/tag",

@@ -1,0 +1,23 @@
+---
+import RepoLayout from "../../../layouts/RepoLayout.astro";
+import ObjectView, { ObjectViewSkeleton } from "../../../components/repo/ObjectView";
+import { REPO_SHELL_PARAM } from "../../../lib/shell";
+
+/**
+ * One shell per route shape, not per repository — see `[repo]/index.astro`
+ * (`api/src/shell.rs`, docs/DECISIONS.md #17). `oid` is a rest param, same
+ * shape as `commit/[...sha].astro`'s `sha` — an oid never contains `/`, but
+ * passing `undefined` builds exactly one file (`object/index.html`) with no
+ * `oid` segment appended. The real oid is read from `location.pathname` at
+ * runtime by `ObjectView`.
+ */
+export function getStaticPaths() {
+  return [{ params: { repo: REPO_SHELL_PARAM, oid: undefined } }];
+}
+---
+
+<RepoLayout active="object" title="Object — Axgit">
+  <ObjectView client:only="react">
+    <div slot="fallback"><ObjectViewSkeleton /></div>
+  </ObjectView>
+</RepoLayout>

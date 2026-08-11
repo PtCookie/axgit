@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { REPO_SHELL_PARAM, shellFor } from "@/lib/shell";
-import { commitShaFromPathname, filePathFromPathname, repoFromPathname } from "@/lib/repo-param";
+import { commitShaFromPathname, filePathFromPathname, objectOidFromPathname, repoFromPathname } from "@/lib/repo-param";
 
 // Same case table as `api/src/shell.rs`'s unit tests — the two must change
 // together (see the doc comment on `shellFor`).
@@ -71,6 +71,12 @@ describe("shellFor", () => {
     }
   });
 
+  it("maps repo object paths to the placeholder object shell", () => {
+    for (const path of ["/git-compose/object/abc123", "/git-compose/object/abc123/"]) {
+      expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/object`);
+    }
+  });
+
   it("maps repo tag paths to the placeholder tag shell", () => {
     for (const path of ["/git-compose/tag/v1.0.0", "/git-compose/tag/v1.0.0/", "/git-compose/tag/release/1.0"]) {
       expect(shellFor(path)).toBe(`/${REPO_SHELL_PARAM}/tag`);
@@ -97,6 +103,9 @@ describe("shellFor", () => {
       "/git-compose/blame/",
       "/git-compose/commit",
       "/git-compose/commit/abc123/extra",
+      "/git-compose/object",
+      "/git-compose/object/",
+      "/git-compose/object/abc123/extra",
       "/git-compose/stats/extra",
       "/git-compose/diff/extra",
       "/git-compose/tag",
@@ -137,6 +146,22 @@ describe("commitShaFromPathname", () => {
 
   it("falls back to the raw segment for a malformed escape", () => {
     expect(commitShaFromPathname("/git-compose/commit/%zz")).toBe("%zz");
+  });
+});
+
+describe("objectOidFromPathname", () => {
+  it("returns an empty string when there is no oid segment", () => {
+    expect(objectOidFromPathname("/")).toBe("");
+    expect(objectOidFromPathname("/git-compose")).toBe("");
+    expect(objectOidFromPathname("/git-compose/object")).toBe("");
+  });
+
+  it("returns the decoded third segment", () => {
+    expect(objectOidFromPathname("/git-compose/object/abc123")).toBe("abc123");
+  });
+
+  it("falls back to the raw segment for a malformed escape", () => {
+    expect(objectOidFromPathname("/git-compose/object/%zz")).toBe("%zz");
   });
 });
 
