@@ -102,6 +102,22 @@ fn openapi_should_describe_exactly_the_routed_operations() {
     assert_eq!(described, expected);
 }
 
+/// Guards the archive operation's hand-written docs against drifting from
+/// `FORMATS` in `api/src/handlers/archive.rs` — that table isn't itself part
+/// of the OpenAPI derive, so a format added there without touching the
+/// `#[utoipa::path]` strings wouldn't otherwise be caught.
+#[test]
+fn archive_operation_should_document_every_format() {
+    let spec: Value = serde_json::from_str(&generated()).unwrap();
+    let operation = spec["paths"]["/api/v1/repos/{repo}/archive/{ref}.{format}"]["get"].to_string();
+    for ext in ["tar.gz", "tar.bz2", "tar.xz", "tar.zst", "zip"] {
+        assert!(
+            operation.contains(ext),
+            "{ext} missing from the archive operation's documentation"
+        );
+    }
+}
+
 #[tokio::test]
 async fn openapi_json_route_should_serve_the_document() {
     let dir = tempfile::tempdir().unwrap();

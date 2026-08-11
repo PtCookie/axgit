@@ -57,8 +57,8 @@ export interface paths {
     /**
      * Source archive
      * @description Streams `git archive` output chunked (no `Content-Length`). The ref is
-     *     resolved first and only the **full sha** reaches the command line. The
-     *     `{ref}.{format}` split is suffix matching: `.tar.gz` first, then `.zip`.
+     *     resolved first and only the **full sha** reaches the command line.
+     *     `{ref}.{format}` is split by matching a known format suffix.
      */
     get: operations["get_archive"];
     put?: never;
@@ -1281,7 +1281,7 @@ export interface operations {
          */
         ref: string;
         /**
-         * @description `tar.gz` or `zip`
+         * @description One of `tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `zip`
          * @example tar.gz
          */
         format: string;
@@ -1290,7 +1290,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Archive stream (`application/gzip` or `application/zip`). If `git archive` fails mid-stream the response is truncated without a status change. */
+      /** @description Archive stream (`application/gzip`, `application/x-bzip2`, `application/x-xz`, `application/zstd`, or `application/zip`). `tar.bz2`/`tar.xz`/`tar.zst` are produced by streaming `git archive`'s uncompressed tar output through an in-process encoder. If `git archive` fails mid-stream the response is truncated without a status change — for the three encoder formats this yields a well-formed compressed file wrapping a truncated tar, since the encoder still finalizes its container. */
       200: {
         headers: {
           /** @description `no-cache`, or `public, max-age=31536000, immutable` for a full sha */
@@ -1314,7 +1314,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description `invalid_param` — suffix is neither `.tar.gz` nor `.zip` */
+      /** @description `invalid_param` — suffix is none of `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, `.zip` */
       400: {
         headers: {
           [name: string]: unknown;

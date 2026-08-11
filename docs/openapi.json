@@ -125,7 +125,7 @@
           "files"
         ],
         "summary": "Source archive",
-        "description": "Streams `git archive` output chunked (no `Content-Length`). The ref is\nresolved first and only the **full sha** reaches the command line. The\n`{ref}.{format}` split is suffix matching: `.tar.gz` first, then `.zip`.",
+        "description": "Streams `git archive` output chunked (no `Content-Length`). The ref is\nresolved first and only the **full sha** reaches the command line.\n`{ref}.{format}` is split by matching a known format suffix.",
         "operationId": "get_archive",
         "parameters": [
           {
@@ -151,7 +151,7 @@
           {
             "name": "format",
             "in": "path",
-            "description": "`tar.gz` or `zip`",
+            "description": "One of `tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `zip`",
             "required": true,
             "schema": {
               "type": "string"
@@ -161,7 +161,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Archive stream (`application/gzip` or `application/zip`). If `git archive` fails mid-stream the response is truncated without a status change.",
+            "description": "Archive stream (`application/gzip`, `application/x-bzip2`, `application/x-xz`, `application/zstd`, or `application/zip`). `tar.bz2`/`tar.xz`/`tar.zst` are produced by streaming `git archive`'s uncompressed tar output through an in-process encoder. If `git archive` fails mid-stream the response is truncated without a status change — for the three encoder formats this yields a well-formed compressed file wrapping a truncated tar, since the encoder still finalizes its container.",
             "headers": {
               "Cache-Control": {
                 "schema": {
@@ -200,7 +200,7 @@
             "description": "`If-None-Match` matched — no git process is spawned"
           },
           "400": {
-            "description": "`invalid_param` — suffix is neither `.tar.gz` nor `.zip`",
+            "description": "`invalid_param` — suffix is none of `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, `.zip`",
             "content": {
               "application/json": {
                 "schema": {

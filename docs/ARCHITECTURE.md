@@ -37,7 +37,11 @@ git push ──→ SSH 2222 → git-server container (unchanged, existing)
 - **git2** (libgit2 bindings): refs, tree, blob, commit lookups, diff, blame.
 - **git binary exec**: `git archive` (snapshots), `git upload-pack --stateless-rpc` (Smart HTTP),
   and an escape hatch for operations confirmed to be a bottleneck on large repos. Not trying to
-  solve everything with libgit2.
+  solve everything with libgit2. `git archive` itself only emits `tar`, `tar.gz`, and `zip`; the
+  `tar.bz2`/`tar.xz`/`tar.zst` snapshot formats are produced by streaming its `tar` output through
+  an in-process `bzip2`/`xz`/`zstd` encoder (`async-compression`) instead of piping into an
+  external compressor binary, so the runtime image needs no extra compressor packages
+  (DECISIONS.md #54).
 
 ### Repository scanning
 
@@ -144,14 +148,18 @@ render.
 
 - Multi-stage `Dockerfile` (repo root): ① `pnpm --filter web build` in `node:24.11-alpine3.22` →
   ② `cargo build --release` in `rust:1.97-alpine3.22` (`musl-dev` added; `libgit2-sys` builds
-  vendored libgit2 statically since alpine has no system libgit2) → ③ `alpine:3.22` runtime: git
-  binary + api binary + web/dist. Base image tags are pinned to a minor version (`ARG`s at the top
-  of the file), not floating — see docs/DECISIONS.md #22. Stage ① COPYs the root
+  vendored libgit2 statically since alpine has no system libgit2 — the same `cc` toolchain also
+  builds the vendored `zstd`/`liblzma` C sources the archive encoders depend on, so no extra build
+  package is needed for those either) → ③ `alpine:3.22` runtime: git binary + api binary +
+  web/dist. Base image tags are pinned to a minor version (`ARG`s at the top of the file), not
+  floating — see docs/DECISIONS.md #22. Stage ① COPYs the root
   `package.json`/`pnpm-workspace.yaml`/`pnpm-lock.yaml` + `web/package.json` first so `pnpm install
   --frozen-lockfile` lands in its own cached layer, before copying the rest of the source.
 - Runtime image packages needed: `git` (for exec), `ca-certificates`. cgit filter dependencies
   like Python/pygments/groff aren't needed at all — `tzdata` isn't needed either (jiff only uses
-  UTC/fixed offsets read from git commits, never the system tzdb).
+  UTC/fixed offsets read from git commits, never the system tzdb). No `bzip2`/`xz`/`zstd` package
+  is needed either: those archive formats are encoded in-process (DECISIONS.md #54), not shelled
+  out to.
 - The container runs as a dedicated non-root user; `/etc/gitconfig` sets `[safe] directory = *`
   since the read-only `/srv/git` mount is owned by the git-server container's uid, which would
   otherwise trip git's/libgit2's ownership check (docs/DECISIONS.md #22).

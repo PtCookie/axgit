@@ -1927,3 +1927,82 @@ non-commit-target call sites (`RefsView`, `TagView`) onto it.
   tree/blob/nested-tag target still rendered as inert text with nowhere to go.
 - **Fixtures gained a tag on a tree** (`tree-tag`, alongside #51's existing blob tag) so the by-oid
   tree case — not just the blob case — is reachable in a local run (`scripts/make-fixtures.sh`).
+
+## #54 Archive format coverage (`tar.bz2`/`tar.xz`/`tar.zst`, cgit's snapshot format parity)
+
+Closed the "Archive" cgit-parity gap: cgit offers `tar`, `tar.gz`, `tar.bz2`, `tar.lz`, `tar.xz`,
+`tar.zst`, `zip` by piping `git archive --format=tar` through an external compressor binary; axgit
+had only `tar.gz` and `zip`, the two formats `git archive` produces natively.
+
+- **In-process streaming encoders (`async-compression`), not external compressor binaries, and not
+  git's own `tar.<fmt>.command` config.** cgit's approach — forking `bzip2 -c`/`xz -c`/`zstd -c` —
+  would mean adding those packages to the runtime image and assuming they exist on every dev/CI
+  host too. `git archive --format=tar` output is instead wrapped in a
+  `tokio::io::BufReader`-backed `async_compression::tokio::bufread::{BzEncoder,XzEncoder,
+  ZstdEncoder}` and streamed the same way `tar.gz`/`zip` already were, so `Body::from_stream` +
+  the existing reaper/`kill_on_drop` machinery need no change, and #14's "exec only ever sees a
+  resolved sha" invariant is untouched — the encoder sits *after* exec, not in it. The Alpine
+  runtime image stays `git` + `ca-certificates` (docs/ARCHITECTURE.md).
+  - `bzip2`'s and `zstd`'s Rust backends (`libbz2-rs-sys`, bundled `zstd-sys` C) build with no
+    extra system dependency. `xz`'s backend (`liblzma-sys`) is pinned via a direct `liblzma = {
+    features = ["static"] }` dependency — without it, `liblzma-sys` pkg-config-probes for a system
+    liblzma and links it dynamically when one happens to be installed (e.g. Homebrew's `xz` on a
+    macOS dev machine), making the linked xz version depend on the build host, the exact class of
+    problem `libgit2-sys`'s vendored build already avoids for libgit2 itself. `static` forces the
+    same vendored-C-via-`cc` posture everywhere, and the `musl-dev` package the api build stage
+    already installs for `libgit2-sys` covers it.
+- **Format table replaces the three-armed `format_arg`/`content_type`/`extension` match.**
+  `handlers/archive.rs`'s `ArchiveFormat` went from a two-variant enum to a `FORMATS: &[struct]`
+  table (suffix, `git archive --format` value, media type, optional encoder) that both
+  `parse_archive_target` and the response builder read from — adding a format is now a one-line
+  table entry rather than touching three separate match expressions that could silently drift out
+  of sync. `parse_archive_target` matches any suffix in the table (stripping the format suffix and
+  its separating `.`) rather than trying a fixed order, since none of the five suffixes is itself a
+  suffix of another.
+- **Plain `tar` and cgit's `tar.lz` are deliberately not offered.** An uncompressed multi-megabyte
+  download is a poor default over HTTP with no real use case distinct from `tar.gz`; `tar.lz`
+  (lzip) has no maintained Rust encoder, so matching it would mean reintroducing exactly the
+  external-binary dependency this decision avoids for the other three. `main.tar` stays a `400
+  invalid_param`, same as before this change — a regression test pins that.
+- **Compression levels are pinned to constants matching cgit's own CLI defaults**
+  (`bzip2 -9`, `xz` preset `6`, `zstd -3` — cgit passes no level flag, so each tool's default
+  applies), not left at `async-compression`'s `Level::Default`: reading the crate source shows
+  `Level::Default` is bzip2 `6` and xz preset `5`, not the CLI defaults, so leaving it would have
+  quietly served weaker compression than cgit at the same format.
+- **A bounded `Arc<Semaphore>` (`AppState::archive_encoder_limit`, 4 permits) gates only the three
+  encoder formats**, acquired before `git archive` is even spawned so an over-capacity request
+  waits rather than spawning a process it isn't ready to read from. Archives are never
+  response-cached (`cache_test.rs`), so every request builds a fresh encoder; an xz preset-6
+  encoder alone holds on the order of 90 MiB, and cgit's identical exposure was masked by each
+  request being a separate forked process — here it's the same server process, so unbounded
+  concurrency is a real memory/CPU risk this repo didn't previously have. `tar.gz`/`zip` requests
+  never touch the semaphore, since git already did their compression. The permit is held by a small
+  `Guarded<R>: AsyncRead` wrapper that owns it for the response body's lifetime, released on drop
+  (client disconnect or stream completion) rather than after headers are sent.
+- **`Content-Type` follows the same "prefer a registered media type" rule the existing `tar.gz`/
+  `zip` values already set**: `zstd` has an IANA-registered type (`application/zstd`, RFC 8878
+  §7.1) and uses it; `bzip2`/`xz` have none, so they use the de facto `application/x-bzip2`/
+  `application/x-xz` (matching cgit's own choice).
+- **ETag stays repo-scoped, not per-format.** `validator_etag` is unchanged (HEAD sha + agefile
+  mtime), and HTTP caches key on the full URL, so `main.tar.gz` and `main.tar.zst` never collide —
+  worth stating explicitly so a future reader doesn't "fix" a perceived gap by folding the format
+  into the validator.
+- **A mid-stream `git archive` failure now produces a well-formed-but-truncated file for the three
+  encoder formats**, not a detectably-broken one: today's `tar.gz` failure yields an invalid gzip
+  stream a decompressor rejects outright, but an encoder still finalizes its own container around
+  whatever truncated tar bytes it received. `tar` itself still catches the missing end-of-archive
+  blocks; a naive consumer might not. Documented in `docs/API.md` rather than treated as a defect,
+  since fixing it would mean buffering the entire archive before sending any bytes.
+- **Tests decompress with the same crate the handler encodes with, not a system `bzip2`/`xz`/
+  `zstd` binary.** macOS's bsdtar doesn't reliably support `zstd`, and GNU tar shells out to
+  external binaries for `-j`/`-J`/`--zstd` rather than decoding in-process — neither is a safe
+  assumption about the test host, so `archive_test.rs` round-trips through
+  `async_compression::tokio::bufread::{BzDecoder,XzDecoder,ZstdDecoder}` (a dev-dependency) and
+  additionally checks each format's magic bytes, which a matching decoder alone wouldn't catch if
+  the *container* were wrong. The original `tar -xzf` extraction test is kept as-is for `tar.gz`,
+  which remains safe to test against the system tool everywhere.
+- **Web**: `web/src/lib/api/repos.ts` gained a single exported `ARCHIVE_FORMATS` const (with
+  `ArchiveFormat` derived from it via `(typeof ARCHIVE_FORMATS)[number]`), replacing three
+  hardcoded `tar.gz`/`zip` pairs across `RepoSummary.tsx`, `RefsView.tsx`, and `TagView.tsx`. All
+  three now render every format. `RefsView.tsx`'s tags-only download-column rationale (#51) is
+  unaffected — it's about which *refs* get a download, orthogonal to which formats are offered.

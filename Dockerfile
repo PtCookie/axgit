@@ -39,7 +39,10 @@ FROM ${RUST_IMAGE} AS api
 
 # musl-dev: libgit2-sys's build.rs falls back to building vendored libgit2
 # (via `cc`) since alpine has no system libgit2 to find via pkg-config — this
-# also statically links libgit2/zlib into the final musl binary.
+# also statically links libgit2/zlib into the final musl binary. The same `cc`
+# toolchain also builds liblzma-sys's and zstd-sys's vendored C sources for
+# the archive endpoint's xz/zstd encoders (docs/DECISIONS.md #54) — no
+# separate package is needed for those.
 RUN apk add --no-cache musl-dev
 
 WORKDIR /app/api

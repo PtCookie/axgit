@@ -5,6 +5,10 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+# git archive itself only emits tar / tar.gz / zip; .tar.bz2, .tar.xz and
+# .tar.zst are produced by wrapping its `--format=tar` stdout in an
+# in-process streaming encoder (docs/DECISIONS.md #54).
+async-compression = { version = "0.4", features = ["tokio", "bzip2", "xz", "zstd"] }
 axum = "0.8"
 clap = { version = "4.5", features = ["derive", "env"] }
 # Inflating gzip-compressed Smart HTTP request bodies.
@@ -12,6 +16,13 @@ flate2 = "1"
 # Read-only access to local bare repositories — no ssh/https transports needed.
 git2 = { version = "0.20", default-features = false }
 jiff = "0.2"
+# Not called directly. `liblzma-sys` (pulled in by async-compression's `xz`
+# feature) otherwise pkg-config-probes for a system liblzma and links it
+# dynamically when one happens to be installed (e.g. Homebrew's xz on macOS),
+# making the link line depend on the build host; `static` always builds the
+# vendored xz C source with `cc`, the same posture as libgit2-sys's vendored
+# build (docs/DECISIONS.md #54).
+liblzma = { version = "0.4", features = ["static"] }
 mime_guess = "2"
 # Response cache keyed by (repo, endpoint, params) — docs/ARCHITECTURE.md#caching.
 moka = { version = "0.12", features = ["future"] }
@@ -19,7 +30,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "process", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "process", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"
@@ -28,6 +39,10 @@ utoipa = { version = "5.5.0", features = ["preserve_order"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 
 [dev-dependencies]
+# Decompressing the archive endpoint's bzip2/xz/zstd output in tests, without
+# depending on those binaries being installed on the test host (docs/API.md's
+# archive section, docs/DECISIONS.md #54).
+async-compression = { version = "0.4", features = ["tokio", "bzip2", "xz", "zstd"] }
 # Building gzip-compressed Smart HTTP request bodies in tests.
 flate2 = "1"
 http-body-util = "0.1"

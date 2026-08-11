@@ -204,7 +204,17 @@ async fn archive_should_return_404_for_missing_repo_and_ref() {
 async fn archive_should_return_400_for_unsupported_format() {
     let root = tempfile::tempdir().unwrap();
     let _ = setup_archive_repo(root.path());
-    for rest in ["main.rar", "main.tar", "main", ".tar.gz"] {
+    for rest in [
+        "main.rar",
+        // Plain tar is deliberately not offered — must stay rejected.
+        "main.tar",
+        "main",
+        ".tar.gz",
+        "main.gz",
+        "main.xz",
+        "main.zst",
+        "main.tar.lz",
+    ] {
         let (status, _, body) = common::get_bytes_with_headers(
             router_for(root.path()),
             &format!("/api/v1/repos/archive/archive/{rest}"),
@@ -214,4 +224,107 @@ async fn archive_should_return_400_for_unsupported_format() {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"]["code"], "invalid_param");
     }
+}
+
+/// Decompresses a body with the same crate the handler encodes with — the
+/// three compressed formats deliberately don't shell out to `bzip2`/`xz`/
+/// `zstd`, which aren't guaranteed to exist on a test host (macOS's bsdtar
+/// can't be relied on for zstd; GNU tar shells out to external binaries for
+/// all three).
+async fn decompress(ext: &str, body: &[u8]) -> Vec<u8> {
+    use async_compression::tokio::bufread::{BzDecoder, XzDecoder, ZstdDecoder};
+    use tokio::io::AsyncReadExt;
+
+    let mut out = Vec::new();
+    match ext {
+        "tar.bz2" => BzDecoder::new(body).read_to_end(&mut out).await,
+        "tar.xz" => XzDecoder::new(body).read_to_end(&mut out).await,
+        "tar.zst" => ZstdDecoder::new(body).read_to_end(&mut out).await,
+        other => panic!("no decoder for {other}"),
+    }
+    .unwrap_or_else(|err| panic!("{ext} body did not decompress: {err}"));
+    out
+}
+
+#[tokio::test]
+async fn archive_compressed_tar_formats_should_decompress_to_git_archive_tar() {
+    let root = tempfile::tempdir().unwrap();
+    let (bare, sha) = setup_archive_repo(root.path());
+
+    // Same git binary + same arguments (plain tar, uncompressed) → the exact
+    // bytes every encoder should be wrapping, the same assumption the zip
+    // test above makes for `--format zip`.
+    let expected = Command::new("git")
+        .arg("--git-dir")
+        .arg(&bare)
+        .args([
+            "archive",
+            "--format",
+            "tar",
+            "--prefix",
+            "archive-main/",
+            &sha,
+        ])
+        .output()
+        .expect("failed to spawn git archive");
+    assert!(expected.status.success());
+
+    for (ext, content_type, magic) in [
+        ("tar.bz2", "application/x-bzip2", b"BZh".as_slice()),
+        ("tar.xz", "application/x-xz", b"\xfd7zXZ\x00".as_slice()),
+        (
+            "tar.zst",
+            "application/zstd",
+            b"\x28\xb5\x2f\xfd".as_slice(),
+        ),
+    ] {
+        let (status, headers, body) = common::get_bytes_with_headers(
+            router_for(root.path()),
+            &format!("/api/v1/repos/archive/archive/main.{ext}"),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{ext}");
+        assert_eq!(headers[header::CONTENT_TYPE], content_type, "{ext}");
+        assert_eq!(
+            headers[header::CONTENT_DISPOSITION],
+            format!("attachment; filename=\"archive-main.{ext}\""),
+            "{ext}"
+        );
+        assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff", "{ext}");
+        assert_eq!(headers[header::CACHE_CONTROL], "no-cache", "{ext}");
+        let etag = headers[header::ETAG].to_str().unwrap();
+        assert!(
+            etag.starts_with("W/\""),
+            "{ext}: expected weak etag, got {etag}"
+        );
+        assert!(
+            body.starts_with(magic),
+            "{ext}: body has the wrong magic bytes"
+        );
+        assert_eq!(
+            decompress(ext, &body).await,
+            expected.stdout,
+            "{ext}: decompressed body did not match `git archive --format tar`"
+        );
+    }
+}
+
+#[tokio::test]
+async fn archive_compressed_format_by_full_sha_should_be_immutable() {
+    let root = tempfile::tempdir().unwrap();
+    let (_, sha) = setup_archive_repo(root.path());
+    let (status, headers, _) = common::get_bytes_with_headers(
+        router_for(root.path()),
+        &format!("/api/v1/repos/archive/archive/{sha}.tar.zst"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CACHE_CONTROL], IMMUTABLE);
+    assert!(!headers.contains_key(header::ETAG));
+    assert_eq!(
+        headers[header::CONTENT_DISPOSITION],
+        format!("attachment; filename=\"archive-{sha}.tar.zst\"")
+    );
 }

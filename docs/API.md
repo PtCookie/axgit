@@ -591,23 +591,39 @@ tree/blob/raw (refs longest-match, `.`/`..`/empty segments are 400, missing path
 
 ### `GET /api/v1/repos/{repo}/archive/{ref}.{format}`
 
-`format`: `tar.gz` | `zip`. Generated via `git archive` exec and streamed chunked (no
-Content-Length). After ref resolution, **only the full sha is passed to exec** (user input never
-reaches the command line).
+`format`: `tar.gz` | `tar.bz2` | `tar.xz` | `tar.zst` | `zip`. `git archive` itself only produces
+`tar.gz`, `zip`, and plain `tar`; the other three formats are produced by streaming
+`git archive --format=tar`'s output through an in-process compressor
+(`bzip2`/`xz`/`zstd`, `docs/DECISIONS.md` #54) rather than piping into an external compressor
+binary — the runtime image needs no `bzip2`/`xz`/`zstd` package for this. Either way, the archive
+is streamed chunked (no Content-Length), and after ref resolution **only the full sha is passed to
+exec** (user input never reaches the command line). Plain `tar` and cgit's `tar.lz` are
+deliberately not offered — the former has little use as an HTTP download, the latter has no
+maintained Rust encoder.
 
-- `Content-Type`: `application/gzip` | `application/zip`. Always
-  `X-Content-Type-Options: nosniff`.
+- `Content-Type`: `application/gzip` | `application/x-bzip2` | `application/x-xz` |
+  `application/zstd` | `application/zip`. `gzip`/`zip`/`zstd` are IANA-registered media types;
+  `bzip2` and `xz` have none, so the de facto `application/x-` form is used (matching cgit).
+  Always `X-Content-Type-Options: nosniff`.
 - `Content-Disposition: attachment; filename="{repo}-{safe_ref}.{format}"`. The archive's internal
   root directory (`--prefix`) is likewise `{repo}-{safe_ref}/`. `safe_ref` replaces any character
   outside `[A-Za-z0-9._-]` in the ref with `-` (e.g. `feature/x` → `feature-x`).
-- `{ref}.{format}` is parsed by suffix match: `.tar.gz` first, then `.zip` (no conflict with `.`/
-  `/` in the ref itself — a branch name ending in `.zip` is interpreted as a zip request). Any
-  other suffix is `400 invalid_param`.
+- `{ref}.{format}` is parsed by matching one of the five known suffixes (no conflict with `.`/`/`
+  in the ref itself — a branch name ending in `.zip` is interpreted as a zip request). Any other
+  suffix, including a bare `.tar`, is `400 invalid_param`.
+- Compression levels match cgit's own external-command defaults, since it pipes each compressor
+  with no level flag: bzip2 `-9`, xz preset `6`, zstd level `3`.
 - If the request's `{ref}` matches the resolved full sha as a string, an immutable
   `Cache-Control` is attached; otherwise a weak ETag + `no-cache` (see the caching headers
   section). On a matching `If-None-Match`, returns 304 without spawning the git process.
 - If the git process fails after streaming has started, the status code can no longer change, so
   the response is cut off mid-stream (the client sees a failed download; the server logs stderr).
+  For the three compressed formats, the encoder still finalizes its container around the truncated
+  tar, so the result is a well-formed `.bz2`/`.xz`/`.zst` file wrapping incomplete content, rather
+  than an outright-invalid one.
+- Concurrent `bzip2`/`xz`/`zstd` encoding is capped server-side (`docs/DECISIONS.md` #54) — an
+  over-capacity request waits rather than failing, since archives are never response-cached and
+  each encoder holds meaningful memory for the request's duration.
 
 ### `GET /api/v1/repos/{repo}/feed.atom`
 
