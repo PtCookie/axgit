@@ -178,9 +178,14 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
               </span>
             </MetaItem>
             <MetaItem label="Feed">
-              <MetaLink href={feedUrl(summary.name)} Icon={RssIcon}>
-                Atom
-              </MetaLink>
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <MetaLink href={feedUrl(summary.name)} Icon={RssIcon}>
+                  Atom
+                </MetaLink>
+                <MetaLink href={feedUrl(summary.name, { all: 1 })} Icon={RssIcon}>
+                  All refs
+                </MetaLink>
+              </span>
             </MetaItem>
           </>
         )}

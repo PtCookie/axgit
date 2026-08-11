@@ -1118,6 +1118,11 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated. The web surfacing is a
     follow-up commit (#62).
 
+- **`/{repo}/log` and the repository summary page surface the feed parameters** (DECISIONS.md #62),
+  closing the "Feed and discovery" gap's `all=1`/branch/path piece. `CommitLog.tsx`'s action row
+  gained an `Atom feed` link carrying the log's current `ref`/`path`; `RepoSummary.tsx` gained an
+  `All refs` link (`all=1`) beside the existing plain feed link. No route or API contract change.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1139,11 +1144,13 @@ the last open item under "Archive", archive download links on the commit page (#
 last open item under "Commit page", rename following (#56) plus Files/Lines changed columns (#57)
 on the commit log closed both remaining items under "Log" — **"Archive", "Tags and refs", "Commit
 page", and "Log" all have no open items left** — the hex dump view for binary blobs (#58) closed
-one more under "Tree and blob", and the stats `path` filter (#59/#60) closed the last item under
-"Stats" — **"Stats" now has no open items left either.** The remaining cgit-parity gaps are
-submodule links and single-child directory collapsing (both under "Tree and blob"), and Atom feed
-parameters (branch/path filter/`all=1`/item count) under "Feed and discovery". Pick the next piece
-of work from there, from the candidates below, or from a fresh request.
+one more under "Tree and blob", the stats `path` filter (#59/#60) closed the last item under
+"Stats" — **"Stats" now has no open items left either** — and Atom feed parameters (#61/#62) closed
+the first item under "Feed and discovery". The remaining cgit-parity gaps are submodule links and
+single-child directory collapsing (both under "Tree and blob"), `<head>` Atom/`vcs-git` discovery
+under "Feed and discovery" (now more useful, since per-ref/all-refs feeds exist to discover), and
+the four "Repository index" items. Pick the next piece of work from there, from the candidates
+below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1183,13 +1190,13 @@ recorded separately below instead of listed as gaps.
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
 - **Feed and discovery**
-  - Atom parameters: branch (`h=`), path filter, `all=1` (all refs), item count
-    (`max-atom-items`) — `/feed.atom` is fixed at HEAD, 20 entries.
   - `<head>` Atom discovery (`<link rel="alternate" type="application/atom+xml">`) and the
     clone-URL `<link rel="vcs-git">` — neither is in `web/src/layouts/Layout.astro`. Non-trivial:
     repo pages are prerendered under the `__repo__` placeholder, so a per-repo `<link>` needs a
     runtime fill-in (`window.__axgit.fillRepoShell`) and would be invisible to non-JS feed
-    readers — deserves its own decision, not a tack-on to the item below.
+    readers — deserves its own decision. Now more useful than before #61/#62: with per-`ref` and
+    `all=1` feeds in place, a per-repo discovery link has more than just the default feed to point
+    at.
 - **Repository index**
   - Column sorting (`s=name|desc|owner|idle|section`, `repository-sort=age|name`) — axgit is fixed
     to name order plus the client-side `?q=` filter; cgit's `idle` sort is descending.

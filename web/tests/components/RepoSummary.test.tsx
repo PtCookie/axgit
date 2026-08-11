@@ -67,6 +67,9 @@ describe("RepoSummary", () => {
 
     const feed = page.getByRole("link", { name: "Atom" });
     await expect.element(feed).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom");
+
+    const allRefs = page.getByRole("link", { name: "All refs" });
+    await expect.element(allRefs).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom?all=1");
   });
 
   it("omits archive/feed links for an empty repository", async () => {
@@ -76,6 +79,7 @@ describe("RepoSummary", () => {
     await expect.element(page.getByText("No commits yet.")).toBeVisible();
     expect(page.getByRole("link", { name: "tar.gz" }).elements().length).toBe(0);
     expect(page.getByRole("link", { name: "Atom" }).elements().length).toBe(0);
+    expect(page.getByRole("link", { name: "All refs" }).elements().length).toBe(0);
   });
 
   it("shows an error message when the request fails", async () => {

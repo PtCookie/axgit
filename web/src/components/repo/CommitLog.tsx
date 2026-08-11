@@ -1,8 +1,9 @@
+import { RssIcon } from "@phosphor-icons/react/dist/ssr/Rss";
 import { Fragment, useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
 import { encodeSegment } from "@/lib/api/path";
-import { listCommits } from "@/lib/api/repos";
+import { feedUrl, listCommits } from "@/lib/api/repos";
 import type { CommitsPage } from "@/lib/api/schemas";
 import { layoutCommitGraph } from "@/lib/commit-graph";
 import { useCommitRefs } from "@/lib/commit-refs";
@@ -197,6 +198,14 @@ export default function CommitLog({
             })}
           >
             {showStat ? "Hide changes" : "Show changes"}
+          </a>{" "}
+          ·{" "}
+          <a
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 underline"
+            href={feedUrl(resolvedRepo, { ref: resolvedRef, path: resolvedPath })}
+          >
+            <RssIcon className="size-4" aria-hidden="true" />
+            Atom feed
           </a>
         </p>
       )}

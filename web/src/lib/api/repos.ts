@@ -219,9 +219,19 @@ export function archiveUrl(name: string, ref: string | undefined, format: Archiv
   return apiUrl(`/repos/${encodeSegment(name)}/archive/${encodePath(ref || DEFAULT_REF)}.${format}`);
 }
 
-/** Link-only — an Atom feed URL for the repository's default branch. */
-export function feedUrl(name: string): string {
-  return apiUrl(`/repos/${encodeSegment(name)}/feed.atom`);
+export interface FeedParams {
+  ref?: string;
+  path?: string;
+  /** `1` to walk every branch and tag instead of just `ref` (`all=1`). */
+  all?: number;
+  limit?: number;
+}
+
+/** Link-only — an Atom feed URL. Defaults to the repository's default branch
+ *  and 20 entries; `ref`/`path` scope it the way `logHref` scopes the log
+ *  page. Called with no params, this is byte-identical to the pre-#61 URL. */
+export function feedUrl(name: string, params: FeedParams = {}): string {
+  return apiUrl(`/repos/${encodeSegment(name)}/feed.atom${buildQuery(params)}`);
 }
 
 export interface SearchParams {

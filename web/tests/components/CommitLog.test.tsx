@@ -7,10 +7,13 @@ import { ApiError } from "@/lib/api/client";
 import { getRefs, listCommits } from "@/lib/api/repos";
 import type { CommitsPage, RefsInfo } from "@/lib/api/schemas";
 
-vi.mock("@/lib/api/repos", () => ({
-  listCommits: vi.fn(),
-  getRefs: vi.fn(),
-}));
+vi.mock("@/lib/api/repos", async (importOriginal) => {
+  // `feedUrl` is a pure link builder (no network) — kept real via
+  // `importOriginal` so the feed-link assertions below exercise the actual
+  // implementation, the same convention `RepoSummary.test.tsx` uses.
+  const actual = await importOriginal<typeof import("@/lib/api/repos")>();
+  return { ...actual, listCommits: vi.fn(), getRefs: vi.fn() };
+});
 
 const mockedListCommits = vi.mocked(listCommits);
 const mockedGetRefs = vi.mocked(getRefs);
@@ -479,6 +482,22 @@ describe("CommitLog", () => {
     const url = new URL(href ?? "", "http://localhost");
     expect(url.searchParams.get("stat")).toBeNull();
     expect(url.searchParams.get("ref")).toBe("main");
+  });
+
+  it("shows an Atom feed link carrying the current ref and path", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" ref="dev" path="src" />);
+
+    const feed = page.getByRole("link", { name: "Atom feed" });
+    await expect.element(feed).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom?ref=dev&path=src");
+  });
+
+  it("shows a bare Atom feed link when no ref or path is set", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" />);
+
+    const feed = page.getByRole("link", { name: "Atom feed" });
+    await expect.element(feed).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom");
   });
 
   it("keeps the Older link's stat=1 when shown", async () => {
