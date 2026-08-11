@@ -7,6 +7,7 @@ import { formatSize } from "@/lib/format/size";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import { blameHref, logHref } from "@/lib/repo-href";
 import CodeBlock from "@/components/repo/CodeBlock";
+import HexDump from "@/components/repo/HexDump";
 import PathBreadcrumbs from "@/components/repo/PathBreadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -112,13 +113,7 @@ export default function BlobView({ repo, path, ref: refParam }: BlobViewProps) {
           Symlink to <code className="bg-muted/50 rounded px-1 py-0.5 font-mono">{blob.content}</code>
         </p>
       ) : blob.binary ? (
-        <p className="text-muted-foreground text-sm">
-          Binary file not shown —{" "}
-          <a className="underline" href={raw}>
-            view raw
-          </a>
-          .
-        </p>
+        <HexDump url={raw} size={blob.size} />
       ) : blob.too_large ? (
         <p className="text-muted-foreground text-sm">
           File too large to display —{" "}

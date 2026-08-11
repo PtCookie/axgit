@@ -48,6 +48,14 @@ echo "TLS notes" > "$W/NOTES.md"
 # (docs/DECISIONS.md #49), neither of which a flat tree would reach.
 mkdir -p "$W/docs"
 ln -s ../README.md "$W/docs/readme-link"
+# A binary file — otherwise unreachable in a local run: the blob/object hex
+# dump view (docs/DECISIONS.md #58) and the blob endpoint's binary
+# classification both need actual NUL bytes to exercise, not just an
+# extension. Written byte-by-byte for reproducibility (no `dd`/random).
+printf '\x89PNG\r\n\x1a\n' > "$W/logo.png"
+for _ in $(seq 1 32); do
+    printf '\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f' >> "$W/logo.png"
+done
 git -C "$W" add .
 commit "$W" "2026-07-22T18:45:00+09:00" "docs: add notes"
 GIT_COMMITTER_DATE="2026-07-22T19:00:00+09:00" git -C "$W" tag -a v1.0.0 -m "Release v1.0.0"

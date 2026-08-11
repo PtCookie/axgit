@@ -1,4 +1,4 @@
-import { apiFetch, apiUrl } from "./client";
+import { ApiError, apiFetch, apiUrl } from "./client";
 import { encodePath, encodeSegment } from "./path";
 import type {
   BlameInfo,
@@ -57,7 +57,8 @@ export function getObject(name: string, oid: string): Promise<ObjectDetail> {
   return apiFetch<ObjectDetail>(`/repos/${encodeSegment(name)}/objects/${encodeSegment(oid)}`);
 }
 
-/** Link-only — the by-oid analogue of `rawUrl`. */
+/** The by-oid analogue of `rawUrl` — same dual use (plain `<a>` href, or
+ *  `fetchRawBytes`ed for a binary blob's hex dump). */
 export function objectRawUrl(name: string, oid: string): string {
   return apiUrl(`/repos/${encodeSegment(name)}/objects/${encodeSegment(oid)}/raw`);
 }
@@ -172,10 +173,28 @@ export function getBlame(name: string, ref: string | undefined, path: string): P
   return apiFetch<BlameInfo>(`/repos/${encodeSegment(name)}/blame/${refPathSegment(ref, path)}`);
 }
 
-/** Link-only (never `fetch`ed by the client) — the raw content is streamed
- *  straight from the api, so `BlobView` renders it as an `<a>` href. */
+/** The raw content is streamed straight from the api. `BlobView` renders it
+ *  as an `<a>` href directly; `HexDump` also `fetchRawBytes`es it for a
+ *  binary blob (docs/DECISIONS.md #58) — both uses share this one URL. */
 export function rawUrl(name: string, ref: string | undefined, path: string): string {
   return apiUrl(`/repos/${encodeSegment(name)}/raw/${refPathSegment(ref, path)}`);
+}
+
+/** Fetches raw bytes from a `rawUrl`/`objectRawUrl` link for the hex dump
+ *  view (docs/DECISIONS.md #58) — the only client-side consumer of the raw
+ *  endpoint's bytes rather than just its `href`. Throws `ApiError` on a
+ *  non-`ok` response or a network failure, same contract as `apiFetch`. */
+export async function fetchRawBytes(url: string): Promise<Uint8Array> {
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new ApiError("internal", "network request failed", 0);
+  }
+  if (!response.ok) {
+    throw new ApiError("internal", response.statusText || "request failed", response.status);
+  }
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 export function getReadme(name: string, ref?: string): Promise<ReadmeInfo> {

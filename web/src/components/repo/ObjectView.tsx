@@ -11,6 +11,7 @@ import { commitHref, objectHref } from "@/lib/repo-href";
 import { objectOidFromPathname, repoFromPathname } from "@/lib/repo-param";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
 import CodeBlock from "@/components/repo/CodeBlock";
+import HexDump from "@/components/repo/HexDump";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -164,13 +165,7 @@ export default function ObjectView({ repo, oid }: ObjectViewProps) {
             </a>
           </div>
           {detail.blob.binary ? (
-            <p className="text-muted-foreground text-sm">
-              Binary file not shown —{" "}
-              <a className="underline" href={raw}>
-                view raw
-              </a>
-              .
-            </p>
+            <HexDump url={raw} size={detail.blob.size} />
           ) : detail.blob.too_large ? (
             <p className="text-muted-foreground text-sm">
               File too large to display —{" "}

@@ -2148,3 +2148,56 @@ toggle) — splitting them would only double the cache-key value space for no re
   computed `columnCount` (`4 + (showStat ? 2 : 0)`) so the two extra columns don't leave it short.
 - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /commits` gained
   `stat`, `CommitInfo` gained optional `stat`, new `StatCounts` schema).
+
+## #58 Hex dump view for binary blobs (cgit's `<table class='bin-blob'>` parity)
+
+Closed the "Hex dump view for binary blobs" gap under "Tree and blob" — until now `BlobView.tsx`
+and `ObjectView.tsx` both dead-ended a binary blob at "Binary file not shown — view raw", which
+made the binary-blob page itself pointless (magic numbers, embedded strings, small icons all
+invisible without downloading).
+
+**Web-only, no API change.** The bytes come from the raw endpoint the blob/object pages already
+link (`rawUrl`/`objectRawUrl`), fetched client-side rather than added as a new field on
+`BlobInfo`/`ObjectBlob` — `content: null` there already means "fetch raw instead," and a base64
+copy of the same bytes in the JSON response would bloat every binary blob response by a third for
+no reader that doesn't already have the page open.
+
+- **16 bytes per row, not cgit's 32** (`web/src/lib/format/hex.ts::HEX_BYTES_PER_ROW`) — matches
+  `xxd`/`hexdump -C` convention and keeps `offset + 3×16 hex chars + 16 ascii` narrow enough to
+  avoid horizontal scroll on a phone-width viewport; cgit's own width was tuned for a desktop-only
+  CGI era. Rendered immediately when `binary: true`, not behind a toggle — same as cgit, and
+  consistent with everything else on the blob page (content, symlink target) rendering
+  unconditionally.
+- **Two independent boundaries, each reusing an existing number rather than inventing one**:
+  the *fetch* is gated on `!blob.too_large`, i.e. the api's existing 1 MiB `BLOB_CONTENT_LIMIT` —
+  an over-1-MiB binary keeps the pre-existing "File too large" notice, never triggering a raw
+  fetch at all. The *render* is separately capped at `HEX_DUMP_LIMIT = 64 KiB` (4096 rows) with a
+  visible "Showing the first 64.0 KiB of N — view raw" note, the same shape as the diff endpoint's
+  1000-line-per-file cap (#38) — a binary file under 1 MiB can still be tens of thousands of DOM
+  rows at 16 bytes/row, and nothing about a hex dump past the first few KiB is usually worth
+  rendering anyway (raw download covers the rest).
+- **`web/src/lib/format/hex.ts::hexRows`** is a pure layout function (the `commit-graph.ts`/
+  `markdown-url.ts` precedent — layout logic lives outside the component, unit-tested on its own).
+  Truncates to `HEX_DUMP_LIMIT` before splitting into rows; each row carries the offset, one 2-char
+  hex string per byte (not a single joined string), and a parallel ASCII string (`0x20`-`0x7e`
+  passed through, everything else `.`) — leaving the hex/ASCII string formatting (group spacing,
+  padding a short final row for column alignment) to the component, same split as `CommitGraph.tsx`
+  rendering `commit-graph.ts`'s pure geometry.
+- **New `web/src/lib/api/repos.ts::fetchRawBytes`** — the first client-side consumer of a raw
+  endpoint's actual bytes rather than just its `href` (every other `rawUrl`/`objectRawUrl` caller
+  only builds a link). Lives beside `rawUrl` rather than in `client.ts`, since `apiFetch` is
+  JSON-only by construction (`Content-Type`/error-envelope parsing that doesn't apply to a binary
+  body) and keeps `API_BASE` module-private; `fetchRawBytes` instead takes the full URL a
+  `rawUrl`/`objectRawUrl` call already produced. Same `ApiError` contract as `apiFetch`
+  (network failure and non-`ok` both throw), so `HexDump`'s fetch/catch needs no special-casing.
+- **New `web/src/components/repo/HexDump.tsx`** — `{ url, size }`, the `loading | error | data` +
+  `cancelled`-flag state machine every other island uses. A failed fetch renders the *same*
+  "Binary file not shown — view raw" notice the blob/object pages used to show unconditionally, so
+  a network error degrades to the old behavior instead of a blank panel. Wired into both
+  `BlobView.tsx`'s and `ObjectView.tsx`'s `binary` branch — the two were identical dead ends before
+  this, so both got the swap in one pass rather than leaving one page behind.
+- `scripts/make-fixtures.sh` gained a small (520-byte) binary file with a NUL-containing byte
+  pattern in `git-compose.git`'s "docs: add notes" commit, written byte-by-byte with `printf` for
+  reproducibility — the classify/hex-dump path was otherwise unreachable in a local run (nothing
+  in the existing fixtures has a NUL byte; extension alone doesn't trigger `Blob::is_binary()`).
+- No `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**` change.

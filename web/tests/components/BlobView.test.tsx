@@ -4,15 +4,18 @@ import { page } from "vitest/browser";
 
 import BlobView from "@/components/repo/BlobView";
 import { ApiError } from "@/lib/api/client";
-import { getBlob, rawUrl } from "@/lib/api/repos";
+import { fetchRawBytes, getBlob, rawUrl } from "@/lib/api/repos";
 import type { BlobInfo } from "@/lib/api/schemas";
+import { HEX_DUMP_LIMIT } from "@/lib/format/hex";
 
 vi.mock("@/lib/api/repos", () => ({
   getBlob: vi.fn(),
   rawUrl: vi.fn(() => "/api/v1/repos/git-compose/raw/HEAD/README.md"),
+  fetchRawBytes: vi.fn(),
 }));
 
 const mockedGetBlob = vi.mocked(getBlob);
+const mockedFetchRawBytes = vi.mocked(fetchRawBytes);
 
 const TEXT_BLOB: BlobInfo = {
   sha: "abc123def456abc123def456abc123def456abc",
@@ -27,6 +30,7 @@ const TEXT_BLOB: BlobInfo = {
 describe("BlobView", () => {
   beforeEach(() => {
     mockedGetBlob.mockReset();
+    mockedFetchRawBytes.mockReset();
     vi.mocked(rawUrl).mockClear();
   });
 
@@ -58,8 +62,27 @@ describe("BlobView", () => {
       .toHaveAttribute("href", "/git-compose/log?path=README.md");
   });
 
-  it("shows a binary-file message instead of content", async () => {
+  it("renders a hex dump for a binary blob", async () => {
+    mockedGetBlob.mockResolvedValue({ ...TEXT_BLOB, binary: true, content: null, size: 3 });
+    mockedFetchRawBytes.mockResolvedValue(Uint8Array.from([0x89, 0x50, 0x4e]));
+    render(<BlobView repo="git-compose" path="image.png" />);
+
+    await expect.element(page.getByText("00000000")).toBeVisible();
+    await expect.element(page.getByText("89 50 4e")).toBeVisible();
+    expect(mockedFetchRawBytes).toHaveBeenCalledWith("/api/v1/repos/git-compose/raw/HEAD/README.md");
+  });
+
+  it("shows a truncation notice past the hex dump render cap", async () => {
+    mockedGetBlob.mockResolvedValue({ ...TEXT_BLOB, binary: true, content: null, size: HEX_DUMP_LIMIT + 1 });
+    mockedFetchRawBytes.mockResolvedValue(new Uint8Array(HEX_DUMP_LIMIT + 1));
+    render(<BlobView repo="git-compose" path="image.png" />);
+
+    await expect.element(page.getByText("Showing the first", { exact: false })).toBeVisible();
+  });
+
+  it("falls back to a binary notice when the raw fetch fails", async () => {
     mockedGetBlob.mockResolvedValue({ ...TEXT_BLOB, binary: true, content: null });
+    mockedFetchRawBytes.mockRejectedValue(new ApiError("internal", "network request failed", 0));
     render(<BlobView repo="git-compose" path="image.png" />);
 
     await expect.element(page.getByText("Binary file not shown —", { exact: false })).toBeVisible();

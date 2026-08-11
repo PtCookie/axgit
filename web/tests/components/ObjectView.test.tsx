@@ -4,18 +4,20 @@ import { page } from "vitest/browser";
 
 import ObjectView from "@/components/repo/ObjectView";
 import { ApiError } from "@/lib/api/client";
-import { getObject } from "@/lib/api/repos";
+import { fetchRawBytes, getObject } from "@/lib/api/repos";
 import type { ObjectDetail } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", async (importOriginal) => {
   // `objectRawUrl` is a pure link builder (no network) — kept real via
   // `importOriginal` so the Raw link assertions below exercise the actual
-  // implementation, same reasoning as `TagView.test.tsx`.
+  // implementation, same reasoning as `TagView.test.tsx`. `fetchRawBytes`
+  // does hit the network, so it's mocked like `getObject`.
   const actual = await importOriginal<typeof import("@/lib/api/repos")>();
-  return { ...actual, getObject: vi.fn() };
+  return { ...actual, getObject: vi.fn(), fetchRawBytes: vi.fn() };
 });
 
 const mockedGetObject = vi.mocked(getObject);
+const mockedFetchRawBytes = vi.mocked(fetchRawBytes);
 
 const TREE_SHA = "1111111111111111111111111111111111111a";
 const BLOB_SHA = "1111111111111111111111111111111111111b";
@@ -90,6 +92,7 @@ const TAG: ObjectDetail = {
 describe("ObjectView", () => {
   beforeEach(() => {
     mockedGetObject.mockReset();
+    mockedFetchRawBytes.mockReset();
   });
 
   afterEach(() => {
@@ -122,11 +125,25 @@ describe("ObjectView", () => {
       .toHaveAttribute("href", `/api/v1/repos/git-compose/objects/${BLOB_SHA}/raw`);
   });
 
-  it("shows a binary blob notice instead of content", async () => {
+  it("renders a hex dump for a binary blob", async () => {
+    mockedGetObject.mockResolvedValue({
+      ...BLOB,
+      blob: { size: 3, binary: true, too_large: false, content: null },
+    });
+    mockedFetchRawBytes.mockResolvedValue(Uint8Array.from([0x89, 0x50, 0x4e]));
+    render(<ObjectView repo="git-compose" oid={BLOB_SHA} />);
+
+    await expect.element(page.getByText("00000000")).toBeVisible();
+    await expect.element(page.getByText("89 50 4e")).toBeVisible();
+    expect(mockedFetchRawBytes).toHaveBeenCalledWith(`/api/v1/repos/git-compose/objects/${BLOB_SHA}/raw`);
+  });
+
+  it("falls back to a binary notice when the raw fetch fails", async () => {
     mockedGetObject.mockResolvedValue({
       ...BLOB,
       blob: { size: 6, binary: true, too_large: false, content: null },
     });
+    mockedFetchRawBytes.mockRejectedValue(new ApiError("internal", "network request failed", 0));
     render(<ObjectView repo="git-compose" oid={BLOB_SHA} />);
 
     await expect.element(page.getByText(/Binary file not shown/)).toBeVisible();

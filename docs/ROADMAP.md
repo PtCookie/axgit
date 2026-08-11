@@ -1072,6 +1072,22 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   `web/src/lib/api/types.ts` updated (new `StatCounts` schema). **"Log" now has no open items
   left.**
 
+- **Hex dump view for binary blobs** (DECISIONS.md #58), closing one of the three remaining "Tree
+  and blob" cgit-parity gaps. Web-only, no API change — the bytes come from the raw endpoint the
+  blob/object pages already link, fetched client-side rather than added to `BlobInfo`/`ObjectBlob`.
+  - New `web/src/lib/format/hex.ts::hexRows` (pure, unit-tested) lays out 16 bytes/row (not cgit's
+    32 — narrower, matches `xxd`/`hexdump -C`), truncated at `HEX_DUMP_LIMIT` (64 KiB / 4096 rows).
+    New `web/src/lib/api/repos.ts::fetchRawBytes` (the first client-side consumer of a raw
+    endpoint's actual bytes, not just its `href`) backs new `web/src/components/repo/HexDump.tsx`,
+    wired into both `BlobView.tsx`'s and `ObjectView.tsx`'s `binary` branch (previously identical
+    dead ends). A failed fetch falls back to the old "Binary file not shown" notice.
+  - The *fetch* is gated on the existing `!blob.too_large` (1 MiB `BLOB_CONTENT_LIMIT`); the
+    *render* is separately capped at `HEX_DUMP_LIMIT`, with a truncation note past it — two
+    independent boundaries, each reusing an existing number rather than a new one.
+  - `scripts/make-fixtures.sh` gained a small NUL-containing binary file in `git-compose.git`, so
+    the classify/hex-dump path is reachable in a local run.
+  - No `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**` change.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1090,13 +1106,13 @@ detail page plus per-tag downloads (#51) closed all but two items under "Tags an
 branches (#52) closed one of those two, object links for non-commit refs (#53) closed the last one
 (also closing the blob-by-oid item under "Tree and blob"), archive format coverage (#54) closed
 the last open item under "Archive", archive download links on the commit page (#55) closed the
-last open item under "Commit page", and rename following (#56) plus Files/Lines changed columns
-(#57) on the commit log closed both remaining items under "Log" — **"Archive", "Tags and refs",
-"Commit page", and "Log" all have no open items left**. The remaining cgit-parity gaps are
-submodule links, single-child directory collapsing, and a hex dump view for binary blobs (all
-under "Tree and blob"), and Atom feed parameters (branch/path filter/`all=1`/item count) under
-"Feed and discovery". Pick the next piece of work from there, from the candidates below, or from a
-fresh request.
+last open item under "Commit page", rename following (#56) plus Files/Lines changed columns (#57)
+on the commit log closed both remaining items under "Log" — **"Archive", "Tags and refs", "Commit
+page", and "Log" all have no open items left** — and the hex dump view for binary blobs (#58)
+closed one more under "Tree and blob". The remaining cgit-parity gaps are submodule links and
+single-child directory collapsing (both under "Tree and blob"), and Atom feed parameters
+(branch/path filter/`all=1`/item count) under "Feed and discovery". Pick the next piece of work
+from there, from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1132,8 +1148,6 @@ recorded separately below instead of listed as gaps.
   - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
-  - Hex dump view for binary blobs (`<table class='bin-blob'>`, 32 bytes/row + ascii) — axgit shows
-    only a binary notice and a Raw link.
 - **Feed and discovery**
   - Atom parameters: branch (`h=`), path filter, `all=1` (all refs), item count
     (`max-atom-items`) — `/feed.atom` is fixed at HEAD, 20 entries.
