@@ -2376,6 +2376,13 @@ export interface operations {
          */
         ref?: string;
         /**
+         * @description Only commits that changed this file or directory. A path that never
+         *     existed yields an all-zero result rather than a 404. No `follow`
+         *     support — unlike the commit log, stats never tracks a path across
+         *     renames (docs/DECISIONS.md #59).
+         */
+        path?: string;
+        /**
          * @description Number of authors returned, most active first. Parsed manually so an
          *     invalid value yields the JSON `invalid_param` envelope instead of
          *     axum's plain-text 400. Never clamped.

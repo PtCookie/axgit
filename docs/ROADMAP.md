@@ -1088,6 +1088,15 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     the classify/hex-dump path is reachable in a local run.
   - No `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**` change.
 
+- **`GET /api/v1/repos/{repo}/stats` gained a `path` filter** (DECISIONS.md #59), closing the last
+  open item under "Stats". Reuses `repo/commits.rs::touches_path` (promoted to `pub(crate)`)
+  verbatim rather than a second predicate; applied after the bucket-window check so an
+  out-of-window commit never pays for the tree lookup. No `follow` support — cgit's stats page
+  doesn't track renames either, left as a candidate below. A path that never existed returns `200`
+  with all-zero buckets, not a `404`, matching `/commits?path=`'s carve-out.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /stats` gained
+    `path`). The `/{repo}/stats` page surfacing it is a follow-up commit (#60).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;

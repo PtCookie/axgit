@@ -312,6 +312,64 @@ async fn stats_omits_others_when_the_limit_cuts_nothing() {
 }
 
 #[tokio::test]
+async fn stats_filters_by_path() {
+    let (root, shas) = setup();
+    // `c.txt` was only touched by the July commit (Alice's), not the March
+    // or May ones (`a.txt`/`b.txt`) or the July `d.txt` one (Bob's).
+    let json = get_ok(root.path(), "/api/v1/repos/beta/stats?path=c.txt").await;
+
+    assert_eq!(json["sha"].as_str(), Some(shas[3].as_str()));
+    assert_eq!(bucket_commits(&json, "2026-07-01T00:00:00+00:00"), Some(1));
+    let total: i64 = json["buckets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|bucket| bucket["commits"].as_i64().unwrap())
+        .sum();
+    assert_eq!(total, 1, "unexpected response: {json}");
+    assert_eq!(json["author_count"].as_i64(), Some(1));
+    let authors = json["authors"].as_array().expect("authors missing");
+    assert_eq!(authors.len(), 1);
+    assert_eq!(authors[0]["author"]["name"], "Alice");
+}
+
+#[tokio::test]
+async fn stats_returns_an_all_zero_result_for_a_path_that_never_existed() {
+    let (root, shas) = setup();
+    let json = get_ok(root.path(), "/api/v1/repos/beta/stats?path=nope.txt").await;
+
+    assert_eq!(json["sha"].as_str(), Some(shas[3].as_str()));
+    assert_eq!(json["author_count"].as_i64(), Some(0));
+    assert_eq!(json["authors"].as_array().map(Vec::len), Some(0));
+    assert_eq!(json["others"], Value::Null);
+    let total: i64 = json["buckets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|bucket| bucket["commits"].as_i64().unwrap())
+        .sum();
+    assert_eq!(total, 0);
+}
+
+#[tokio::test]
+async fn stats_sets_immutable_cache_for_full_sha_ref_and_path_together() {
+    let (root, shas) = setup();
+    let (status, headers, json) = common::get_json_with_headers(
+        router_for(root.path()),
+        &format!("/api/v1/repos/beta/stats?ref={}&path=c.txt", shas[3]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .map(|value| value.to_str().unwrap()),
+        Some("public, max-age=31536000, immutable"),
+        "a full-sha ref stays immutable regardless of path"
+    );
+}
+
+#[tokio::test]
 async fn stats_sets_immutable_cache_for_full_sha_ref_only() {
     let (root, shas) = setup();
     let (status, headers, json) = common::get_json_with_headers(

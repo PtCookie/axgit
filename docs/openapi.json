@@ -1709,6 +1709,15 @@
             "example": "main"
           },
           {
+            "name": "path",
+            "in": "query",
+            "description": "Only commits that changed this file or directory. A path that never\nexisted yields an all-zero result rather than a 404. No `follow`\nsupport — unlike the commit log, stats never tracks a path across\nrenames (docs/DECISIONS.md #59).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "Number of authors returned, most active first. Parsed manually so an\ninvalid value yields the JSON `invalid_param` envelope instead of\naxum's plain-text 400. Never clamped.",

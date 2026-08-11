@@ -2201,3 +2201,56 @@ no reader that doesn't already have the page open.
   reproducibility — the classify/hex-dump path was otherwise unreachable in a local run (nothing
   in the existing fixtures has a NUL byte; extension alone doesn't trigger `Blob::is_binary()`).
 - No `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts`/`api/**` change.
+
+## #59 Stats API: `path=` filter (cgit `ui-stats.c`'s `ctx.qry.path` parity)
+
+Closed the last item under the `docs/ROADMAP.md` "Stats" cgit-parity gap: `/stats` only ever
+aggregated the whole repository, so there was no way to answer "who's been committing to this
+directory" the way cgit's stats page can. Same two-commit shape as #46/#47 (search's author/
+committer/range types) — API first, web page as a follow-up (#60).
+
+- **Reuses `repo/commits.rs::touches_path` verbatim, promoted to `pub(crate)`**, rather than
+  writing a second path-filter predicate. It's the same question ("did this commit change this
+  file/directory relative to its parents") the commit log's own `path` filter already answers, and
+  the two call sites drifting into slightly different merge-commit approximations would be a worse
+  outcome than one shared function with two callers.
+- **No `follow` support.** cgit's stats page doesn't track renames either, and `/commits`'
+  `follow=1` machinery (#56) pays for a full first-parent tree diff on every rename-shaped commit —
+  a cost the search/stats budget family (#26/#28) was built to bound, not add to. Left as a ROADMAP
+  candidate rather than gap: cheap to add later by threading the same `tracked`-path mutation
+  `commits::log` already has, if a real need shows up.
+- **Filter applied after the bucket-window check, not before.** The revwalk loop already discards
+  commits outside the fixed 12-bucket window via `bucket_index`; checking `touches_path` afterward
+  means a commit that's simply too old never pays for the (relatively expensive) per-parent tree
+  lookup. `MAX_SCANNED_COMMITS` is unaffected either way — it counts commits the revwalk visits,
+  not commits that pass the filter, so `truncated`'s meaning doesn't change.
+- **A path that never existed returns `200` with every bucket at `0` and `author_count: 0`, not a
+  `404`** — the same carve-out `/commits?path=` already documents, kept consistent rather than
+  reintroducing a 404 case stats didn't have before.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /stats` gained `path`,
+  documented with the same wording as the commit log's own `path` field). The `/{repo}/stats` page
+  surfacing it is a follow-up commit (#60).
+
+## #60 `/{repo}/stats` page: surface the `path` filter
+
+The web half of #59 — API-then-page, same order #46/#47 and #59 itself followed.
+
+- **Entry point is a `Stats` quick link on each tree row (`TreeView.tsx::rowActions`), not the nav
+  tab.** cgit reaches a path-scoped stats view by having its `stats` nav tab carry the current
+  `ctx.qry.vpath` — but axgit's tab bar (`RepoNav.astro`) is static HTML prerendered once under a
+  placeholder param (DECISIONS #17) and filled in per-navigation by
+  `window.__axgit.fillRepoShell`, which has no notion of "the tree page's current path." Extending
+  that mechanism for one tab, on one page, would be a lot of shell-filling machinery for what #48
+  already solved the general case of: a per-row action link built from data the row already has.
+  `rowActions` gained a fourth entry (`Stats`, `ChartBarIcon`) alongside Log/Raw/Blame, using the
+  same `statsHref(repo, { path, ref })` shape `logHref`/`blameHref` already follow — available on
+  both file and directory rows (matching `path`'s file-or-directory rule), absent on submodule rows
+  (which get no row actions at all, per #48).
+- **`StatsView.tsx` resolves `path` with the same prop-overrides-`location` pattern every other
+  param uses** (`pathParam ?? paramFromSearch(...)`), carries it through every `statsHref` the
+  period switcher builds (so switching `week`/`month`/`quarter`/`year` doesn't drop the filter),
+  and renders a `Filtered by path … — clear filter` banner directly modeled on `CommitLog.tsx`'s —
+  minus the "Follow renames" link, since #59 deliberately didn't add `follow` to the endpoint.
+- No route change (`/stats` already takes query params only, `shellFor`/`shell_for` untouched), no
+  API contract change — `StatsView.tsx`, `TreeView.tsx`, `lib/api/repos.ts::StatsParams`, and
+  `lib/repo-href.ts::statsHref` only.

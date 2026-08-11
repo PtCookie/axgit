@@ -7,7 +7,7 @@ use axum::response::Response;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::{JSON_CONTENT_TYPE, cached_response, parse_limit};
+use super::{JSON_CONTENT_TYPE, cached_response, clean_path, parse_limit};
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::resolve;
 use crate::repo::stats::{self, StatsPeriod, StatsResults};
@@ -23,6 +23,11 @@ pub struct StatsQuery {
     #[serde(rename = "ref")]
     #[param(example = "main")]
     r#ref: Option<String>,
+    /// Only commits that changed this file or directory. A path that never
+    /// existed yields an all-zero result rather than a 404. No `follow`
+    /// support — unlike the commit log, stats never tracks a path across
+    /// renames (docs/DECISIONS.md #59).
+    path: Option<String>,
     /// Number of authors returned, most active first. Parsed manually so an
     /// invalid value yields the JSON `invalid_param` envelope instead of
     /// axum's plain-text 400. Never clamped.
@@ -76,7 +81,11 @@ pub async fn get_stats(
 ) -> Result<Response, ApiError> {
     let period = parse_period(query.period.as_deref())?;
     let limit = parse_limit(query.limit.as_deref())?;
-    let params = format!("period={period:?}&ref={:?}&limit={limit}", query.r#ref);
+    let path = clean_path(query.path.as_deref());
+    let params = format!(
+        "period={period:?}&ref={:?}&path={path:?}&limit={limit}",
+        query.r#ref
+    );
     cached_response(
         &state,
         &name,
@@ -105,7 +114,7 @@ pub async fn get_stats(
                 return Ok((false, serde_json::to_vec(&results)?));
             };
             let sha = commit.id().to_string();
-            let results = stats::stats(repo, &commit, period, limit)?;
+            let results = stats::stats(repo, &commit, period, limit, path.as_deref())?;
             let immutable = query.r#ref.as_deref() == Some(sha.as_str());
             Ok((immutable, serde_json::to_vec(&results)?))
         },

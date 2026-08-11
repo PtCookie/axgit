@@ -310,7 +310,10 @@ pub(crate) fn time_rfc3339(time: git2::Time) -> Option<String> {
 /// commit is included only when the path differs from *every* parent. Unlike
 /// git we do not prune the walk to a TREESAME parent, so a few side-branch
 /// commits git would hide may still appear.
-fn touches_path(commit: &Commit, path: &Path) -> bool {
+///
+/// `pub(crate)`: shared with `repo/stats.rs`'s `path` filter (docs/DECISIONS.md
+/// #59) so the two path filters can't drift apart.
+pub(crate) fn touches_path(commit: &Commit, path: &Path) -> bool {
     let entry = path_entry_id(commit, path);
     if commit.parent_count() == 0 {
         return entry.is_some();

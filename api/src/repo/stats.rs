@@ -9,6 +9,7 @@
 //! enforce an exact commit budget.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use git2::{Commit, Repository};
 use jiff::civil::Date;
@@ -95,12 +96,18 @@ pub struct StatsResults {
 }
 
 /// Runs the stats aggregation for `period`, anchored on `commit`'s
-/// authordate, keeping at most `limit` authors.
+/// authordate, keeping at most `limit` authors. `path`, when given, restricts
+/// the walk to commits that touched that file or directory — the same
+/// `touches_path` predicate `repo/commits.rs::log` uses for its own `path`
+/// filter, deliberately **not** extended with `follow` (docs/DECISIONS.md
+/// #59): cgit's stats page doesn't follow renames either, and the walk
+/// already pays for the whole scan budget without that per-commit cost.
 pub fn stats(
     repo: &Repository,
     commit: &Commit,
     period: StatsPeriod,
     limit: usize,
+    path: Option<&Path>,
 ) -> Result<StatsResults, ApiError> {
     // Falls back to now() in the (extremely unlikely) case the commit's
     // authordate can't convert (`meta::git_time_to_zoned` — the same guard
@@ -127,6 +134,16 @@ pub fn stats(
         let Some(index) = bucket_index(when.timestamp(), &starts, &window_end) else {
             continue; // older than the BUCKET_COUNT-period window
         };
+        // Checked last, after the (cheap) timestamp/bucket tests: a commit
+        // outside the 12-bucket window is skipped before ever paying for
+        // `touches_path`'s per-parent tree lookups. `MAX_SCANNED_COMMITS`
+        // above still counts *walked* commits regardless — the walk itself
+        // is the cost this budget bounds, not the filter.
+        if let Some(path) = path
+            && !commits::touches_path(&found, path)
+        {
+            continue;
+        }
         bucket_totals[index] += 1;
         let author = commits::signature_info(&found.author());
         let entry = authors
@@ -285,6 +302,43 @@ mod tests {
             .unwrap()
     }
 
+    /// Commits `files` (`(path, content)`, paths may nest one directory deep,
+    /// e.g. `"src/a.txt"`) on top of `parent`, with a controlled author date —
+    /// a sibling of `commit_at` for tests exercising the `path` filter.
+    fn commit_files_at(
+        repo: &Repository,
+        parent: Option<Oid>,
+        when: &str,
+        files: &[(&str, &str)],
+    ) -> Oid {
+        let mut root = repo.treebuilder(None).unwrap();
+        let mut subtrees: HashMap<&str, git2::TreeBuilder> = HashMap::new();
+        for (path, content) in files {
+            let blob = repo.blob(content.as_bytes()).unwrap();
+            if let Some((dir, name)) = path.split_once('/') {
+                let builder = subtrees
+                    .entry(dir)
+                    .or_insert_with(|| repo.treebuilder(None).unwrap());
+                builder.insert(name, blob, 0o100644).unwrap();
+            } else {
+                root.insert(*path, blob, 0o100644).unwrap();
+            }
+        }
+        for (dir, builder) in &subtrees {
+            let subtree_oid = builder.write().unwrap();
+            root.insert(*dir, subtree_oid, 0o040000).unwrap();
+        }
+        let tree = repo.find_tree(root.write().unwrap()).unwrap();
+        let sig = signature_at("Test", "test@example.com", when);
+        let parents: Vec<_> = parent
+            .map(|oid| repo.find_commit(oid).unwrap())
+            .into_iter()
+            .collect();
+        let parent_refs: Vec<_> = parents.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, "msg", &tree, &parent_refs)
+            .unwrap()
+    }
+
     #[test]
     fn period_start_date_should_align_to_the_expected_boundary() {
         // 2026-07-24 is a Friday.
@@ -330,7 +384,7 @@ mod tests {
         let c2 = commit_at(&repo, Some(c1), "2026-07-01T00:00:00Z", "third");
         let commit = repo.find_commit(c2).unwrap();
 
-        let results = stats(&repo, &commit, StatsPeriod::Month, 50).unwrap();
+        let results = stats(&repo, &commit, StatsPeriod::Month, 50, None).unwrap();
         assert_eq!(results.sha, Some(c2.to_string()));
         assert_eq!(results.period, StatsPeriod::Month);
         assert!(!results.truncated);
@@ -362,7 +416,7 @@ mod tests {
         let recent = commit_at(&repo, Some(old), "2026-07-01T00:00:00Z", "recent");
         let commit = repo.find_commit(recent).unwrap();
 
-        let results = stats(&repo, &commit, StatsPeriod::Month, 50).unwrap();
+        let results = stats(&repo, &commit, StatsPeriod::Month, 50, None).unwrap();
         let total: usize = results.buckets.iter().map(|bucket| bucket.commits).sum();
         assert_eq!(
             total, 1,
@@ -391,7 +445,7 @@ mod tests {
         }
         let commit = repo.find_commit(parent.unwrap()).unwrap();
 
-        let results = stats(&repo, &commit, StatsPeriod::Month, 2).unwrap();
+        let results = stats(&repo, &commit, StatsPeriod::Month, 2, None).unwrap();
         assert_eq!(results.author_count, 3);
         assert_eq!(results.authors.len(), 2);
         assert!(results.truncated);
@@ -431,9 +485,102 @@ mod tests {
             .unwrap();
         let commit = repo.find_commit(oid).unwrap();
 
-        let results = stats(&repo, &commit, StatsPeriod::Month, 50).unwrap();
+        let results = stats(&repo, &commit, StatsPeriod::Month, 50, None).unwrap();
         assert_eq!(results.authors.len(), 1);
         assert!(results.others.is_none());
         assert!(!results.truncated);
+    }
+
+    #[test]
+    fn stats_should_filter_by_file_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let c0 = commit_files_at(&repo, None, "2026-05-01T00:00:00Z", &[("a.txt", "one")]);
+        let c1 = commit_files_at(
+            &repo,
+            Some(c0),
+            "2026-06-01T00:00:00Z",
+            &[("a.txt", "one"), ("b.txt", "two")],
+        );
+        let c2 = commit_files_at(
+            &repo,
+            Some(c1),
+            "2026-07-01T00:00:00Z",
+            &[("a.txt", "one-edited"), ("b.txt", "two")],
+        );
+        let commit = repo.find_commit(c2).unwrap();
+
+        // `a.txt` was touched by the root commit and the July edit, but not
+        // by the June commit (which only added `b.txt`).
+        let results = stats(
+            &repo,
+            &commit,
+            StatsPeriod::Month,
+            50,
+            Some(Path::new("a.txt")),
+        )
+        .unwrap();
+        let total: usize = results.buckets.iter().map(|bucket| bucket.commits).sum();
+        assert_eq!(total, 2, "only commits touching a.txt are counted");
+        assert_eq!(results.author_count, 1);
+        assert_eq!(results.authors[0].commits, 2);
+    }
+
+    #[test]
+    fn stats_should_filter_by_directory_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let c0 = commit_files_at(
+            &repo,
+            None,
+            "2026-05-01T00:00:00Z",
+            &[("README.md", "root")],
+        );
+        let c1 = commit_files_at(
+            &repo,
+            Some(c0),
+            "2026-06-01T00:00:00Z",
+            &[("src/a.txt", "one")],
+        );
+        let c2 = commit_files_at(
+            &repo,
+            Some(c1),
+            "2026-07-01T00:00:00Z",
+            &[("src/b.txt", "two")],
+        );
+        let commit = repo.find_commit(c2).unwrap();
+
+        // Both commits under `src/` count; the README-only root commit doesn't.
+        let results = stats(
+            &repo,
+            &commit,
+            StatsPeriod::Month,
+            50,
+            Some(Path::new("src")),
+        )
+        .unwrap();
+        let total: usize = results.buckets.iter().map(|bucket| bucket.commits).sum();
+        assert_eq!(total, 2, "commits under the directory path are counted");
+    }
+
+    #[test]
+    fn stats_should_report_no_commits_for_a_path_that_never_existed() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let oid = commit_files_at(&repo, None, "2026-07-01T00:00:00Z", &[("a.txt", "one")]);
+        let commit = repo.find_commit(oid).unwrap();
+
+        let results = stats(
+            &repo,
+            &commit,
+            StatsPeriod::Month,
+            50,
+            Some(Path::new("nope.txt")),
+        )
+        .unwrap();
+        let total: usize = results.buckets.iter().map(|bucket| bucket.commits).sum();
+        assert_eq!(total, 0);
+        assert_eq!(results.author_count, 0);
+        assert!(results.others.is_none());
     }
 }

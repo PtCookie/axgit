@@ -731,7 +731,7 @@ independent of `limit`.
   immutable for `type=range`**, even with a full-sha `ref` — the result depends on the revisions
   named in `q` (e.g. `main~5..main`), which can move independently of `ref`.
 
-### `GET /api/v1/repos/{repo}/stats?ref=&period=&limit=`
+### `GET /api/v1/repos/{repo}/stats?ref=&period=&path=&limit=`
 
 Commit-activity statistics: commit counts bucketed by time period, plus a per-author breakdown.
 cgit's `stats` page. Implemented as an in-process git2 revwalk (not a `git log` exec, not a
@@ -767,6 +767,11 @@ persistent index — DECISIONS.md #28), bounded by the same kind of scan budget 
 - A commit older than the 12-bucket window is excluded entirely. A commit authored *after* the
   window's end (possible with out-of-order authordates across merged branches) is clamped into
   the last bucket rather than dropped.
+- `path`: only commits that changed this file or directory, same `touches_path` predicate the
+  commit log's own `path` filter uses (merge commits included only when the path differs from
+  **all** parents). A path that never existed returns `200` with every bucket at `0` and
+  `author_count: 0`, not a `404`. **No `follow` support** — unlike `GET /commits`, stats never
+  tracks a path across renames; cgit's own stats page doesn't either.
 - `limit`: default 50, allowed range 1–100, same rules as the commit log's `limit` (not clamped).
   Caps the number of `authors` rows returned, most active first; `author_count` reports the full
   distinct-author count within the window even when `authors` is cut shorter.
