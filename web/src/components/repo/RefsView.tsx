@@ -5,7 +5,7 @@ import { archiveUrl, getRefs, type ArchiveFormat } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
 import { useDefaultBranch } from "@/lib/default-branch";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
-import { compareHref, logHref, tagHref } from "@/lib/repo-href";
+import { commitHref, compareHref, logHref, tagHref } from "@/lib/repo-href";
 import { repoFromPathname } from "@/lib/repo-param";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -231,7 +231,7 @@ export default function RefsView({ repo }: RefsViewProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Commit</TableHead>
+                <TableHead>Object</TableHead>
                 <TableHead>Message</TableHead>
                 <TableHead>Tagged</TableHead>
                 <TableHead>Compare</TableHead>
@@ -246,7 +246,20 @@ export default function RefsView({ repo }: RefsViewProps) {
                       {tag.name}
                     </a>
                   </TableCell>
-                  <TableCell className="text-muted-foreground font-mono">{tag.target.slice(0, 12)}</TableCell>
+                  <TableCell className="text-muted-foreground font-mono">
+                    {/* Only a commit target is browsable today — cgit's
+                        `cgit_object_link()` parity for tree/blob/nested-tag
+                        targets is a separate by-oid object page (docs/ROADMAP.md's
+                        "Tags and refs" gap), not yet wired up here. */}
+                    {tag.object.type === "commit" ? (
+                      <a className="hover:underline" href={commitHref(resolvedRepo, tag.object.sha)}>
+                        {tag.object.sha.slice(0, 12)}
+                      </a>
+                    ) : (
+                      <span title={tag.object.type}>{tag.object.sha.slice(0, 12)}</span>
+                    )}
+                    {tag.object.type !== "commit" && <span className="not-italic"> ({tag.object.type})</span>}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{tag.annotation ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {tag.tagged_at ? (
@@ -256,7 +269,9 @@ export default function RefsView({ repo }: RefsViewProps) {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {defaultBranch === null ? null : (
+                    {/* A tag that never reaches a commit has nothing to compare or
+                        archive (docs/API.md's `target: null` condition). */}
+                    {defaultBranch === null || tag.target === null ? null : (
                       <a
                         className="hover:underline"
                         aria-label={`Compare ${tag.name} with ${defaultBranch}`}
@@ -267,7 +282,7 @@ export default function RefsView({ repo }: RefsViewProps) {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    <ArchiveLinks repo={resolvedRepo} tagName={tag.name} />
+                    {tag.target !== null && <ArchiveLinks repo={resolvedRepo} tagName={tag.name} />}
                   </TableCell>
                 </TableRow>
               ))}

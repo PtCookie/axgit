@@ -185,6 +185,10 @@ async fn get_refs_returns_annotated_tag_with_annotation_and_tagged_at() {
     );
     // Annotated tag target is the peeled commit, not the tag object.
     assert_eq!(tag["target"], json["branches"][1]["target"]);
+    // A tag reaching a commit reports that commit as its dereference too —
+    // same as `GET /tags/{name}` would (docs/DECISIONS.md #53).
+    assert_eq!(tag["object"]["sha"], tag["target"]);
+    assert_eq!(tag["object"]["type"], "commit");
 }
 
 #[tokio::test]
@@ -204,6 +208,35 @@ async fn get_refs_returns_lightweight_tag_with_null_annotation() {
         "unexpected response: {json}"
     );
     assert_eq!(tag["target"], json["branches"][1]["target"]);
+    assert_eq!(tag["object"]["sha"], tag["target"]);
+    assert_eq!(tag["object"]["type"], "commit");
+}
+
+#[tokio::test]
+async fn get_refs_reports_object_type_and_null_target_for_a_tag_on_a_blob() {
+    let root = setup_fixtures();
+    let alpha = root.path().join("alpha.git");
+    let blob = common::git_output(&alpha, &["rev-parse", "main:README.md"], &[]);
+    common::add_annotated_tag_on(&alpha, "blob-tag", "a blob tag", &blob);
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha/refs").await;
+
+    let tag = json["tags"]
+        .as_array()
+        .expect("tags is not an array")
+        .iter()
+        .find(|tag| tag["name"] == "blob-tag")
+        .expect("blob-tag missing from tags");
+    assert_eq!(
+        (
+            tag["object"]["sha"].as_str(),
+            tag["object"]["type"].as_str()
+        ),
+        (Some(blob.as_str()), Some("blob")),
+        "unexpected response: {json}"
+    );
+    // A tag on a blob never reaches a commit — no Compare/Download target.
+    assert_eq!(tag["target"], Value::Null);
 }
 
 #[tokio::test]

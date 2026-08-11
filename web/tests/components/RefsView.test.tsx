@@ -25,7 +25,13 @@ const REFS: RefsInfo = {
   ],
   remote_branches: [],
   tags: [
-    { name: "v1.0.0", target: "def456abc123", annotation: "First release", tagged_at: "2026-01-01T00:00:00+09:00" },
+    {
+      name: "v1.0.0",
+      object: { sha: "def456abc123", type: "commit" },
+      target: "def456abc123",
+      annotation: "First release",
+      tagged_at: "2026-01-01T00:00:00+09:00",
+    },
   ],
 };
 
@@ -125,7 +131,16 @@ describe("RefsView", () => {
     mockedGetRefs.mockResolvedValue({
       branches: REFS.branches,
       remote_branches: REFS.remote_branches,
-      tags: [...REFS.tags, { name: "release/1.0", target: "abc123", annotation: null, tagged_at: null }],
+      tags: [
+        {
+          name: "release/1.0",
+          object: { sha: "abc123", type: "commit" },
+          target: "abc123",
+          annotation: null,
+          tagged_at: null,
+        },
+        ...REFS.tags,
+      ],
     });
     render(<RefsView repo="git-compose" />);
 
@@ -141,6 +156,29 @@ describe("RefsView", () => {
     await expect.element(page.getByRole("link", { name: "Download main as tar.gz" })).not.toBeInTheDocument();
   });
 
+  it("shows the object type and no Compare/Download for a tag that never reaches a commit", async () => {
+    mockedGetRefs.mockResolvedValue({
+      branches: REFS.branches,
+      remote_branches: REFS.remote_branches,
+      tags: [
+        {
+          name: "readme-blob",
+          object: { sha: "deadbeef0123", type: "blob" },
+          target: null,
+          annotation: null,
+          tagged_at: null,
+        },
+      ],
+    });
+    render(<RefsView repo="git-compose" />);
+
+    await expect.element(page.getByText("(blob)")).toBeVisible();
+    await expect.element(page.getByRole("link", { name: "Compare readme-blob with main" })).not.toBeInTheDocument();
+    await expect.element(page.getByRole("link", { name: "Download readme-blob as tar.gz" })).not.toBeInTheDocument();
+    // The object sha itself isn't linked either — no by-oid route exists yet.
+    await expect.element(page.getByRole("link", { name: "deadbeef0123" })).not.toBeInTheDocument();
+  });
+
   it("links a tag name to its tag detail page", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
     render(<RefsView repo="git-compose" />);
@@ -154,7 +192,16 @@ describe("RefsView", () => {
     mockedGetRefs.mockResolvedValue({
       branches: REFS.branches,
       remote_branches: REFS.remote_branches,
-      tags: [...REFS.tags, { name: "release/1.0", target: "abc123", annotation: null, tagged_at: null }],
+      tags: [
+        {
+          name: "release/1.0",
+          object: { sha: "abc123", type: "commit" },
+          target: "abc123",
+          annotation: null,
+          tagged_at: null,
+        },
+        ...REFS.tags,
+      ],
     });
     render(<RefsView repo="git-compose" />);
 

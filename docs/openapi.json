@@ -3149,6 +3149,7 @@
         "description": "Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).",
         "required": [
           "name",
+          "object",
           "target",
           "annotation",
           "tagged_at"
@@ -3158,9 +3159,16 @@
             "type": "string",
             "example": "v1.0.0"
           },
+          "object": {
+            "$ref": "#/components/schemas/TagObject",
+            "description": "The tag's one-level dereference — same meaning as `GET /tags/{name}`'s\n`object` (docs/DECISIONS.md #51/#53)."
+          },
           "target": {
-            "type": "string",
-            "description": "Peeled commit sha (not the tag object), so clients can link to the commit."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Fully peeled commit sha, same meaning as `GET /tags/{name}`'s\n`target`. `None` when the tag chain never reaches a commit (a tag on\na tree or blob) — also exactly when an archive download and a\nCompare link are unavailable for this tag."
           },
           "annotation": {
             "type": [

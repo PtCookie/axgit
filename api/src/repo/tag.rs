@@ -7,7 +7,7 @@
 //! `cgit_object_link()` input). The two endpoints keep `target` meaning the
 //! same thing so a reader never has to hold two definitions in their head.
 
-use git2::{ObjectType, Repository};
+use git2::{ObjectType, Reference, Repository};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -69,17 +69,16 @@ pub struct TagDetail {
     pub tagged_at: Option<String>,
 }
 
-/// Reads one tag's detail off `refs/tags/{name}`. Never `?`-propagates a
-/// git2 error — like `repo::resolve::resolve_commit`, any lookup or peeling
-/// failure becomes [`ApiError::RefNotFound`] so a corrupt or dangling ref
-/// answers 404, not 500.
-pub fn detail(repo: &Repository, name: &str) -> Result<TagDetail, ApiError> {
-    let name = name.trim_matches('/');
-    let not_found = || ApiError::RefNotFound(name.to_owned());
-    let reference = repo
-        .find_reference(&format!("refs/tags/{name}"))
-        .map_err(|_| not_found())?;
-
+/// One-level dereference of a tag reference, plus the fully peeled commit
+/// sha (`None` when the chain never reaches one) — shared by [`detail`] and
+/// `refs::tags`, so `target`'s meaning ("peeled commit sha") and `object`'s
+/// ("one dereference") stay defined in exactly one place (docs/DECISIONS.md
+/// #51). `not_found` is called (and its error returned) for any lookup or
+/// peeling failure, same "404, not 500" rule as [`detail`].
+pub(crate) fn dereference(
+    reference: &Reference,
+    not_found: impl Fn() -> ApiError,
+) -> Result<(TagObject, Option<String>), ApiError> {
     // `Some` only when the ref's target chain reaches a tag object — true for
     // every annotated tag, including a nested one (peeling an object to its
     // own type is a no-op, so this returns the outermost tag, not the
@@ -87,7 +86,7 @@ pub fn detail(repo: &Repository, name: &str) -> Result<TagDetail, ApiError> {
     let tag = reference.peel_to_tag().ok();
     let object = match &tag {
         Some(tag) => {
-            let kind = tag.target_type().ok_or_else(not_found)?;
+            let kind = tag.target_type().ok_or_else(&not_found)?;
             TagObject {
                 sha: tag.target_id().to_string(),
                 kind: object_kind(kind),
@@ -95,7 +94,7 @@ pub fn detail(repo: &Repository, name: &str) -> Result<TagDetail, ApiError> {
         }
         None => {
             let direct = reference.peel(ObjectType::Any).map_err(|_| not_found())?;
-            let kind = direct.kind().ok_or_else(not_found)?;
+            let kind = direct.kind().ok_or_else(&not_found)?;
             TagObject {
                 sha: direct.id().to_string(),
                 kind: object_kind(kind),
@@ -107,6 +106,27 @@ pub fn detail(repo: &Repository, name: &str) -> Result<TagDetail, ApiError> {
         .peel_to_commit()
         .ok()
         .map(|commit| commit.id().to_string());
+
+    Ok((object, target))
+}
+
+/// Reads one tag's detail off `refs/tags/{name}`. Never `?`-propagates a
+/// git2 error — like `repo::resolve::resolve_commit`, any lookup or peeling
+/// failure becomes [`ApiError::RefNotFound`] so a corrupt or dangling ref
+/// answers 404, not 500.
+pub fn detail(repo: &Repository, name: &str) -> Result<TagDetail, ApiError> {
+    let name = name.trim_matches('/');
+    let not_found = || ApiError::RefNotFound(name.to_owned());
+    let reference = repo
+        .find_reference(&format!("refs/tags/{name}"))
+        .map_err(|_| not_found())?;
+
+    let (object, target) = dereference(&reference, not_found)?;
+    // `dereference` above already computed `tag` internally; `detail` still
+    // needs the tag object itself (message/tagger/tagged_at live only on it,
+    // not on `TagObject`), so it's re-peeled here — cheap (in-memory object
+    // lookup, no I/O beyond what `dereference` already did).
+    let tag = reference.peel_to_tag().ok();
 
     let message = tag
         .as_ref()

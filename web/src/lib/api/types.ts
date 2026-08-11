@@ -1009,8 +1009,18 @@ export interface components {
     TagRef: {
       /** @example v1.0.0 */
       name: string;
-      /** @description Peeled commit sha (not the tag object), so clients can link to the commit. */
-      target: string;
+      /**
+       * @description The tag's one-level dereference — same meaning as `GET /tags/{name}`'s
+       *     `object` (docs/DECISIONS.md #51/#53).
+       */
+      object: components["schemas"]["TagObject"];
+      /**
+       * @description Fully peeled commit sha, same meaning as `GET /tags/{name}`'s
+       *     `target`. `None` when the tag chain never reaches a commit (a tag on
+       *     a tree or blob) — also exactly when an archive download and a
+       *     Compare link are unavailable for this tag.
+       */
+      target: string | null;
       /** @description First line of the tag message. `None` for lightweight tags. */
       annotation: string | null;
       /** @description Tagger date (RFC 3339). `None` for lightweight tags. */

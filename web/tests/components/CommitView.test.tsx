@@ -200,7 +200,15 @@ describe("CommitView", () => {
         { name: "dev", target: DETAIL.sha, committed_at: null },
       ],
       remote_branches: [],
-      tags: [{ name: "v1.0.0", target: DETAIL.sha, annotation: null, tagged_at: null }],
+      tags: [
+        {
+          name: "v1.0.0",
+          object: { sha: DETAIL.sha, type: "commit" },
+          target: DETAIL.sha,
+          annotation: null,
+          tagged_at: null,
+        },
+      ],
     });
     render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 

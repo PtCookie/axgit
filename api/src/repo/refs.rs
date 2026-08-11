@@ -1,8 +1,10 @@
-use git2::{BranchType, ObjectType, ReferenceType, Repository};
+use git2::{BranchType, ReferenceType, Repository};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use super::meta;
+use super::tag::{self, TagObject};
+use crate::error::ApiError;
 
 /// Branch entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).
 #[derive(Debug, Serialize, ToSchema)]
@@ -21,8 +23,15 @@ pub struct BranchRef {
 pub struct TagRef {
     #[schema(example = "v1.0.0")]
     pub name: String,
-    /// Peeled commit sha (not the tag object), so clients can link to the commit.
-    pub target: String,
+    /// The tag's one-level dereference — same meaning as `GET /tags/{name}`'s
+    /// `object` (docs/DECISIONS.md #51/#53).
+    pub object: TagObject,
+    /// Fully peeled commit sha, same meaning as `GET /tags/{name}`'s
+    /// `target`. `None` when the tag chain never reaches a commit (a tag on
+    /// a tree or blob) — also exactly when an archive download and a
+    /// Compare link are unavailable for this tag.
+    #[schema(required = true)]
+    pub target: Option<String>,
     /// First line of the tag message. `None` for lightweight tags.
     #[schema(required = true)]
     pub annotation: Option<String>,
@@ -97,13 +106,16 @@ fn tags(repo: &Repository) -> anyhow::Result<Vec<TagRef>> {
         let reference = repo.find_reference(&format!("refs/tags/{name}"))?;
         // `Some` only for annotated tags; lightweight tags have no tag object.
         let tag = reference.peel_to_tag().ok();
-        // Tags on non-commit objects (rare) fall back to the peeled object id.
-        let target = match reference.peel_to_commit() {
-            Ok(commit) => commit.id(),
-            Err(_) => match reference.peel(ObjectType::Any) {
-                Ok(object) => object.id(),
-                Err(_) => continue,
-            },
+        // `tag::dereference` is the same one-level-dereference-plus-peeled-
+        // commit logic `GET /tags/{name}` uses — a tag on a non-commit object
+        // now reports its real kind via `object.type` instead of `target`
+        // silently holding a non-commit oid (the bug docs/DECISIONS.md #53
+        // fixes). A dangling/unresolvable tag ref is skipped, same as before.
+        let name_owned = name.to_owned();
+        let Ok((object, target)) =
+            tag::dereference(&reference, || ApiError::RefNotFound(name_owned.clone()))
+        else {
+            continue;
         };
         let annotation = tag
             .as_ref()
@@ -116,7 +128,8 @@ fn tags(repo: &Repository) -> anyhow::Result<Vec<TagRef>> {
             .map(|zoned| meta::format_rfc3339(&zoned));
         tags.push(TagRef {
             name: name.to_owned(),
-            target: target.to_string(),
+            object,
+            target,
             annotation,
             tagged_at,
         });

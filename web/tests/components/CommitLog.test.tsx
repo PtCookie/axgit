@@ -177,7 +177,15 @@ describe("CommitLog", () => {
     mockedGetRefs.mockResolvedValue({
       branches: [],
       remote_branches: [],
-      tags: [{ name: "v1.0.0", target: PAGE.commits[0].sha, annotation: null, tagged_at: null }],
+      tags: [
+        {
+          name: "v1.0.0",
+          object: { sha: PAGE.commits[0].sha, type: "commit" },
+          target: PAGE.commits[0].sha,
+          annotation: null,
+          tagged_at: null,
+        },
+      ],
     });
     render(<CommitLog repo="git-compose" />);
 

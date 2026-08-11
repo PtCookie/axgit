@@ -20,7 +20,17 @@ describe("indexRefsBySha", () => {
 
   it("indexes a tag by its target sha", () => {
     const bySha = indexRefsBySha(
-      refs({ tags: [{ name: "v1.0.0", target: "def456", annotation: null, tagged_at: null }] }),
+      refs({
+        tags: [
+          {
+            name: "v1.0.0",
+            object: { sha: "def456", type: "commit" },
+            target: "def456",
+            annotation: null,
+            tagged_at: null,
+          },
+        ],
+      }),
     );
 
     expect(bySha.get("def456")).toEqual([{ name: "v1.0.0", kind: "tag" }]);
@@ -30,7 +40,15 @@ describe("indexRefsBySha", () => {
     const bySha = indexRefsBySha(
       refs({
         branches: [{ name: "main", target: "abc123", committed_at: null }],
-        tags: [{ name: "v1.0.0", target: "abc123", annotation: null, tagged_at: null }],
+        tags: [
+          {
+            name: "v1.0.0",
+            object: { sha: "abc123", type: "commit" },
+            target: "abc123",
+            annotation: null,
+            tagged_at: null,
+          },
+        ],
       }),
     );
 
@@ -38,6 +56,24 @@ describe("indexRefsBySha", () => {
       { name: "main", kind: "branch" },
       { name: "v1.0.0", kind: "tag" },
     ]);
+  });
+
+  it("skips a tag whose target is null (a tag that never reaches a commit)", () => {
+    const bySha = indexRefsBySha(
+      refs({
+        tags: [
+          {
+            name: "blob-tag",
+            object: { sha: "def456", type: "blob" },
+            target: null,
+            annotation: null,
+            tagged_at: null,
+          },
+        ],
+      }),
+    );
+
+    expect(bySha.size).toBe(0);
   });
 
   it("collects multiple branches pointing at the same commit", () => {

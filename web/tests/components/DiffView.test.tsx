@@ -160,7 +160,9 @@ describe("DiffView", () => {
     mockedGetRefs.mockResolvedValue({
       branches: [{ name: "main", target: TO_SHA, committed_at: null }],
       remote_branches: [],
-      tags: [{ name: "v1.0.0", target: TO_SHA, annotation: null, tagged_at: null }],
+      tags: [
+        { name: "v1.0.0", object: { sha: TO_SHA, type: "commit" }, target: TO_SHA, annotation: null, tagged_at: null },
+      ],
     });
     render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
 

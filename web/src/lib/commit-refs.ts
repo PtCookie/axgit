@@ -25,7 +25,11 @@ export function indexRefsBySha(refs: RefsInfo): Map<string, CommitRef[]> {
     push(branch.target, { name: branch.name, kind: "branch" });
   }
   for (const tag of refs.tags) {
-    push(tag.target, { name: tag.name, kind: "tag" });
+    // `null` when the tag never reaches a commit (a tag on a tree or blob) —
+    // nothing to index it under, so it just carries no badge anywhere.
+    if (tag.target !== null) {
+      push(tag.target, { name: tag.name, kind: "tag" });
+    }
   }
   return bySha;
 }

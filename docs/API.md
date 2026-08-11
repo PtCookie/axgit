@@ -127,7 +127,15 @@ branch/tag counts, and the clone URL.
 {
   "branches": [{ "name": "main", "target": "<sha>", "committed_at": "..." }],
   "remote_branches": [{ "name": "origin/main", "target": "<sha>", "committed_at": "..." }],
-  "tags": [{ "name": "v1.0.0", "target": "<sha>", "annotation": "...", "tagged_at": "..." }]
+  "tags": [
+    {
+      "name": "v1.0.0",
+      "object": { "sha": "<sha>", "type": "commit" },
+      "target": "<sha, or null>",
+      "annotation": "...",
+      "tagged_at": "..."
+    }
+  ]
 }
 ```
 
@@ -143,12 +151,17 @@ branch/tag counts, and the clone URL.
   repository configured that way by hand, not for anything axgit itself produces. A remote's own
   symbolic `HEAD` (e.g. `origin/HEAD`) is omitted — it's an alias for another row, not a branch of
   its own.
-- `tags[].target`: the **peeled commit sha** (for annotated tags, the target commit, not the tag
-  object itself).
+- `tags[].object`: the tag's one-level dereference — same shape and meaning as `GET /tags/{name}`'s
+  `object` below (`sha` + `type`, one of `commit`/`tree`/`blob`/`tag`). For a tag that reaches a
+  commit this is that commit, same as `target`; for a tag on a tree or blob (or a nested tag) it's
+  the actual target, distinguishing it from a commit sha at a glance instead of requiring a second
+  request to `GET /tags/{name}`.
+- `tags[].target`: the **fully peeled commit sha**, same meaning as `GET /tags/{name}`'s `target`.
+  `null` when the tag chain never reaches a commit (a tag on a tree or blob) — also exactly when an
+  archive download and a Compare link are unavailable for this tag.
 - `tags[].annotation`: the first line of the tag message. `tagged_at`: the tagger timestamp.
   **Both are `null` for lightweight tags.**
-- For the tag object's own sha, its full message, the tagger, and the tag's un-peeled (one
-  dereference) target, see `GET /tags/{name}` below.
+- For the tag object's own sha, its full message, and the tagger, see `GET /tags/{name}` below.
 
 ### `GET /api/v1/repos/{repo}/tags/{name}`
 
