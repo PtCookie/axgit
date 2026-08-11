@@ -45,6 +45,7 @@ interface CommitLogProps {
   cursor?: string;
   msg?: string;
   follow?: string;
+  stat?: string;
 }
 
 /** Also rendered statically into the page shell as the island's
@@ -66,6 +67,7 @@ export default function CommitLog({
   cursor: cursorParam,
   msg: msgParam,
   follow: followParam,
+  stat: statParam,
 }: CommitLogProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const resolvedRef = refParam ?? paramFromSearch("ref", window.location.search);
@@ -73,10 +75,12 @@ export default function CommitLog({
   const resolvedCursor = cursorParam ?? paramFromSearch("cursor", window.location.search);
   const resolvedMsg = msgParam ?? paramFromSearch("msg", window.location.search);
   const resolvedFollow = followParam ?? paramFromSearch("follow", window.location.search);
+  const resolvedStat = statParam ?? paramFromSearch("stat", window.location.search);
   const expanded = resolvedMsg === "1";
   // Meaningless without a path filter (docs/API.md's `follow` rule) — dropped
   // from every href built below whenever `resolvedPath` is unset.
   const following = Boolean(resolvedPath) && resolvedFollow === "1";
+  const showStat = resolvedStat === "1";
   const [state, setState] = useState<State>({ status: "loading" });
   const refsBySha = useCommitRefs(resolvedRepo);
 
@@ -97,6 +101,7 @@ export default function CommitLog({
       cursor: resolvedCursor,
       msg: expanded ? 1 : undefined,
       follow: following ? 1 : undefined,
+      stat: showStat ? 1 : undefined,
     })
       .then((page) => {
         if (!cancelled) {
@@ -116,7 +121,7 @@ export default function CommitLog({
     return () => {
       cancelled = true;
     };
-  }, [resolvedRepo, resolvedRef, resolvedPath, resolvedCursor, expanded, following]);
+  }, [resolvedRepo, resolvedRef, resolvedPath, resolvedCursor, expanded, following, showStat]);
 
   if (state.status === "loading") {
     return <CommitLogSkeleton />;
@@ -137,12 +142,16 @@ export default function CommitLog({
     path: resolvedPath,
     msg: resolvedMsg,
     follow: following ? "1" : undefined,
+    stat: showStat ? "1" : undefined,
   };
   // Hidden under a path filter: `touches_path` yields a subsequence, so
   // displayed commits are usually not each other's parents and edges would
   // be arbitrary (docs/DECISIONS.md #33).
   const showGraph = !resolvedPath && page.commits.length > 0;
   const graph = showGraph ? layoutCommitGraph(page.commits, { continuesAbove: Boolean(resolvedCursor) }) : null;
+  // Author/Summary/Commit/Committed, plus Files/Lines when `stat` is on —
+  // the expanded-message row's colSpan must track this (docs/DECISIONS.md #57).
+  const columnCount = 4 + (showStat ? 2 : 0);
 
   return (
     <div className="space-y-4">
@@ -177,6 +186,17 @@ export default function CommitLog({
             })}
           >
             {expanded ? "Collapse messages" : "Expand messages"}
+          </a>{" "}
+          ·{" "}
+          <a
+            className="text-muted-foreground hover:text-foreground underline"
+            href={logHref(resolvedRepo, {
+              ...current,
+              cursor: resolvedCursor,
+              stat: showStat ? undefined : "1",
+            })}
+          >
+            {showStat ? "Hide changes" : "Show changes"}
           </a>
         </p>
       )}
@@ -196,6 +216,12 @@ export default function CommitLog({
               <TableHead>Summary</TableHead>
               <TableHead>Commit</TableHead>
               <TableHead>Committed</TableHead>
+              {showStat && (
+                <>
+                  <TableHead className="text-right">Files</TableHead>
+                  <TableHead className="text-right">Lines</TableHead>
+                </>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -239,6 +265,16 @@ export default function CommitLog({
                       "—"
                     )}
                   </TableCell>
+                  {showStat && (
+                    <>
+                      <TableCell className="text-muted-foreground text-right">
+                        {commit.stat ? commit.stat.files_changed : "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-right font-mono">
+                        {commit.stat ? `+${commit.stat.additions} −${commit.stat.deletions}` : "—"}
+                      </TableCell>
+                    </>
+                  )}
                 </TableRow>
                 {expanded && commit.body && (
                   <TableRow>
@@ -247,7 +283,7 @@ export default function CommitLog({
                         <CommitGraphSpacer row={graph.rows[index]} lanes={graph.lanes} />
                       </TableCell>
                     )}
-                    <TableCell colSpan={4} className="pt-0 pb-3 align-top">
+                    <TableCell colSpan={columnCount} className="pt-0 pb-3 align-top">
                       <pre className="text-muted-foreground text-sm whitespace-pre-wrap">
                         {linkify(commit.body, { repo: resolvedRepo })}
                       </pre>

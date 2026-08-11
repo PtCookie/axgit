@@ -49,7 +49,14 @@ export function objectHref(repo: string, oid: string): string {
  *  share it too. */
 export function logHref(
   repo: string,
-  params: { ref?: string; path?: string; cursor?: string; msg?: string; follow?: string } = {},
+  params: {
+    ref?: string;
+    path?: string;
+    cursor?: string;
+    msg?: string;
+    follow?: string;
+    stat?: string;
+  } = {},
 ): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

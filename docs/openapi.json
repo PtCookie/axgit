@@ -420,7 +420,7 @@
           "commits"
         ],
         "summary": "Commit log",
-        "description": "Cursor-paginated, newest first. Merge commits survive the `path` filter\nonly when the path differs from **every** parent — an approximation of\n`git log -- <path>` simplification. `follow=1` extends the `path` filter\nacross whole-file renames (cgit's `enable-follow-links`).",
+        "description": "Cursor-paginated, newest first. Merge commits survive the `path` filter\nonly when the path differs from **every** parent — an approximation of\n`git log -- <path>` simplification. `follow=1` extends the `path` filter\nacross whole-file renames (cgit's `enable-follow-links`). `stat=1` adds\neach entry's first-parent file/line counts.",
         "operationId": "list_commits",
         "parameters": [
           {
@@ -487,6 +487,15 @@
             "name": "follow",
             "in": "query",
             "description": "When `1`/`true`, the `path` filter follows the file across whole-file\nrenames (cgit's `enable-follow-links`). Ignored when `path` is absent.\nAbsent/`0`/`false` by default.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "stat",
+            "in": "query",
+            "description": "When `1`/`true`, each log entry also carries first-parent file/line\ncounts (cgit's `enable-log-filecount`/`enable-log-linecount` merged\ninto one flag). Absent/`0`/`false` by default.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -2524,6 +2533,17 @@
               "null"
             ],
             "description": "The path filter's previous name, when this commit is the rename this\nentry was followed across (`follow=1`, docs/DECISIONS.md #56). Present\nonly on the renaming commit itself, never on the commits before or\nafter it — the key is omitted, not `null`, everywhere else (same rule\nas `body`, #44)."
+          },
+          "stat": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StatCounts",
+                "description": "File/line counts against the first parent, present only when the\nrequest asked for it (`stat=1`, docs/DECISIONS.md #57). Restricted to\nthe `path` filter when one is active (the `follow`-tracked path, at\nthe point of this commit). **The key itself is omitted**, not set to\n`null`, when `stat` is off — same convention as `body` (#44)."
+              }
+            ]
           }
         }
       },
@@ -3308,6 +3328,29 @@
               "$ref": "#/components/schemas/CommitInfo"
             },
             "description": "`message` results; empty otherwise. Reuses the commit log's shape so\nthe frontend can render matches the same way as log rows."
+          }
+        }
+      },
+      "StatCounts": {
+        "type": "object",
+        "description": "File/line counts for the commit log's `stat=1` column (cgit's\n`enable-log-filecount`/`enable-log-linecount`, docs/DECISIONS.md #57).",
+        "required": [
+          "files_changed",
+          "additions",
+          "deletions"
+        ],
+        "properties": {
+          "files_changed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "additions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deletions": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },

@@ -72,6 +72,8 @@ export interface ListCommitsParams {
   /** `1` to follow the `path` filter across whole-file renames (`follow=1`).
    *  Ignored when `path` is unset. */
   follow?: number;
+  /** `1` to have each entry carry first-parent file/line counts (`stat=1`). */
+  stat?: number;
 }
 
 /** Builds a query string from the given params, omitting any that are unset

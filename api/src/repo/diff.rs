@@ -188,6 +188,39 @@ pub fn diffstat(repo: &Repository, commit: &Commit) -> Result<DiffStat, ApiError
     diffstat_for_trees(repo, old_tree.as_ref(), Some(&new_tree))
 }
 
+/// File/line counts for the commit log's `stat=1` column (cgit's
+/// `enable-log-filecount`/`enable-log-linecount`, docs/DECISIONS.md #57).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StatCounts {
+    pub files_changed: usize,
+    pub additions: usize,
+    pub deletions: usize,
+}
+
+/// First-parent stat counts, restricted to `path` when given (the log's own
+/// `path` filter, or its `follow`-tracked equivalent at the time of this
+/// commit). A single libgit2 `Diff::stats()` call — unlike [`diffstat`], this
+/// never loads a per-file `Patch` (no rename/status detail needed), which is
+/// what keeps it cheap enough to run once per log row.
+pub fn stat_counts(
+    repo: &Repository,
+    commit: &Commit,
+    path: Option<&Path>,
+) -> Result<StatCounts, ApiError> {
+    let (old_tree, new_tree) = commit_trees(commit)?;
+    let params = DiffParams {
+        path,
+        ..DiffParams::default()
+    };
+    let diff = build_diff(repo, old_tree.as_ref(), Some(&new_tree), &params)?;
+    let stats = diff.stats()?;
+    Ok(StatCounts {
+        files_changed: stats.files_changed(),
+        additions: stats.insertions(),
+        deletions: stats.deletions(),
+    })
+}
+
 /// Structured diff against the first parent, honoring `params`. A `path` the
 /// commit's changes don't touch yields an empty file list, not an error —
 /// same contract as the log endpoint's `path` filter.

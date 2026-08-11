@@ -5,6 +5,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
 
+use super::diff::StatCounts;
 use super::{diff, meta};
 use crate::error::ApiError;
 
@@ -43,6 +44,13 @@ pub struct CommitInfo {
     /// as `body`, #44).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub renamed_from: Option<String>,
+    /// File/line counts against the first parent, present only when the
+    /// request asked for it (`stat=1`, docs/DECISIONS.md #57). Restricted to
+    /// the `path` filter when one is active (the `follow`-tracked path, at
+    /// the point of this commit). **The key itself is omitted**, not set to
+    /// `null`, when `stat` is off — same convention as `body` (#44).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stat: Option<StatCounts>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -162,6 +170,9 @@ pub struct LogParams<'a> {
     /// docs/DECISIONS.md #56). Ignored when `path` is `None` — there is
     /// nothing to follow.
     pub follow: bool,
+    /// Carry each entry's first-parent file/line counts (`stat=1`,
+    /// docs/DECISIONS.md #57).
+    pub include_stat: bool,
 }
 
 /// Bounds how many rename lookups (each a full first-parent tree diff via
@@ -188,6 +199,7 @@ pub fn log(repo: &Repository, start: Oid, params: &LogParams<'_>) -> Result<Comm
         limit,
         include_body,
         follow,
+        include_stat,
     } = params;
     let mut revwalk = repo.revwalk()?;
     revwalk.push(start)?;
@@ -202,7 +214,12 @@ pub fn log(repo: &Repository, start: Oid, params: &LogParams<'_>) -> Result<Comm
         let oid = oid?;
         let commit = repo.find_commit(oid)?;
         let mut renamed_from = None;
-        if let Some(path) = tracked.as_deref() {
+        // Snapshot the path filter as it stands for *this* commit, before a
+        // rename crossing (below) mutates `tracked` for older ones — `stat`
+        // must be computed against the same path `touches_path` just
+        // filtered on, not the name it switches to afterward.
+        let filter_path = tracked.clone();
+        if let Some(path) = filter_path.as_deref() {
             if !touches_path(&commit, path) {
                 continue;
             }
@@ -236,6 +253,9 @@ pub fn log(repo: &Repository, start: Oid, params: &LogParams<'_>) -> Result<Comm
             commit_info(&commit)
         };
         info.renamed_from = renamed_from;
+        if include_stat {
+            info.stat = Some(diff::stat_counts(repo, &commit, filter_path.as_deref())?);
+        }
         commits.push(info);
     }
     let next_cursor = has_more.then(|| {
@@ -262,6 +282,7 @@ pub(crate) fn commit_info(commit: &Commit) -> CommitInfo {
         authored_at: time_rfc3339(commit.author().when()),
         parents: commit.parent_ids().map(|id| id.to_string()).collect(),
         renamed_from: None,
+        stat: None,
     }
 }
 
@@ -412,6 +433,7 @@ mod tests {
             limit: 10,
             include_body: false,
             follow: true,
+            include_stat: false,
         };
         let page = log(&repo, child, &params).unwrap();
         let shas: Vec<_> = page.commits.iter().map(|c| c.sha.as_str()).collect();
@@ -432,5 +454,43 @@ mod tests {
         let shas: Vec<_> = page.commits.iter().map(|c| c.sha.as_str()).collect();
         assert_eq!(shas, [child.to_string(), renamed.to_string()]);
         assert!(page.commits.iter().all(|c| c.renamed_from.is_none()));
+    }
+
+    #[test]
+    fn log_should_attach_stat_counts_only_when_requested() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files(&repo, None, &[("a.txt", "one\n")]);
+        let child = commit_files(
+            &repo,
+            Some(root),
+            &[("a.txt", "one\ntwo\n"), ("b.txt", "b\n")],
+        );
+
+        let params = LogParams {
+            path: None,
+            skip: 0,
+            limit: 10,
+            include_body: false,
+            follow: false,
+            include_stat: true,
+        };
+        let page = log(&repo, child, &params).unwrap();
+        let child_stat = page.commits[0].stat.as_ref().expect("stat was requested");
+        assert_eq!(child_stat.files_changed, 2);
+        assert_eq!(child_stat.additions, 2);
+        assert_eq!(child_stat.deletions, 0);
+        let root_stat = page.commits[1].stat.as_ref().expect("stat was requested");
+        assert_eq!(root_stat.files_changed, 1);
+        assert_eq!(root_stat.additions, 1);
+        assert_eq!(root_stat.deletions, 0);
+
+        // Without `include_stat`, the key is omitted entirely rather than `None`.
+        let without_stat = LogParams {
+            include_stat: false,
+            ..params
+        };
+        let page = log(&repo, child, &without_stat).unwrap();
+        assert!(page.commits.iter().all(|c| c.stat.is_none()));
     }
 }

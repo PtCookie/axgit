@@ -248,7 +248,7 @@ Blob bytes by id — the by-oid analogue of `GET /raw/{ref}/{path...}`. Same `{o
 there's no extension to guess a `Content-Type` from: always `text/plain; charset=utf-8` or
 `application/octet-stream`, and always `X-Content-Type-Options: nosniff`. Always immutably cached.
 
-### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=&follow=`
+### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=&follow=&stat=`
 
 Commit log. When `path` is given, only commits that changed that path (cgit log's path filter).
 
@@ -258,7 +258,8 @@ Commit log. When `path` is given, only commits that changed that path (cgit log'
     {
       "sha": "...", "summary": "...", "body": "...",
       "author": { "name": "...", "email_hash": "<sha256, avatar seed>" },
-      "authored_at": "...", "parents": ["..."], "renamed_from": "..."
+      "authored_at": "...", "parents": ["..."], "renamed_from": "...",
+      "stat": { "files_changed": 1, "additions": 3, "deletions": 1 }
     }
   ],
   "next_cursor": "<sha|null>"
@@ -295,6 +296,15 @@ address (the gravatar approach).
 - `renamed_from`: present only on the entry for the commit that performed the rename `follow`
   crossed, carrying the path's previous name. **The key itself is omitted**, not set to `null`, on
   every other entry and whenever `follow` is off — same convention as `body`.
+- `stat`: `0`/`1`/`true`/`false`, default off (cgit's `enable-log-filecount`/`enable-log-linecount`
+  merged into one flag — axgit has no per-repo display config to keep them independent for). When
+  on, each entry also carries `stat: { files_changed, additions, deletions }` against the **first
+  parent** (same convention as the commit detail's `diffstat`, but without its per-file breakdown —
+  `files_changed`/`additions`/`deletions` here are the same totals `diffstat.files_changed`/
+  `total_additions`/`total_deletions` would report for the same commit). Restricted to `path` when
+  one is active — the `follow`-tracked path at the point of that commit, when both are set. **The
+  `stat` key itself is omitted**, not set to `null`, when `stat` is off — same convention as `body`.
+  Any other value is `400 invalid_param`.
 - Empty repository (unborn HEAD): omitting `ref` returns `200` +
   `{"commits": [], "next_cursor": null}`. An explicit `ref` returns `404 ref_not_found`.
 - `summary`: the commit message's first line. `summary`/`authored_at` are `null` for non-UTF-8
@@ -307,9 +317,10 @@ address (the gravatar approach).
 - **Immutable caching** when the request pins the walk start to a full sha: `cursor` always does
   (the token encodes one), and `ref` does when it equals the resolved commit's full sha as a
   string. Everything else — no `ref`, a symbolic `ref`, or the empty-repository page — is `ETag` +
-  `Cache-Control: no-cache`. `path`, `limit`, `msg`, and `follow` don't affect this: for a fixed
-  walk start the page is a pure function of the request. `msg`/`follow` are part of the cache key,
-  so a `msg=1` or `follow=1` response never collides with the default one for the same request.
+  `Cache-Control: no-cache`. `path`, `limit`, `msg`, `follow`, and `stat` don't affect this: for a
+  fixed walk start the page is a pure function of the request. `msg`/`follow`/`stat` are part of
+  the cache key, so a `msg=1`/`follow=1`/`stat=1` response never collides with the default one for
+  the same request.
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}`
 

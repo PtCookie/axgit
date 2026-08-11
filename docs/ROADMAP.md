@@ -1060,6 +1060,18 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   a `renamed from <old path>` label on the row it applies to. `docs/API.md`/`docs/openapi.json`/
   `web/src/lib/api/types.ts` updated.
 
+- **Files/Lines changed columns on the commit log** (DECISIONS.md #57), closing the last "Log"
+  cgit-parity gap. `GET /commits` gained `stat=1` (cgit's `enable-log-filecount`/
+  `enable-log-linecount` merged into one flag): each entry gains a `stat: { files_changed,
+  additions, deletions }` against its first parent, restricted to the `path` filter (the
+  `follow`-tracked path at that point) when one is active. A new `diff::stat_counts` computes this
+  with a single `Diff::stats()` call per row rather than `diffstat`'s per-file `Patch` loop.
+  `CommitLog.tsx` gained a `Show changes`/`Hide changes` URL toggle next to `Expand messages`, plus
+  right-aligned `Files`/`Lines` columns rendered only when on; the expanded-message row's `colSpan`
+  became a computed column count instead of a hardcoded `4`. `docs/API.md`/`docs/openapi.json`/
+  `web/src/lib/api/types.ts` updated (new `StatCounts` schema). **"Log" now has no open items
+  left.**
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1078,13 +1090,13 @@ detail page plus per-tag downloads (#51) closed all but two items under "Tags an
 branches (#52) closed one of those two, object links for non-commit refs (#53) closed the last one
 (also closing the blob-by-oid item under "Tree and blob"), archive format coverage (#54) closed
 the last open item under "Archive", archive download links on the commit page (#55) closed the
-last open item under "Commit page", and rename following in the commit log (#56) closed one of the
-two remaining items under "Log" — **"Archive", "Tags and refs", and "Commit page" all have no open
-items left**. The remaining cgit-parity gaps are Files/Lines changed columns on the log
-(`enable-log-filecount`/`enable-log-linecount`, the last "Log" item), submodule links, single-child
-directory collapsing, and a hex dump view for binary blobs (all under "Tree and blob"), and Atom
-feed parameters (branch/path filter/`all=1`/item count) under "Feed and discovery". Pick the next
-piece of work from there, from the candidates below, or from a fresh request.
+last open item under "Commit page", and rename following (#56) plus Files/Lines changed columns
+(#57) on the commit log closed both remaining items under "Log" — **"Archive", "Tags and refs",
+"Commit page", and "Log" all have no open items left**. The remaining cgit-parity gaps are
+submodule links, single-child directory collapsing, and a hex dump view for binary blobs (all
+under "Tree and blob"), and Atom feed parameters (branch/path filter/`all=1`/item count) under
+"Feed and discovery". Pick the next piece of work from there, from the candidates below, or from a
+fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1116,8 +1128,6 @@ against axgit's routes and pages. Not urgent, no particular order — pick from 
 the candidates above. Items that turned out to be merged, or built differently on purpose, are
 recorded separately below instead of listed as gaps.
 
-- **Log**
-  - Files / Lines changed columns (`enable-log-filecount`, `enable-log-linecount`).
 - **Tree and blob**
   - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.

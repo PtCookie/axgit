@@ -414,4 +414,98 @@ describe("CommitLog", () => {
     const url = new URL(href ?? "", "http://localhost");
     expect(url.searchParams.get("msg")).toBe("1");
   });
+
+  it("shows no Files/Lines columns by default", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByText("Files").elements().length).toBe(0);
+    expect(page.getByText("Lines").elements().length).toBe(0);
+  });
+
+  it("requests stat=1 and shows Files/Lines columns when shown", async () => {
+    mockedListCommits.mockResolvedValue({
+      commits: [{ ...PAGE.commits[0], stat: { files_changed: 2, additions: 5, deletions: 1 } }],
+      next_cursor: null,
+    });
+    render(<CommitLog repo="git-compose" stat="1" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    await expect.element(page.getByText("Files")).toBeVisible();
+    await expect.element(page.getByText("Lines")).toBeVisible();
+    await expect.element(page.getByText("2", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("+5 −1")).toBeVisible();
+    expect(mockedListCommits).toHaveBeenCalledWith("git-compose", {
+      ref: undefined,
+      path: undefined,
+      cursor: undefined,
+      msg: undefined,
+      follow: undefined,
+      stat: 1,
+    });
+  });
+
+  it("shows an em dash when a shown commit carries no stat data", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" stat="1" />);
+
+    await expect.element(page.getByText("Files")).toBeVisible();
+    const row = page.getByRole("row", { name: /fix: update readme/ });
+    // One "—" for Files, one for Lines.
+    expect(row.getByText("—").elements().length).toBe(2);
+  });
+
+  it("shows a Show changes link that carries stat=1 and preserves ref/path", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" ref="main" path="src" />);
+
+    const showLink = page.getByRole("link", { name: "Show changes" });
+    await expect.element(showLink).toBeVisible();
+    const href = await showLink.element().getAttribute("href");
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.searchParams.get("stat")).toBe("1");
+    expect(url.searchParams.get("ref")).toBe("main");
+    expect(url.searchParams.get("path")).toBe("src");
+  });
+
+  it("shows a Hide changes link that drops stat and preserves ref", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" ref="main" stat="1" />);
+
+    const hideLink = page.getByRole("link", { name: "Hide changes" });
+    await expect.element(hideLink).toBeVisible();
+    const href = await hideLink.element().getAttribute("href");
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.searchParams.get("stat")).toBeNull();
+    expect(url.searchParams.get("ref")).toBe("main");
+  });
+
+  it("keeps the Older link's stat=1 when shown", async () => {
+    mockedListCommits.mockResolvedValue({ ...PAGE, next_cursor: "def456" });
+    render(<CommitLog repo="git-compose" stat="1" />);
+
+    const older = page.getByRole("link", { name: "Older →" });
+    await expect.element(older).toBeVisible();
+    const href = await older.element().getAttribute("href");
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.searchParams.get("stat")).toBe("1");
+  });
+
+  it("renders the expanded message row across the wider stat column set without error", async () => {
+    mockedListCommits.mockResolvedValue({
+      commits: [
+        {
+          ...PAGE.commits[0],
+          body: "with a body",
+          stat: { files_changed: 1, additions: 1, deletions: 0 },
+        },
+      ],
+      next_cursor: null,
+    });
+    render(<CommitLog repo="git-compose" msg="1" stat="1" />);
+
+    await expect.element(page.getByText("with a body")).toBeVisible();
+    await expect.element(page.getByText("+1 −0")).toBeVisible();
+  });
 });

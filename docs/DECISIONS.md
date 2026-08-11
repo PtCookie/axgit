@@ -2100,3 +2100,51 @@ continuing into its history under the old name, the way `git log --follow` and `
   A row whose commit carries `renamed_from` shows `renamed from <old path>` next to its `RefBadges`.
 - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /commits` gained
   `follow`, `CommitInfo` gained optional `renamed_from`).
+
+## #57 Files/Lines changed columns on the commit log (`stat=1`, cgit's `enable-log-filecount`/`enable-log-linecount`)
+
+Closed the second and last "Log" cgit-parity gap. cgit ships these as two independent flags; axgit
+merges them into one `stat=1` because there is no per-repo display config here to keep them
+separate for (`cgit.section`/`.owner`/`.desc` in the repo's `config` is metadata, not a rendering
+toggle) — splitting them would only double the cache-key value space for no real use case.
+
+- **`diff::stat_counts` is a new, cheaper sibling of `diffstat`** — one `Diff::stats()` call
+  (`files_changed()`/`insertions()`/`deletions()`) instead of a `Patch::from_diff` per file.
+  `diffstat` needs the per-file breakdown (rename pairs, per-file binary flag, the full
+  `DiffStatFile` list) for the commit detail page; the log column needs none of that, just three
+  totals, once per row — the per-file loop would have been wasted work multiplied by `limit`.
+  Both still share `commit_trees`/`build_diff`, so both stay first-parent by the same construction,
+  including for merges.
+- **Restricted to the log's own `path` filter, using the same snapshot `follow` (#56) introduced**
+  — `commits::log` now clones `tracked` into `filter_path` at the top of each loop iteration,
+  *before* a rename crossing can mutate `tracked` for older commits, and passes that snapshot to
+  both `touches_path`/`rename_source` and (new) `stat_counts`. Getting this ordering wrong — using
+  the post-mutation `tracked` — would make the renaming commit's own stat count against its *old*
+  name instead of the name `touches_path` just filtered it in under.
+  - **This restriction is `path`-only, not rename-aware**, unlike the diffstat/diff endpoints: a
+    pathspec restricts the *tree diff itself* before `find_similar` ever runs, so on the renaming
+    commit `path=<new name>&stat=1` sees the new file as a plain addition (old side, `<old name>`,
+    doesn't match the pathspec and is dropped from the diff before pairing) rather than as the
+    zero-change rename the unrestricted diffstat would show. Documented in `docs/API.md` rather
+    than special-cased — matching a real `git log --stat -- <path>` restriction, which has the
+    same property.
+- **`LogParams` gained `include_stat: bool`**, the second field to join it after `follow` (#56) —
+  the struct's docs/DECISIONS note predicting this ("a sixth parameter... already on the horizon")
+  turned out right one commit later.
+- **`CommitInfo` gained `stat: Option<StatCounts>`, key omitted (not `null`) when absent** — same
+  convention `body` (#44) and `renamed_from` (#56) both established. `commit_info()` defaults it to
+  `None`; `/search`'s reuse of `commit_info()` is unaffected, same as `renamed_from`.
+- **`stat` joined `follow`/`msg` in the cache key's `params` string** — same reasoning as both:
+  irrelevant to the immutability decision (a fixed walk start makes it a pure field-selector, like
+  `path`/`limit`), but it changes the response body, so it can't share a cache entry with the
+  default response.
+- **Web**: `CommitLog.tsx`'s `Expand messages`/`Collapse messages` link gained a sibling `Show
+  changes`/`Hide changes` toggle on the same line (URL-only, `stat=1`, preserving every other
+  param — same `msg=1` (#44)/`follow=1` (#56) precedent), plus two right-aligned `Files`/`Lines`
+  columns rendered only when `stat` is on, formatted `+{additions} −{deletions}` to match the
+  existing diffstat UI (`DiffFile.tsx`). Unlike `msg`/`follow`, `stat` doesn't depend on a `path`
+  filter — it's a plain per-repo log preference, so the toggle always renders once there are
+  commits to show. The expanded-message row's `colSpan` (previously hardcoded to `4`) became a
+  computed `columnCount` (`4 + (showStat ? 2 : 0)`) so the two extra columns don't leave it short.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /commits` gained
+  `stat`, `CommitInfo` gained optional `stat`, new `StatCounts` schema).

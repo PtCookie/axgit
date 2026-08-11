@@ -77,6 +77,7 @@ pub async fn get_feed(
                         limit: FEED_ENTRY_LIMIT,
                         include_body: false,
                         follow: false,
+                        include_stat: false,
                     },
                 )?,
                 None => CommitsPage {

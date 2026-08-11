@@ -820,3 +820,130 @@ async fn commits_follow_paginates_without_dropping_pre_rename_history() {
         ]
     );
 }
+
+#[tokio::test]
+async fn commits_omits_stat_by_default() {
+    let (root, _shas) = setup_history();
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha/commits").await;
+
+    for commit in json["commits"].as_array().unwrap() {
+        assert!(
+            commit.get("stat").is_none(),
+            "stat must be omitted without stat=1: {commit}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn commits_rejects_invalid_stat() {
+    let (root, _shas) = setup_history();
+
+    let (status, json) = common::get_json(
+        router_for(root.path()),
+        "/api/v1/repos/alpha/commits?stat=bogus",
+    )
+    .await;
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_param")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn commits_uses_a_separate_cache_entry_for_stat() {
+    let (root, _shas) = setup_history();
+    let router = router_for(root.path());
+
+    let without_stat = common::get_json(router.clone(), "/api/v1/repos/alpha/commits")
+        .await
+        .1;
+    let with_stat = common::get_json(router, "/api/v1/repos/alpha/commits?stat=1")
+        .await
+        .1;
+
+    assert!(without_stat["commits"][0].get("stat").is_none());
+    assert!(
+        with_stat["commits"][0].get("stat").is_some(),
+        "the stat=1 response should not have reused the no-stat cache entry: {with_stat}"
+    );
+}
+
+#[tokio::test]
+async fn commits_stat_matches_the_commit_detail_diffstat() {
+    let (root, shas) = setup_history();
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha/commits?stat=1").await;
+    let commits = json["commits"].as_array().unwrap();
+    assert_eq!(commits.len(), shas.len());
+
+    for commit in commits {
+        let sha = commit["sha"].as_str().unwrap();
+        let detail = get_ok(root.path(), &format!("/api/v1/repos/alpha/commits/{sha}")).await;
+        let diffstat = &detail["diffstat"];
+        assert_eq!(
+            commit["stat"]["files_changed"], diffstat["files_changed"],
+            "sha={sha}: {commit}"
+        );
+        assert_eq!(
+            commit["stat"]["additions"], diffstat["total_additions"],
+            "sha={sha}: {commit}"
+        );
+        assert_eq!(
+            commit["stat"]["deletions"], diffstat["total_deletions"],
+            "sha={sha}: {commit}"
+        );
+    }
+}
+
+/// `multi.git`; shas oldest → newest:
+/// 0. root: `a.txt` = "one"
+/// 1. modify `a.txt` (append a line) and add `b.txt` in the same commit
+fn setup_multi_file_history() -> (TempDir, Vec<String>) {
+    let root = tempfile::tempdir().expect("failed to create fixture root");
+    let bare = common::create_bare_repo(root.path(), "multi.git");
+    let work = tempfile::tempdir().expect("failed to create work dir");
+    let work_path = work.path();
+    common::git(
+        work_path,
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+    let mut shas = Vec::new();
+
+    std::fs::write(work_path.join("a.txt"), "one\n").unwrap();
+    shas.push(commit_all(work_path, "feat: add a"));
+
+    std::fs::write(work_path.join("a.txt"), "one\ntwo\n").unwrap();
+    std::fs::write(work_path.join("b.txt"), "b\n").unwrap();
+    shas.push(commit_all(work_path, "feat: touch a and add b"));
+
+    common::git(work_path, &["push", "--quiet", "origin", "HEAD:main"]);
+    (root, shas)
+}
+
+#[tokio::test]
+async fn commits_stat_is_restricted_to_the_path_filter() {
+    let (root, _shas) = setup_multi_file_history();
+
+    let unrestricted = get_ok(root.path(), "/api/v1/repos/multi/commits?stat=1&limit=1").await;
+    let restricted = get_ok(
+        root.path(),
+        "/api/v1/repos/multi/commits?stat=1&limit=1&path=a.txt",
+    )
+    .await;
+
+    assert_eq!(
+        unrestricted["commits"][0]["stat"]["files_changed"], 2,
+        "unexpected response: {unrestricted}"
+    );
+    assert_eq!(unrestricted["commits"][0]["stat"]["additions"], 2);
+    assert_eq!(unrestricted["commits"][0]["stat"]["deletions"], 0);
+
+    assert_eq!(
+        restricted["commits"][0]["stat"]["files_changed"], 1,
+        "unexpected response: {restricted}"
+    );
+    assert_eq!(restricted["commits"][0]["stat"]["additions"], 1);
+    assert_eq!(restricted["commits"][0]["stat"]["deletions"], 0);
+}

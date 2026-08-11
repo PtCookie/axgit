@@ -41,6 +41,11 @@ pub struct CommitsQuery {
     /// Absent/`0`/`false` by default.
     #[param(value_type = Option<bool>)]
     follow: Option<String>,
+    /// When `1`/`true`, each log entry also carries first-parent file/line
+    /// counts (cgit's `enable-log-filecount`/`enable-log-linecount` merged
+    /// into one flag). Absent/`0`/`false` by default.
+    #[param(value_type = Option<bool>)]
+    stat: Option<String>,
 }
 
 /// Commit log
@@ -48,7 +53,8 @@ pub struct CommitsQuery {
 /// Cursor-paginated, newest first. Merge commits survive the `path` filter
 /// only when the path differs from **every** parent — an approximation of
 /// `git log -- <path>` simplification. `follow=1` extends the `path` filter
-/// across whole-file renames (cgit's `enable-follow-links`).
+/// across whole-file renames (cgit's `enable-follow-links`). `stat=1` adds
+/// each entry's first-parent file/line counts.
 #[utoipa::path(
     get,
     path = "/api/v1/repos/{repo}/commits",
@@ -79,14 +85,15 @@ pub async fn list_commits(
     let path = clean_path(query.path.as_deref());
     let include_body = parse_flag(query.msg.as_deref(), "msg")?;
     let follow = parse_flag(query.follow.as_deref(), "follow")?;
+    let include_stat = parse_flag(query.stat.as_deref(), "stat")?;
     // A missing `ref` is not normalized to HEAD: the two take different
     // unborn-HEAD paths (empty page vs 404), so they stay distinct keys.
-    // `msg`/`follow` must be part of the key too: neither changes the walk's
-    // cache-relevant identity (so they're irrelevant to the immutability
-    // decision below, same as `path`/`limit`) but both change the response
-    // body, and the cache is keyed on params alone.
+    // `msg`/`follow`/`stat` must be part of the key too: none of them change
+    // the walk's cache-relevant identity (so they're irrelevant to the
+    // immutability decision below, same as `path`/`limit`) but each changes
+    // the response body, and the cache is keyed on params alone.
     let params = format!(
-        "ref={:?}&path={:?}&cursor={:?}&limit={limit}&msg={include_body}&follow={follow}",
+        "ref={:?}&path={:?}&cursor={:?}&limit={limit}&msg={include_body}&follow={follow}&stat={include_stat}",
         query.r#ref, path, query.cursor
     );
     cached_response(
@@ -132,6 +139,7 @@ pub async fn list_commits(
                     limit,
                     include_body,
                     follow,
+                    include_stat,
                 },
             )?;
             // Immutable when the request itself pins the walk start to a full

@@ -124,7 +124,8 @@ export interface paths {
      * @description Cursor-paginated, newest first. Merge commits survive the `path` filter
      *     only when the path differs from **every** parent — an approximation of
      *     `git log -- <path>` simplification. `follow=1` extends the `path` filter
-     *     across whole-file renames (cgit's `enable-follow-links`).
+     *     across whole-file renames (cgit's `enable-follow-links`). `stat=1` adds
+     *     each entry's first-parent file/line counts.
      */
     get: operations["list_commits"];
     put?: never;
@@ -717,6 +718,7 @@ export interface components {
        *     as `body`, #44).
        */
       renamed_from?: string | null;
+      stat?: null | components["schemas"]["StatCounts"];
     };
     CommitsPage: {
       commits: components["schemas"]["CommitInfo"][];
@@ -1056,6 +1058,15 @@ export interface components {
        *     the frontend can render matches the same way as log rows.
        */
       commits: components["schemas"]["CommitInfo"][];
+    };
+    /**
+     * @description File/line counts for the commit log's `stat=1` column (cgit's
+     *     `enable-log-filecount`/`enable-log-linecount`, docs/DECISIONS.md #57).
+     */
+    StatCounts: {
+      files_changed: number;
+      additions: number;
+      deletions: number;
     };
     /**
      * @description Requested bucket size, echoed back in the response's `period` field.
@@ -1517,6 +1528,12 @@ export interface operations {
          *     Absent/`0`/`false` by default.
          */
         follow?: boolean;
+        /**
+         * @description When `1`/`true`, each log entry also carries first-parent file/line
+         *     counts (cgit's `enable-log-filecount`/`enable-log-linecount` merged
+         *     into one flag). Absent/`0`/`false` by default.
+         */
+        stat?: boolean;
       };
       header?: never;
       path: {
