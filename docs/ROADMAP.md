@@ -1043,6 +1043,12 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   `tar.gz`/`zip` pairs across `RepoSummary.tsx`/`RefsView.tsx`/`TagView.tsx`, all of which now
   offer every format. `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated.
 
+- **Archive download links on the commit page** (DECISIONS.md #55), closing the last "Commit page"
+  cgit-parity gap. Web-only, no API change — `GET /archive/{ref}.{format}` already accepted a full
+  sha as `{ref}`. `CommitView.tsx`'s action row (`Tree | Raw diff | Patch`) gained the five
+  `ARCHIVE_FORMATS` links, addressed by the commit's own resolved sha (not the URL's possibly
+  abbreviated one) so the request stays on the immutable-cache path.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1052,21 +1058,20 @@ commit-log-immutable-caching candidates are all resolved, diff/patch output (#38
 three follow-up candidates (#40, #41, #43) closed the largest cgit parity gap, the feed's alternate
 link plus a `robots.txt` closed two more of the "Feed and discovery" gaps, log message expansion
 (#44) closed the last item under "Log" message search, git notes on the commit page (#45) closed
-the `git notes` item under "Commit page" (archive download links on the commit page remain open
-there), author/committer/range search (#46/#47) closed the last remaining item under "Log", and
-per-row quick links (#48) closed the `enable-index-links` gap under "Repository index" and the
-log/raw/blame gap under "Tree and blob", symlink targets (#49) closed one more there (submodule
-links, single-child directory collapsing, and the hex dump view remain open), the `Others (N)` row
-(#50) left `path=` as the only open item under "Stats", the tag detail page plus per-tag downloads
-(#51) closed all but two items under "Tags and refs", remote branches (#52) closed one of those
-two, object links for non-commit refs (#53) closed the last one (also closing the blob-by-oid item
-under "Tree and blob"), and archive format coverage (#54) closed the last open item under
-"Archive" — **"Archive" and "Tags and refs" both have no open items left**. The remaining
-cgit-parity gaps are submodule links, single-child directory collapsing, and a hex dump view for
-binary blobs (all under "Tree and blob"), archive download links on the commit page under
-"Commit page", and Atom feed parameters (branch/path filter/`all=1`/item count) under "Feed and
-discovery". Pick the next piece of work from there, from the candidates below, or from a fresh
-request.
+the `git notes` item under "Commit page", author/committer/range search (#46/#47) closed the last
+remaining item under "Log", and per-row quick links (#48) closed the `enable-index-links` gap
+under "Repository index" and the log/raw/blame gap under "Tree and blob", symlink targets (#49)
+closed one more there (submodule links, single-child directory collapsing, and the hex dump view
+remain open), the `Others (N)` row (#50) left `path=` as the only open item under "Stats", the tag
+detail page plus per-tag downloads (#51) closed all but two items under "Tags and refs", remote
+branches (#52) closed one of those two, object links for non-commit refs (#53) closed the last one
+(also closing the blob-by-oid item under "Tree and blob"), archive format coverage (#54) closed
+the last open item under "Archive", and archive download links on the commit page (#55) closed the
+last open item under "Commit page" — **"Archive", "Tags and refs", and "Commit page" all have no
+open items left**. The remaining cgit-parity gaps are submodule links, single-child directory
+collapsing, and a hex dump view for binary blobs (all under "Tree and blob"), and Atom feed
+parameters (branch/path filter/`all=1`/item count) under "Feed and discovery". Pick the next piece
+of work from there, from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1127,9 +1132,6 @@ recorded separately below instead of listed as gaps.
     it from HEAD).
 - **Stats**
   - `path=` pathspec filter — `/stats` only takes `ref`/`period`/`limit`.
-- **Commit page**
-  - Archive download links on the commit page (Tree link, per-parent `(diff)` link, and patch/raw
-    diff links were closed alongside the rest of the diff/patch work, see Done).
 
 ### cgit parity notes (merged or deliberately different — not planned)
 

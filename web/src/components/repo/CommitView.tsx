@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { commitPatchUrl, commitRawDiffUrl, getCommit, getCommitDiff } from "@/lib/api/repos";
+import {
+  ARCHIVE_FORMATS,
+  archiveUrl,
+  commitPatchUrl,
+  commitRawDiffUrl,
+  getCommit,
+  getCommitDiff,
+} from "@/lib/api/repos";
 import type { CommitAuthor, CommitDetail, CommitDiff } from "@/lib/api/schemas";
 import { useCommitRefs } from "@/lib/commit-refs";
 import { diffApiParams, type DiffViewMode, parseDiffOptions } from "@/lib/diff-options";
@@ -215,6 +222,15 @@ export default function CommitView({
           <a className="hover:text-foreground hover:underline" href={commitPatchUrl(resolvedRepo, detail.sha)}>
             Patch
           </a>
+          {ARCHIVE_FORMATS.map((format) => (
+            <a
+              key={format}
+              className="hover:text-foreground hover:underline"
+              href={archiveUrl(resolvedRepo, detail.sha, format)}
+            >
+              {format}
+            </a>
+          ))}
         </div>
       </div>
 

@@ -2006,3 +2006,38 @@ had only `tar.gz` and `zip`, the two formats `git archive` produces natively.
   hardcoded `tar.gz`/`zip` pairs across `RepoSummary.tsx`, `RefsView.tsx`, and `TagView.tsx`. All
   three now render every format. `RefsView.tsx`'s tags-only download-column rationale (#51) is
   unaffected — it's about which *refs* get a download, orthogonal to which formats are offered.
+
+## #55 Archive download links on the commit page (closes the last "Commit page" cgit-parity gap)
+
+Closed the last item under "Commit page": the Tree link, per-parent `(diff)` links, and
+patch/rawdiff links were already wired by the diff/patch work (#38/#39), but the commit detail
+page had no archive downloads while the summary, refs, and tag pages all did (#51, #54). Web-only,
+one commit — `GET /repos/{repo}/archive/{ref}.{format}` already accepts any ref including a full
+sha, so no API change was needed.
+
+- **The commit's own sha is the ref, not the URL's `{sha}` param.** `CommitView.tsx` passes
+  `archiveUrl(resolvedRepo, detail.sha, format)` — `detail.sha` (the resolved response field, always
+  the full 40-character id) rather than `resolvedSha` (whatever the visitor typed into the URL,
+  possibly abbreviated). This is also what keeps the request on `handlers/archive.rs`'s
+  `immutable = refname == sha` path, matching every other full-sha-addressed thing on this page
+  (the commit detail/diff responses themselves).
+- **This inverts #51's branch-exclusion rationale, on purpose.** #51 kept the tags-only download
+  column off branches because a branch archive's filename names a moving target that changes
+  meaning on every push. A commit sha is the opposite case — the most reproducible address
+  `archiveUrl` can be given, immutable-cacheable by construction.
+- **Rendered inline in the existing action row** (`Tree | Raw diff | Patch`), appending the five
+  `ARCHIVE_FORMATS` links after `Patch` — the same plain-text-link markup `TagView.tsx` already
+  uses for its Tree/Log/format row, not `RefsView.tsx`'s per-row `aria-label` variant. The
+  `aria-label` override exists there because the same link text (`tar.gz`) repeats down a column of
+  tag rows; the commit page, like the tag page, renders one set per page, so the format name alone
+  is already the link's full accessible name.
+- **No gating condition**, unlike `TagView.tsx`'s `canBrowse` (which exists because a tag can point
+  past a commit, at a tree/blob, and `git archive` needs a treeish). A commit always has a tree, so
+  every commit detail page renders all five links unconditionally.
+- **Diff display options (`view`/`context`/`ignorews`/`path`) are not threaded into the archive
+  links.** They control how the *diff* against the first parent is rendered; the archive is always
+  the commit's full tree, independent of those params.
+- **No shared component extracted** for the four call sites (`RepoSummary`'s icon `MetaLink`,
+  `RefsView`'s table cell + `aria-label`, `TagView`'s and now `CommitView`'s inline text). Each
+  wraps the links differently enough that a shared component would just grow option props; the
+  actual duplication — the format list — is already centralized in `ARCHIVE_FORMATS` (#54).

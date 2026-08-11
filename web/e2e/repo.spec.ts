@@ -196,6 +196,10 @@ test("navigates from the log to a commit's detail, showing its ref badge on both
   await expect(page.getByRole("heading", { name: "fix: update the readme" })).toBeVisible();
   await expect(page.getByText("More text")).toBeVisible();
   await expect(page.getByRole("link", { name: "main" })).toHaveAttribute("href", "/git-compose/log?ref=main");
+  await expect(page.getByRole("link", { name: "tar.gz" })).toHaveAttribute(
+    "href",
+    `/api/v1/repos/git-compose/archive/${COMMIT_SHA}.tar.gz`,
+  );
 });
 
 const TREE_ROOT = {

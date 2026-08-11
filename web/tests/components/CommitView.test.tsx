@@ -4,18 +4,17 @@ import { page } from "vitest/browser";
 
 import CommitView from "@/components/repo/CommitView";
 import { ApiError } from "@/lib/api/client";
-import { getCommit, getCommitDiff, getRefs } from "@/lib/api/repos";
+import { ARCHIVE_FORMATS, getCommit, getCommitDiff, getRefs } from "@/lib/api/repos";
 import type { CommitDetail, CommitDiff, RefsInfo } from "@/lib/api/schemas";
 
-vi.mock("@/lib/api/repos", () => ({
-  getCommit: vi.fn(),
-  getCommitDiff: vi.fn(),
-  getRefs: vi.fn(),
-  // Link-only builders (never fetched) — real implementations, so the
-  // rendered hrefs reflect the actual URL shape rather than a stub.
-  commitPatchUrl: (name: string, sha: string) => `/api/v1/repos/${name}/patch?to=${sha}`,
-  commitRawDiffUrl: (name: string, sha: string) => `/api/v1/repos/${name}/rawdiff?to=${sha}`,
-}));
+// `commitPatchUrl`/`commitRawDiffUrl`/`archiveUrl`/`ARCHIVE_FORMATS` are pure
+// link builders (no network) — kept real via `importOriginal` so the action
+// row's href assertions below exercise the actual implementation, same
+// reasoning as `TagView.test.tsx`.
+vi.mock("@/lib/api/repos", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/repos")>();
+  return { ...actual, getCommit: vi.fn(), getCommitDiff: vi.fn(), getRefs: vi.fn() };
+});
 
 const mockedGetCommit = vi.mocked(getCommit);
 const mockedGetCommitDiff = vi.mocked(getCommitDiff);
@@ -261,6 +260,11 @@ describe("CommitView", () => {
     await expect
       .element(page.getByRole("link", { name: "Patch" }))
       .toHaveAttribute("href", `/api/v1/repos/git-compose/patch?to=${DETAIL.sha}`);
+    for (const format of ARCHIVE_FORMATS) {
+      await expect
+        .element(page.getByRole("link", { name: format }))
+        .toHaveAttribute("href", `/api/v1/repos/git-compose/archive/${DETAIL.sha}.${format}`);
+    }
   });
 
   it("skips the diff fetch and hunk rendering entirely in stat-only mode", async () => {
