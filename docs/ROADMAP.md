@@ -1097,6 +1097,14 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /stats` gained
     `path`). The `/{repo}/stats` page surfacing it is a follow-up commit (#60).
 
+- **`/{repo}/stats` page surfaces the `path` filter** (DECISIONS.md #60), closing the "Stats"
+  cgit-parity gap entirely. Entry point is a new `Stats` quick link on each tree row
+  (`TreeView.tsx::rowActions`, alongside Log/Raw/Blame), not the nav tab — the tab bar is static
+  HTML prerendered under a placeholder param (DECISIONS #17), so a per-row link was the natural
+  axgit-shaped equivalent of cgit's tab carrying `ctx.qry.vpath`. `StatsView.tsx` carries `path`
+  through the period switcher and shows a `CommitLog`-style "Filtered by path … — clear filter"
+  banner (no "Follow renames" link — the endpoint has none). No route or API contract change.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1117,16 +1125,20 @@ branches (#52) closed one of those two, object links for non-commit refs (#53) c
 the last open item under "Archive", archive download links on the commit page (#55) closed the
 last open item under "Commit page", rename following (#56) plus Files/Lines changed columns (#57)
 on the commit log closed both remaining items under "Log" — **"Archive", "Tags and refs", "Commit
-page", and "Log" all have no open items left** — and the hex dump view for binary blobs (#58)
-closed one more under "Tree and blob". The remaining cgit-parity gaps are submodule links and
-single-child directory collapsing (both under "Tree and blob"), and Atom feed parameters
-(branch/path filter/`all=1`/item count) under "Feed and discovery". Pick the next piece of work
-from there, from the candidates below, or from a fresh request.
+page", and "Log" all have no open items left** — the hex dump view for binary blobs (#58) closed
+one more under "Tree and blob", and the stats `path` filter (#59/#60) closed the last item under
+"Stats" — **"Stats" now has no open items left either.** The remaining cgit-parity gaps are
+submodule links and single-child directory collapsing (both under "Tree and blob"), and Atom feed
+parameters (branch/path filter/`all=1`/item count) under "Feed and discovery". Pick the next piece
+of work from there, from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
 - `git grep`/`git log` exec fallbacks for search/stats if either proves too slow on a large
   repository — both left this escape hatch for themselves (DECISIONS.md #26/#28).
+- `follow=1` on the stats `path` filter, tracking renames the same way `/commits` does (#56) — left
+  out of #59 on purpose (cgit's stats page doesn't track renames either); revisit if a real need
+  shows up.
 - Commit log's `path` filter walk can be slow on paths that change rarely across a long history
   (noted when `commits.rs::log` was built) — no reports of this being a real problem yet.
 - `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
@@ -1173,8 +1185,6 @@ recorded separately below instead of listed as gaps.
     fits naturally alongside the `[cgit]`/`[axgit]` config-section invariant.
   - `homepage` (cgit gives it a dedicated nav tab), and a configured `defbranch` (axgit only derives
     it from HEAD).
-- **Stats**
-  - `path=` pathspec filter — `/stats` only takes `ref`/`period`/`limit`.
 
 ### cgit parity notes (merged or deliberately different — not planned)
 
@@ -1199,6 +1209,8 @@ them. Grouped by why the difference exists.
 
 - Stats window anchored on the resolved commit's authordate rather than request time (for
   immutable caching), and 12 buckets + a bar chart instead of a 4-bucket table (#28, #29).
+- Stats' `path` filter has no `follow` — unlike `/commits`, it never tracks a path across renames
+  (#59); cgit's own stats page doesn't either.
 - Commit graph drawn as one inline SVG per row; no cgit-style `|\`/`|/` filler rows (#33).
 - The log walk is left unsorted (no analogue of `commit-sort=date|topo`) — deliberate, to avoid
   O(repo size) per page (#33).

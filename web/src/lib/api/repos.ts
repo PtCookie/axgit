@@ -239,6 +239,7 @@ export function searchRepo(name: string, params: SearchParams): Promise<SearchRe
 export interface StatsParams {
   period?: StatsPeriod;
   ref?: string;
+  path?: string;
   limit?: number;
 }
 

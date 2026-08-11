@@ -138,8 +138,9 @@ export function searchHref(repo: string, params: { q?: string; type?: string; re
 /** Builds a `/{repo}/stats` href from the given params, omitting any left
  *  unset. Same shape as `searchHref` — used for the four fixed period links
  *  (`StatsView`), which are plain anchors rather than a form since the
- *  choice is a fixed 4-way pick, not free text. */
-export function statsHref(repo: string, params: { period?: string; ref?: string } = {}): string {
+ *  choice is a fixed 4-way pick, not free text — and for `TreeView`'s
+ *  per-row Stats quick link (`path` only, docs/DECISIONS.md #60). */
+export function statsHref(repo: string, params: { period?: string; ref?: string; path?: string } = {}): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value) search.set(key, value);

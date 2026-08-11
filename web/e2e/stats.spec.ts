@@ -79,6 +79,33 @@ test("shows commit statistics and switches the bucket period via a link", async 
   await expect(page.getByText("Ada Lovelace")).toBeVisible();
 });
 
+test("shows a path-filter banner and sends path to the api", async ({ page }) => {
+  await page.route("**/api/v1/repos/git-compose", async (route) => {
+    await route.fulfill({ json: SUMMARY });
+  });
+  await page.route("**/api/v1/repos/git-compose/readme*", async (route) => {
+    await route.fulfill({ status: 404, json: NO_README });
+  });
+  let requestedUrl: string | undefined;
+  await page.route("**/api/v1/repos/git-compose/stats*", async (route) => {
+    requestedUrl = route.request().url();
+    await route.fulfill({ json: MONTH_STATS });
+  });
+
+  await page.goto("/git-compose/stats?path=src%2Fmain.rs");
+
+  await expect(page.getByText("Filtered by path")).toBeVisible();
+  await expect(page.getByText("src/main.rs")).toBeVisible();
+  expect(requestedUrl).toBeDefined();
+  expect(new URL(requestedUrl ?? "").searchParams.get("path")).toBe("src/main.rs");
+
+  // The clear-filter link carries the resolved period forward (same as every
+  // other `statsHref` call on this page) — it only drops `path`.
+  await page.getByRole("link", { name: "clear filter" }).click();
+  await expect(page).toHaveURL("/git-compose/stats?period=month");
+  await expect(page.getByText("Filtered by path")).not.toBeVisible();
+});
+
 // A link click navigating via `<ClientRouter />` (docs/DECISIONS.md #24) never
 // tears down the JS realm — `window` survives. A silently downgraded full
 // reload would still land on the same URL and pass every other assertion in

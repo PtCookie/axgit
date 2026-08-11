@@ -27,10 +27,11 @@ interface StatsViewProps {
    * evaluated there.
    */
   repo?: string;
-  /** `period`/`ref` follow the same "prop overrides, `location` is the
-   *  default source" pattern as `repo` — see `CommitLog`/`SearchView`. */
+  /** `period`/`ref`/`path` follow the same "prop overrides, `location` is
+   *  the default source" pattern as `repo` — see `CommitLog`/`SearchView`. */
   period?: string;
   ref?: string;
+  path?: string;
 }
 
 const PERIOD_OPTIONS: { value: StatsPeriod; label: string }[] = [
@@ -75,11 +76,12 @@ export function StatsViewSkeleton() {
   );
 }
 
-export default function StatsView({ repo, period: periodParam, ref: refParam }: StatsViewProps) {
+export default function StatsView({ repo, period: periodParam, ref: refParam, path: pathParam }: StatsViewProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const rawPeriod = periodParam ?? paramFromSearch("period", window.location.search);
   const resolvedPeriod: StatsPeriod = isStatsPeriod(rawPeriod) ? rawPeriod : "month";
   const resolvedRef = refParam ?? paramFromSearch("ref", window.location.search);
+  const resolvedPath = pathParam ?? paramFromSearch("path", window.location.search);
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
@@ -90,7 +92,7 @@ export default function StatsView({ repo, period: periodParam, ref: refParam }: 
     // no reason to serialize the two.
     void importStatsChart();
 
-    getStats(resolvedRepo, { period: resolvedPeriod, ref: resolvedRef })
+    getStats(resolvedRepo, { period: resolvedPeriod, ref: resolvedRef, path: resolvedPath })
       .then((results) => {
         if (!cancelled) {
           setState({ status: "data", results });
@@ -109,14 +111,14 @@ export default function StatsView({ repo, period: periodParam, ref: refParam }: 
     return () => {
       cancelled = true;
     };
-  }, [resolvedRepo, resolvedPeriod, resolvedRef]);
+  }, [resolvedRepo, resolvedPeriod, resolvedRef, resolvedPath]);
 
   const periodSwitcher = (
     <nav className="flex flex-wrap gap-2" aria-label="Bucket period">
       {PERIOD_OPTIONS.map((option) => (
         <a
           key={option.value}
-          href={statsHref(resolvedRepo, { period: option.value, ref: resolvedRef })}
+          href={statsHref(resolvedRepo, { period: option.value, ref: resolvedRef, path: resolvedPath })}
           aria-current={option.value === resolvedPeriod ? "page" : undefined}
           className={cn(
             "rounded-3xl border px-3 py-1 text-sm font-medium",
@@ -131,10 +133,23 @@ export default function StatsView({ repo, period: periodParam, ref: refParam }: 
     </nav>
   );
 
+  // Mirrors CommitLog.tsx's own path-filter banner, minus the "Follow
+  // renames" link — the stats endpoint deliberately has no `follow`
+  // (docs/DECISIONS.md #59/#60).
+  const pathBanner = resolvedPath && (
+    <p className="text-muted-foreground text-sm">
+      Filtered by path <code className="text-foreground">{resolvedPath}</code> —{" "}
+      <a className="underline" href={statsHref(resolvedRepo, { period: resolvedPeriod, ref: resolvedRef })}>
+        clear filter
+      </a>
+    </p>
+  );
+
   if (state.status === "loading") {
     return (
       <div className="space-y-4">
         {periodSwitcher}
+        {pathBanner}
         <StatsViewSkeleton />
       </div>
     );
@@ -145,6 +160,7 @@ export default function StatsView({ repo, period: periodParam, ref: refParam }: 
     return (
       <div className="space-y-4">
         {periodSwitcher}
+        {pathBanner}
         <p role="alert" className="text-destructive text-sm">
           Failed to load statistics: {message}
         </p>
@@ -157,6 +173,7 @@ export default function StatsView({ repo, period: periodParam, ref: refParam }: 
   return (
     <div className="space-y-4">
       {periodSwitcher}
+      {pathBanner}
       {results.sha === null ? (
         <p className="text-muted-foreground text-sm">No commits yet.</p>
       ) : (

@@ -1,3 +1,4 @@
+import { ChartBarIcon } from "@phosphor-icons/react/dist/ssr/ChartBar";
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ClockCounterClockwise";
 import { FileTextIcon } from "@phosphor-icons/react/dist/ssr/FileText";
 import { UserListIcon } from "@phosphor-icons/react/dist/ssr/UserList";
@@ -10,7 +11,7 @@ import { formatMode } from "@/lib/format/mode";
 import { formatSize } from "@/lib/format/size";
 import { resolveRepoPath } from "@/lib/markdown-url";
 import { filePathFromPathname, paramFromSearch, repoFromPathname } from "@/lib/repo-param";
-import { blameHref, blobHref, logHref, treeHref } from "@/lib/repo-href";
+import { blameHref, blobHref, logHref, statsHref, treeHref } from "@/lib/repo-href";
 import IconLink from "@/components/IconLink";
 import PathBreadcrumbs from "@/components/repo/PathBreadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -70,7 +71,12 @@ function rowActions(
   if (kind === "commit") {
     return [];
   }
-  const actions = [{ label: "Log", href: logHref(repo, { path, ref }), Icon: ClockCounterClockwiseIcon }];
+  const actions = [
+    { label: "Log", href: logHref(repo, { path, ref }), Icon: ClockCounterClockwiseIcon },
+    // `?path=` matches a directory prefix too (same rule as Log's), so both
+    // file and directory rows get this link (docs/DECISIONS.md #60).
+    { label: "Stats", href: statsHref(repo, { path, ref }), Icon: ChartBarIcon },
+  ];
   if (kind === "blob" || kind === "symlink") {
     actions.push(
       { label: "Raw", href: rawUrl(repo, ref, path), Icon: FileTextIcon },

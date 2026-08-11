@@ -96,6 +96,39 @@ describe("StatsView", () => {
     await expect.element(week).not.toHaveAttribute("aria-current");
   });
 
+  it("fetches with the resolved path and keeps it in every period link", async () => {
+    mockedGetStats.mockResolvedValue(RESULTS);
+    render(<StatsView repo="git-compose" period="month" ref="main" path="src/main.rs" />);
+
+    await expect.element(page.getByText("Alice")).toBeVisible();
+    expect(mockedGetStats).toHaveBeenCalledWith("git-compose", {
+      period: "month",
+      ref: "main",
+      path: "src/main.rs",
+    });
+
+    const week = page.getByRole("link", { name: "Week" });
+    await expect.element(week).toHaveAttribute("href", "/git-compose/stats?period=week&ref=main&path=src%2Fmain.rs");
+  });
+
+  it("shows a path-filter banner with a working clear-filter link", async () => {
+    mockedGetStats.mockResolvedValue(RESULTS);
+    render(<StatsView repo="git-compose" period="month" ref="main" path="src/main.rs" />);
+
+    await expect.element(page.getByText("Alice")).toBeVisible();
+    await expect.element(page.getByText("src/main.rs")).toBeVisible();
+    const clear = page.getByRole("link", { name: "clear filter" });
+    await expect.element(clear).toHaveAttribute("href", "/git-compose/stats?period=month&ref=main");
+  });
+
+  it("shows no path-filter banner when path is unset", async () => {
+    mockedGetStats.mockResolvedValue(RESULTS);
+    render(<StatsView repo="git-compose" period="month" ref="main" />);
+
+    await expect.element(page.getByText("Alice")).toBeVisible();
+    expect(page.getByText(/Filtered by path/).elements().length).toBe(0);
+  });
+
   it("renders the author breakdown with per-bucket columns and a total row", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
     render(<StatsView repo="git-compose" period="month" />);

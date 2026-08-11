@@ -128,6 +128,7 @@ describe("TreeView", () => {
     await expect.element(page.getByText("vendor")).toBeVisible();
     expect(page.getByRole("link", { name: "vendor" }).elements().length).toBe(0);
     expect(page.getByRole("link", { name: "Log for vendor" }).elements().length).toBe(0);
+    expect(page.getByRole("link", { name: "Stats for vendor" }).elements().length).toBe(0);
   });
 
   it("orders the columns as Mode, Name, Size and shows symbolic modes", async () => {
@@ -141,13 +142,16 @@ describe("TreeView", () => {
     expect(headers).toEqual("ModeNameSizeLinks");
   });
 
-  it("gives a file row Log, Raw, and Blame quick links", async () => {
+  it("gives a file row Log, Stats, Raw, and Blame quick links", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
     render(<TreeView repo="git-compose" path="" />);
 
     await expect
       .element(page.getByRole("link", { name: "Log for README.md" }))
       .toHaveAttribute("href", "/git-compose/log?path=README.md");
+    await expect
+      .element(page.getByRole("link", { name: "Stats for README.md" }))
+      .toHaveAttribute("href", "/git-compose/stats?path=README.md");
     await expect
       .element(page.getByRole("link", { name: "Raw for README.md" }))
       .toHaveAttribute("href", "/api/v1/repos/git-compose/raw/HEAD/README.md");
@@ -156,13 +160,16 @@ describe("TreeView", () => {
       .toHaveAttribute("href", "/git-compose/blame/README.md");
   });
 
-  it("gives a directory row only a Log quick link", async () => {
+  it("gives a directory row only Log and Stats quick links", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
     render(<TreeView repo="git-compose" path="" />);
 
     await expect
       .element(page.getByRole("link", { name: "Log for src" }))
       .toHaveAttribute("href", "/git-compose/log?path=src");
+    await expect
+      .element(page.getByRole("link", { name: "Stats for src" }))
+      .toHaveAttribute("href", "/git-compose/stats?path=src");
     expect(page.getByRole("link", { name: "Raw for src" }).elements().length).toBe(0);
     expect(page.getByRole("link", { name: "Blame for src" }).elements().length).toBe(0);
   });
@@ -174,6 +181,9 @@ describe("TreeView", () => {
     await expect
       .element(page.getByRole("link", { name: "Log for README.md" }))
       .toHaveAttribute("href", "/git-compose/log?path=README.md&ref=v1.0.0");
+    await expect
+      .element(page.getByRole("link", { name: "Stats for README.md" }))
+      .toHaveAttribute("href", "/git-compose/stats?path=README.md&ref=v1.0.0");
     await expect
       .element(page.getByRole("link", { name: "Blame for README.md" }))
       .toHaveAttribute("href", "/git-compose/blame/README.md?ref=v1.0.0");
