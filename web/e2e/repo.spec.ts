@@ -118,6 +118,10 @@ test("shows the repository summary, README, and links to refs", async ({ page })
     "href",
     "/api/v1/repos/git-compose/archive/HEAD.tar.gz",
   );
+  await expect(page.getByRole("link", { name: "tar.zst" })).toHaveAttribute(
+    "href",
+    "/api/v1/repos/git-compose/archive/HEAD.tar.zst",
+  );
   await expect(page.getByRole("link", { name: "Atom" })).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom");
 
   // The README is the wide left column; its relative link is rewritten to

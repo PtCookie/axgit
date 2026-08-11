@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { archiveUrl, getTag } from "@/lib/api/repos";
+import { ARCHIVE_FORMATS, archiveUrl, getTag } from "@/lib/api/repos";
 import type { TagDetail } from "@/lib/api/schemas";
 import { linkify } from "@/lib/format/linkify";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
@@ -154,15 +154,15 @@ export default function TagView({ repo, name }: TagViewProps) {
               <a className="hover:text-foreground hover:underline" href={logHref(resolvedRepo, { ref: detail.name })}>
                 Log
               </a>
-              <a
-                className="hover:text-foreground hover:underline"
-                href={archiveUrl(resolvedRepo, detail.name, "tar.gz")}
-              >
-                tar.gz
-              </a>
-              <a className="hover:text-foreground hover:underline" href={archiveUrl(resolvedRepo, detail.name, "zip")}>
-                zip
-              </a>
+              {ARCHIVE_FORMATS.map((format) => (
+                <a
+                  key={format}
+                  className="hover:text-foreground hover:underline"
+                  href={archiveUrl(resolvedRepo, detail.name, format)}
+                >
+                  {format}
+                </a>
+              ))}
             </>
           )}
         </div>

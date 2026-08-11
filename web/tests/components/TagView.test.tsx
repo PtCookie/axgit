@@ -4,7 +4,7 @@ import { page } from "vitest/browser";
 
 import TagView from "@/components/repo/TagView";
 import { ApiError } from "@/lib/api/client";
-import { getTag } from "@/lib/api/repos";
+import { ARCHIVE_FORMATS, getTag } from "@/lib/api/repos";
 import type { TagDetail } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", async (importOriginal) => {
@@ -61,12 +61,11 @@ describe("TagView", () => {
     mockedGetTag.mockResolvedValue(ANNOTATED);
     render(<TagView repo="git-compose" name="v1.0.0" />);
 
-    await expect
-      .element(page.getByRole("link", { name: "tar.gz" }))
-      .toHaveAttribute("href", "/api/v1/repos/git-compose/archive/v1.0.0.tar.gz");
-    await expect
-      .element(page.getByRole("link", { name: "zip" }))
-      .toHaveAttribute("href", "/api/v1/repos/git-compose/archive/v1.0.0.zip");
+    for (const format of ARCHIVE_FORMATS) {
+      await expect
+        .element(page.getByRole("link", { name: format }))
+        .toHaveAttribute("href", `/api/v1/repos/git-compose/archive/v1.0.0.${format}`);
+    }
     await expect.element(page.getByRole("link", { name: "Browse the tree at this tag" })).toBeVisible();
   });
 

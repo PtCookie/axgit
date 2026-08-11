@@ -178,7 +178,15 @@ export function getReadme(name: string, ref?: string): Promise<ReadmeInfo> {
   return apiFetch<ReadmeInfo>(`/repos/${encodeSegment(name)}/readme${query}`);
 }
 
-export type ArchiveFormat = "tar.gz" | "zip";
+/** Every format `GET /archive/{ref}.{format}` serves, in the order the UI
+ *  lists them (tar variants grouped, zip last). Mirrors `FORMATS` in
+ *  `api/src/handlers/archive.rs` (docs/DECISIONS.md #54). Exported because
+ *  `RepoSummary`, `RefsView`, and `TagView` all render the same list — the
+ *  type is derived from it so a format can't be added to one but not the
+ *  other. */
+export const ARCHIVE_FORMATS = ["tar.gz", "tar.bz2", "tar.xz", "tar.zst", "zip"] as const;
+
+export type ArchiveFormat = (typeof ARCHIVE_FORMATS)[number];
 
 /** Link-only (never `fetch`ed by the client), same pattern as `rawUrl` —
  *  the archive is streamed straight from the api as a download. `ref`

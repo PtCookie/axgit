@@ -4,7 +4,7 @@ import { page } from "vitest/browser";
 
 import RefsView from "@/components/repo/RefsView";
 import { ApiError } from "@/lib/api/client";
-import { getRefs, getRepo } from "@/lib/api/repos";
+import { ARCHIVE_FORMATS, getRefs, getRepo } from "@/lib/api/repos";
 import type { RefsInfo, RepoSummary } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", async (importOriginal) => {
@@ -124,16 +124,15 @@ describe("RefsView", () => {
     await expect.element(page.getByRole("link", { name: "Compare main with feature-x" })).not.toBeInTheDocument();
   });
 
-  it("offers tar.gz and zip downloads for a tag", async () => {
+  it("offers every archive format for a tag", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
     render(<RefsView repo="git-compose" />);
 
-    await expect
-      .element(page.getByRole("link", { name: "Download v1.0.0 as tar.gz" }))
-      .toHaveAttribute("href", "/api/v1/repos/git-compose/archive/v1.0.0.tar.gz");
-    await expect
-      .element(page.getByRole("link", { name: "Download v1.0.0 as zip" }))
-      .toHaveAttribute("href", "/api/v1/repos/git-compose/archive/v1.0.0.zip");
+    for (const format of ARCHIVE_FORMATS) {
+      await expect
+        .element(page.getByRole("link", { name: `Download v1.0.0 as ${format}` }))
+        .toHaveAttribute("href", `/api/v1/repos/git-compose/archive/v1.0.0.${format}`);
+    }
   });
 
   it("keeps a tag name's slash intact in its download href", async () => {

@@ -5,7 +5,7 @@ import { TagIcon } from "@phosphor-icons/react/dist/ssr/Tag";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { archiveUrl, feedUrl, getRepo } from "@/lib/api/repos";
+import { ARCHIVE_FORMATS, archiveUrl, feedUrl, getRepo } from "@/lib/api/repos";
 import type { RepoSummary as RepoSummaryData } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { refsHref } from "@/lib/repo-href";
@@ -170,12 +170,11 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
           <>
             <MetaItem label="Download">
               <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <MetaLink href={archiveUrl(summary.name, undefined, "tar.gz")} Icon={DownloadSimpleIcon}>
-                  tar.gz
-                </MetaLink>
-                <MetaLink href={archiveUrl(summary.name, undefined, "zip")} Icon={DownloadSimpleIcon}>
-                  zip
-                </MetaLink>
+                {ARCHIVE_FORMATS.map((format) => (
+                  <MetaLink key={format} href={archiveUrl(summary.name, undefined, format)} Icon={DownloadSimpleIcon}>
+                    {format}
+                  </MetaLink>
+                ))}
               </span>
             </MetaItem>
             <MetaItem label="Feed">

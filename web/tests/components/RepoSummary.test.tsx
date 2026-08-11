@@ -4,7 +4,7 @@ import { page } from "vitest/browser";
 
 import RepoSummary from "@/components/repo/RepoSummary";
 import { ApiError } from "@/lib/api/client";
-import { getRepo } from "@/lib/api/repos";
+import { ARCHIVE_FORMATS, getRepo } from "@/lib/api/repos";
 import type { RepoSummary as RepoSummaryData } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", async (importOriginal) => {
@@ -55,16 +55,15 @@ describe("RepoSummary", () => {
     await expect.element(page.getByText("No commits yet.")).toBeVisible();
   });
 
-  it("links to archive downloads and the Atom feed", async () => {
+  it("links to every archive download format and the Atom feed", async () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);
     render(<RepoSummary repo="git-compose" />);
 
-    const tarGz = page.getByRole("link", { name: "tar.gz" });
-    await expect.element(tarGz).toBeVisible();
-    await expect.element(tarGz).toHaveAttribute("href", "/api/v1/repos/git-compose/archive/HEAD.tar.gz");
-
-    const zip = page.getByRole("link", { name: "zip" });
-    await expect.element(zip).toHaveAttribute("href", "/api/v1/repos/git-compose/archive/HEAD.zip");
+    for (const format of ARCHIVE_FORMATS) {
+      const link = page.getByRole("link", { name: format });
+      await expect.element(link).toBeVisible();
+      await expect.element(link).toHaveAttribute("href", `/api/v1/repos/git-compose/archive/HEAD.${format}`);
+    }
 
     const feed = page.getByRole("link", { name: "Atom" });
     await expect.element(feed).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom");

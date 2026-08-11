@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
-import { archiveUrl, getRefs, type ArchiveFormat } from "@/lib/api/repos";
+import { ARCHIVE_FORMATS, archiveUrl, getRefs } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
 import { useDefaultBranch } from "@/lib/default-branch";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
@@ -16,19 +16,20 @@ type State = { status: "loading" } | { status: "error"; error: ApiError } | { st
 // archive's filename (`{repo}-{branch}.{format}`) names a moving target that
 // changes meaning on every push, while a tag's is reproducible. `archiveUrl`
 // itself accepts any ref (branches included); this is a scope choice, not a
-// capability gap (docs/DECISIONS.md #51).
-const ARCHIVE_FORMATS: readonly ArchiveFormat[] = ["tar.gz", "zip"];
+// capability gap (docs/DECISIONS.md #51). The format list itself lives in
+// `ARCHIVE_FORMATS` (`lib/api/repos.ts`), shared with `RepoSummary`/`TagView`
+// (docs/DECISIONS.md #54).
 
-/** Per-tag tar.gz/zip download links. Plain visible text with an overriding
- *  `aria-label`, not `IconLink` — the format name *is* the link's entire
- *  information content, so two identical download glyphs side by side would
- *  be indistinguishable without a hover (unlike `IconLink`'s distinct-icon
- *  rows in `TreeView.tsx`). Matches this table's own `Compare` column
- *  convention (visible text + a per-row `aria-label` override) rather than
- *  #48's icon convention. */
+/** Per-tag download links, one per `ARCHIVE_FORMATS` entry. Plain visible
+ *  text with an overriding `aria-label`, not `IconLink` — the format name
+ *  *is* the link's entire information content, so identical download glyphs
+ *  side by side would be indistinguishable without a hover (unlike
+ *  `IconLink`'s distinct-icon rows in `TreeView.tsx`). Matches this table's
+ *  own `Compare` column convention (visible text + a per-row `aria-label`
+ *  override) rather than #48's icon convention. */
 function ArchiveLinks({ repo, tagName }: { repo: string; tagName: string }) {
   return (
-    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
       {ARCHIVE_FORMATS.map((format) => (
         <a
           key={format}

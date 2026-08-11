@@ -1027,6 +1027,22 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   (additive on `GET /tree` too). Fixtures gained a tag on a tree alongside the existing blob tag.
   `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (two new operations).
 
+- **Archive format coverage** (DECISIONS.md #54), closing the "Archive" cgit-parity gap:
+  `tar.bz2`, `tar.xz`, and `tar.zst` join the existing `tar.gz`/`zip`. `git archive` itself only
+  produces the latter two plus plain `tar`; the three new formats stream `git archive
+  --format=tar`'s output through an in-process `async-compression` encoder (bzip2/xz/zstd)
+  instead of piping into an external compressor binary, so the runtime image still needs only
+  `git` + `ca-certificates`. `handlers/archive.rs`'s two-variant enum became a `FORMATS` table
+  (suffix, git format, media type, optional encoder) that both parsing and the response builder
+  read from. Compression levels are pinned to match cgit's own CLI defaults (bzip2 `-9`, xz
+  preset `6`, zstd `-3`) rather than the crate's differing `Level::Default`. A bounded semaphore
+  caps concurrent encoders, since archives are never response-cached and an xz encoder alone
+  holds tens of MiB per request. Plain `tar` and cgit's `tar.lz` are deliberately not offered (no
+  real use case for the former, no maintained Rust encoder for the latter). `web/src/lib/api/
+  repos.ts` gained a single exported `ARCHIVE_FORMATS` list, replacing three hardcoded
+  `tar.gz`/`zip` pairs across `RepoSummary.tsx`/`RefsView.tsx`/`TagView.tsx`, all of which now
+  offer every format. `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1043,9 +1059,14 @@ log/raw/blame gap under "Tree and blob", symlink targets (#49) closed one more t
 links, single-child directory collapsing, and the hex dump view remain open), the `Others (N)` row
 (#50) left `path=` as the only open item under "Stats", the tag detail page plus per-tag downloads
 (#51) closed all but two items under "Tags and refs", remote branches (#52) closed one of those
-two, and object links for non-commit refs (#53) closed the last one — **"Tags and refs" has no open
-items left**, and object-by-id (#53) also closed the blob-by-oid item under "Tree and blob". Pick
-the next piece of work from the candidates below, or from a fresh request.
+two, object links for non-commit refs (#53) closed the last one (also closing the blob-by-oid item
+under "Tree and blob"), and archive format coverage (#54) closed the last open item under
+"Archive" — **"Archive" and "Tags and refs" both have no open items left**. The remaining
+cgit-parity gaps are submodule links, single-child directory collapsing, and a hex dump view for
+binary blobs (all under "Tree and blob"), archive download links on the commit page under
+"Commit page", and Atom feed parameters (branch/path filter/`all=1`/item count) under "Feed and
+discovery". Pick the next piece of work from there, from the candidates below, or from a fresh
+request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1088,8 +1109,6 @@ recorded separately below instead of listed as gaps.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
   - Hex dump view for binary blobs (`<table class='bin-blob'>`, 32 bytes/row + ascii) — axgit shows
     only a binary notice and a Raw link.
-- **Archive** — format coverage: cgit supports `tar`, `tar.gz`, `tar.bz2`, `tar.lz`, `tar.xz`,
-  `tar.zst`, `zip` (piping tar through external compressors); axgit has `tar.gz` and `zip` only.
 - **Feed and discovery**
   - Atom parameters: branch (`h=`), path filter, `all=1` (all refs), item count
     (`max-atom-items`) — `/feed.atom` is fixed at HEAD, 20 entries.
@@ -1144,6 +1163,10 @@ them. Grouped by why the difference exists.
   truncated patch would be a corrupt one.
 - Email addresses are never exposed in any response (only `email_hash`) — stricter than cgit's
   `noplainemail`.
+- Archive format coverage (#54) matches cgit's `tar.gz`/`tar.bz2`/`tar.xz`/`tar.zst`/`zip` but
+  deliberately **not** plain `tar` (little use as an HTTP download) or `tar.lz` (no maintained Rust
+  lzip encoder — matching it would mean reintroducing the external-compressor-binary dependency
+  #54 avoided for the other three).
 
 **Replaced / no analogue planned**
 
