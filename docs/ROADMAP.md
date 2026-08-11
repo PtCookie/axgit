@@ -1105,6 +1105,19 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   through the period switcher and shows a `CommitLog`-style "Filtered by path … — clear filter"
   banner (no "Follow renames" link — the endpoint has none). No route or API contract change.
 
+- **`GET /api/v1/repos/{repo}/feed.atom` gained `ref`/`path`/`all`/`limit`** (DECISIONS.md #61),
+  closing the "Atom parameters" cgit-parity gap. `all=1` walks every local branch and tag
+  (`refs/heads/*` + `refs/tags/*`) at once via a new `commits::log_all_refs`, sorted by commit date
+  (`Sort::TIME`) so entries stay newest-first across tips instead of draining one branch before the
+  next; the single-ref walk (`commits::log`) is unchanged. `ref` is ignored under `all=1`, `limit`
+  defaults to 20 (was hardcoded), and no `follow` support, matching #59's call for stats. The feed's
+  `<id>`/`rel="self"` now carry a canonical query string derived from the parsed params so distinct
+  parameterizations get distinct, stable feed ids. No immutable caching even for a full-sha `ref` —
+  the body's `<subtitle>` reads live repo config, so it can't be pinned the way commit-addressed
+  content can.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated. The web surfacing is a
+    follow-up commit (#62).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;

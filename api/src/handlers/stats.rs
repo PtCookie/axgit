@@ -7,7 +7,7 @@ use axum::response::Response;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::{JSON_CONTENT_TYPE, cached_response, clean_path, parse_limit};
+use super::{DEFAULT_LIMIT, JSON_CONTENT_TYPE, cached_response, clean_path, parse_limit};
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::resolve;
 use crate::repo::stats::{self, StatsPeriod, StatsResults};
@@ -80,7 +80,7 @@ pub async fn get_stats(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let period = parse_period(query.period.as_deref())?;
-    let limit = parse_limit(query.limit.as_deref())?;
+    let limit = parse_limit(query.limit.as_deref(), DEFAULT_LIMIT)?;
     let path = clean_path(query.path.as_deref());
     let params = format!(
         "period={period:?}&ref={:?}&path={path:?}&limit={limit}",

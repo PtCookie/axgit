@@ -214,9 +214,11 @@ export interface paths {
     };
     /**
      * Atom feed of recent commits
-     * @description The 20 most recent commits on HEAD. Absolute URLs are reconstructed from
-     *     `X-Forwarded-Proto`/`X-Forwarded-Host`, falling back to `Host`; entry ids
-     *     are `urn:sha1:{sha}` so they stay stable across hosts. An empty repository
+     * @description The most recent commits on `ref` (HEAD by default), 20 entries by
+     *     default. `all=1` walks every branch and tag instead. Absolute URLs are
+     *     reconstructed from `X-Forwarded-Proto`/`X-Forwarded-Host`, falling back
+     *     to `Host`; entry ids are `urn:sha1:{sha}` so they stay stable across
+     *     hosts. An empty repository, or `all=1` on a repository with no refs,
      *     returns `200` with no entries.
      */
     get: operations["get_feed"];
@@ -1805,7 +1807,33 @@ export interface operations {
   };
   get_feed: {
     parameters: {
-      query?: never;
+      query?: {
+        /**
+         * @description Branch, tag, or commit sha; HEAD when absent. Ignored when `all=1`.
+         * @example main
+         */
+        ref?: string;
+        /**
+         * @description Only commits that changed this file or directory. A path that never
+         *     existed yields an entry-less feed rather than a 404. No `follow`
+         *     support — unlike the commit log, the feed never tracks a path across
+         *     renames (docs/DECISIONS.md #61).
+         */
+        path?: string;
+        /**
+         * @description `1`/`true` walks every local branch and tag (`refs/heads/*` +
+         *     `refs/tags/*`) instead of just the selected `ref`, newest first by
+         *     committer date. Any other value is `400 invalid_param`.
+         */
+        all?: boolean;
+        /**
+         * @description Number of entries, default 20. Parsed manually so an invalid value
+         *     yields the JSON `invalid_param` envelope instead of axum's plain-text
+         *     400. Never clamped.
+         * @example 20
+         */
+        limit?: number;
+      };
       header?: never;
       path: {
         /**
@@ -1838,7 +1866,16 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description `repo_not_found` */
+      /** @description `invalid_param` — bad `all` or `limit` */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description `repo_not_found`, `ref_not_found` */
       404: {
         headers: {
           [name: string]: unknown;

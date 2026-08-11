@@ -2254,3 +2254,104 @@ The web half of #59 — API-then-page, same order #46/#47 and #59 itself followe
 - No route change (`/stats` already takes query params only, `shellFor`/`shell_for` untouched), no
   API contract change — `StatsView.tsx`, `TreeView.tsx`, `lib/api/repos.ts::StatsParams`, and
   `lib/repo-href.ts::statsHref` only.
+
+## #61 Atom feed gains `ref`/`path`/`all`/`limit`
+
+Closes the last open "Feed and discovery" cgit-parity gap (`h=`/path filter/`all=1`/
+`max-atom-items`). Same two-commit shape as #46/#47 and #59/#60 — API first, web surfacing as a
+follow-up (#62).
+
+- **`?ref=`, never cgit's `h=`.** #18 already settled this for the whole API — "ref selection is
+  `?ref=`" — and #35 treats `h=` as a redirect-only legacy alias, not a spelling to adopt anywhere
+  new.
+- **`all=1`'s scope is `refs/heads/*` + `refs/tags/*` only**, matching the ref-shorthand resolver's
+  existing definition of "a ref axgit can resolve." Not `refs/remotes/*` — #52's own investigation
+  found no fixture or real repository that actually populates remote-tracking branches, so there's
+  nothing there to walk yet; extending the scope later is additive, not a breaking change to the
+  canonical query.
+- **The multi-tip walk uses `git2::Revwalk::push_glob` on the two globs**, not a manual
+  `repo.references()` loop. libgit2 peels an annotated tag to its target commit and silently skips
+  any ref that doesn't peel to one (verified directly:
+  `log_all_refs_should_skip_a_ref_that_does_not_peel_to_a_commit` tags a blob and asserts the walk
+  doesn't error), so no extra filtering is needed on axgit's side. Two explicit globs — not
+  `refs/*` — keep `refs/remotes` and `refs/notes` out by construction rather than by an exclusion
+  check.
+- **`Sort::TIME`, but only on the multi-tip walk.** The single-tip `log()` stays unsorted
+  (libgit2's default DFS from the pushed tip), deliberately — with one tip that's the closest match
+  to `git log`, and changing it would desync the feed's ordering from the Log tab for no benefit.
+  With several unrelated tips, though, the same DFS drains one tip's ancestry before touching the
+  next: a stale tag pushed first would starve the walk of every other branch's recent commits, and
+  `<updated>` (taken from the first entry) would report that stale date forever — a feed that looks
+  permanently frozen. `git log --all`'s own default is date order for the same reason. This is
+  deliberately *not* `diff.rs::format_patch`'s `Sort::TOPOLOGICAL | Sort::TIME`: that combination
+  exists to keep a parent from appearing after its child in a patch series, which re-introduces
+  exactly the branch-grouping the feed is trying to avoid. One caveat worth recording: libgit2
+  sorts on **committer** date while `<updated>` reports **author** date, so a rebased/imported
+  history can still produce a non-monotonic `<updated>` sequence — accepted, since Atom readers
+  sort by `<updated>` themselves and cgit has the same property.
+- **`repo/commits.rs::log()` split into itself plus a private `collect()`** that takes an
+  already-pushed `Revwalk` and does everything past that (path filter, rename following, skip/limit,
+  `CommitInfo` building). `log()` keeps constructing the single-tip walk and encoding the `Cursor`
+  from that one `Oid`; the new `pub fn log_all_refs()` builds a `Sort::TIME` multi-glob walk and
+  calls `collect()` too, returning `Vec<CommitInfo>` with no cursor at all. Deliberately **not** a
+  `LogStart { Oid(Oid), AllRefs }` enum threaded through `log()`: a multi-tip walk has no single
+  start to encode a cursor from, and `log_all_refs`'s cursor-less return type makes that a fact of
+  the type system instead of a branch `log()` would have to reject at runtime.
+- **`ref` is ignored when `all=1` is set**, the same way the commit log's `cursor` already makes it
+  ignore `ref` — computed once as `effective_ref` before the cache key, the canonical query, and the
+  walk all read it, so `?all=1&ref=nope` never resolves `nope` at all (no `404`) and shares one
+  cache entry with `?all=1`. A `400` was considered and rejected: a bookmarked feed URL with a since-
+  deleted `ref` would otherwise poll a permanent error forever, and `ref` genuinely has no effect on
+  an `all=1` walk.
+- **No `follow` support**, the same call #59 made for stats: cgit's own Atom view doesn't track
+  path filters across renames either, and `follow`'s rename-lookup cost (#56) isn't worth adding to
+  an endpoint with no pagination to spread it across.
+- **`<id>`/`rel="self"` carry a canonical query string**, generated from the *parsed* params
+  (`canonical_query`) rather than echoed from the request, so `?path=/src/`, `?path=src`, and
+  `?limit=20&path=src` all resolve to the same feed identity — RFC 4287 §4.2.6 requires a feed's
+  `<id>` to be stable and to uniquely identify that feed, and with parameters, `/feed.atom?ref=dev`
+  and `/feed.atom` really are different feeds. Fixed param order (`all`, `ref`, `path`, `limit`)
+  regardless of request order; a param at its default is omitted entirely, so the all-defaults
+  feed's `<id>` is byte-identical to the pre-#61 unparameterized one. Entry `<id>`s stay
+  `urn:sha1:{sha}` — that's cross-feed, cross-host commit dedup, a different problem from a feed's
+  own identity, so the two need not (and don't) share an encoding scheme.
+- **No immutable caching, even when `ref` resolves to a full sha.** The mechanical test used
+  elsewhere (`stats.rs`'s `query.r#ref.as_deref() == Some(sha.as_str())`) is available and `all=1`
+  obviously can never qualify (no pinned start) — but the feed body's `<subtitle>` embeds
+  `info.description`, read live from the repository's `[cgit]`/`[axgit]` config. That's mutable
+  state riding on an otherwise sha-addressed resource, the same problem #45 solved for the commit
+  page's git notes. The #45-shaped fix — `&& info.description.is_none()` — would work mechanically,
+  but it only ever fires for undescribed repositories, and a sha-pinned Atom feed can never gain a
+  new entry, so there's no reader that would meaningfully subscribe to one. Not worth a third
+  variant of the immutability predicate for that trade. `get_feed` still returns `Ok((false, ...))`
+  unconditionally.
+- **`handlers::parse_limit` gained a `default: usize` parameter** (was hardcoded to `DEFAULT_LIMIT`
+  = 50) so the feed's endpoint could reuse it with its own default of 20 instead of duplicating the
+  "1–100, never clamped, `invalid_param` on failure" parsing logic. The three existing call sites
+  (`commits`, `search`, `stats`) now pass `DEFAULT_LIMIT` explicitly.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /feed.atom` gained
+  `ref`/`path`/`all`/`limit`, plus `400 invalid_param` and `404 ref_not_found` responses). The web
+  surfacing is a follow-up commit (#62).
+
+## #62 `/{repo}/log` and the repository summary page surface the feed parameters
+
+The web half of #61 — API-then-page, same order #46/#47 and #59/#60 followed.
+
+- **`CommitLog.tsx`'s action row, not the path-filter banner.** The existing "Filtered by path …"
+  banner only renders when `resolvedPath` is set, so a `?ref=dev` log with no path filter would get
+  no feed link at all if the link lived there. The row above it ("Expand messages · Show changes")
+  already renders whenever there are commits to show and is already "options for the current
+  view" — an `Atom feed` link carrying the log's current `ref`/`path` fits there as a third
+  `·`-separated item. Deliberately forwards only `ref`/`path`: `msg`/`stat`/`follow`/`cursor` have
+  no feed analogue, and the log page's page size is a different concept from the feed's item count,
+  so `limit` isn't forwarded either.
+- **`RepoSummary.tsx` gains a second `All refs` link** (`feedUrl(name, { all: 1 })`) beside the
+  existing plain "Atom" link, inside the same `summary.head !== null` guard. Without it there is no
+  UI path to `all=1` at all — "every branch and tag" is a repository-level concept, not something
+  tied to a particular log view, so the summary page is where it belongs.
+- `feedUrl(name, params)` gained an optional `FeedParams` argument; called with no arguments it
+  produces the exact same URL as before (`buildQuery` already drops unset/empty values), so
+  `RepoSummary.tsx`'s existing plain feed link and its test assertion needed no change — that's the
+  no-regression proof for the signature change.
+- No route change, no API contract change — `CommitLog.tsx`, `RepoSummary.tsx`, and
+  `lib/api/repos.ts::feedUrl`/`FeedParams` only.

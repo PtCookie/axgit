@@ -7,7 +7,8 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use super::{
-    JSON_CONTENT_TYPE, cached_response, clean_path, parse_context, parse_flag, parse_limit,
+    DEFAULT_LIMIT, JSON_CONTENT_TYPE, cached_response, clean_path, parse_context, parse_flag,
+    parse_limit,
 };
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::commits::{CommitDetail, CommitsPage};
@@ -81,7 +82,7 @@ pub async fn list_commits(
     Query(query): Query<CommitsQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let limit = parse_limit(query.limit.as_deref())?;
+    let limit = parse_limit(query.limit.as_deref(), DEFAULT_LIMIT)?;
     let path = clean_path(query.path.as_deref());
     let include_body = parse_flag(query.msg.as_deref(), "msg")?;
     let follow = parse_flag(query.follow.as_deref(), "follow")?;

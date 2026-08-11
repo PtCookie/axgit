@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use git2::{Commit, Oid, Repository};
+use git2::{Commit, Oid, Repository, Revwalk, Sort};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
@@ -193,6 +193,59 @@ const MAX_FOLLOW_RENAME_LOOKUPS: usize = 100;
 /// `follow`, what keeps the tracked path's rename history identical on every
 /// page, since it's re-derived from `start` each time rather than resumed.
 pub fn log(repo: &Repository, start: Oid, params: &LogParams<'_>) -> Result<CommitsPage, ApiError> {
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push(start)?;
+    let (commits, has_more) = collect(repo, revwalk, params)?;
+    let next_cursor = has_more.then(|| {
+        Cursor {
+            start,
+            offset: params.skip + params.limit,
+        }
+        .encode()
+    });
+    Ok(CommitsPage {
+        commits,
+        next_cursor,
+    })
+}
+
+/// Walks every local branch and tag at once, newest first — the feed's
+/// `all=1` (docs/DECISIONS.md #61). Returns entries only: with no single
+/// walk start there is no `Cursor` to encode, and the feed doesn't paginate.
+///
+/// `push_glob` peels annotated tags to their commit and silently skips refs
+/// that don't peel to one (e.g. a tag on a blob), so no extra filtering is
+/// needed here. The two globs — not `refs/*` — keep `refs/remotes` and
+/// `refs/notes` out by construction, matching the ref scope
+/// `resolve::ref_shorthands` already uses.
+pub fn log_all_refs(
+    repo: &Repository,
+    params: &LogParams<'_>,
+) -> Result<Vec<CommitInfo>, ApiError> {
+    let mut revwalk = repo.revwalk()?;
+    // Unlike the single-tip walk (deliberately unsorted, closest to `git
+    // log`), several unrelated tips need date order: the default DFS drains
+    // one branch before touching the next, so a stale tag pushed first would
+    // starve the walk of recent commits from every other branch, and
+    // `<updated>` (taken from the first entry) would report a frozen date.
+    // Note: this sorts on *committer* date while `<updated>` reports
+    // *author* date, so a rebased history can still show a non-monotonic
+    // `<updated>` sequence — acceptable, same as cgit.
+    revwalk.set_sorting(Sort::TIME)?;
+    for glob in ["refs/heads/*", "refs/tags/*"] {
+        revwalk.push_glob(glob)?;
+    }
+    Ok(collect(repo, revwalk, params)?.0)
+}
+
+/// Everything [`log`] does except constructing the walk and encoding a
+/// cursor: consumes a caller-prepared, already-pushed `Revwalk` and reports
+/// whether the walk stopped early (more commits were available past `limit`).
+fn collect(
+    repo: &Repository,
+    revwalk: Revwalk<'_>,
+    params: &LogParams<'_>,
+) -> Result<(Vec<CommitInfo>, bool), ApiError> {
     let &LogParams {
         path,
         skip,
@@ -201,8 +254,6 @@ pub fn log(repo: &Repository, start: Oid, params: &LogParams<'_>) -> Result<Comm
         follow,
         include_stat,
     } = params;
-    let mut revwalk = repo.revwalk()?;
-    revwalk.push(start)?;
     let mut commits = Vec::new();
     let mut skipped = 0usize;
     let mut has_more = false;
@@ -258,17 +309,7 @@ pub fn log(repo: &Repository, start: Oid, params: &LogParams<'_>) -> Result<Comm
         }
         commits.push(info);
     }
-    let next_cursor = has_more.then(|| {
-        Cursor {
-            start,
-            offset: skip + limit,
-        }
-        .encode()
-    });
-    Ok(CommitsPage {
-        commits,
-        next_cursor,
-    })
+    Ok((commits, has_more))
 }
 
 /// Shared by the log walk and search's commit-message matcher
@@ -402,6 +443,32 @@ mod tests {
             .unwrap()
     }
 
+    /// Like [`commit_files`], but doesn't move `HEAD` (so callers can build
+    /// several diverging branches from the same repo) and takes an explicit
+    /// author/committer Unix timestamp, for tests that assert ordering.
+    fn commit_files_at(
+        repo: &Repository,
+        parent: Option<Oid>,
+        files: &[(&str, &str)],
+        time: i64,
+    ) -> Oid {
+        let mut builder = repo.treebuilder(None).unwrap();
+        for (name, content) in files {
+            let blob = repo.blob(content.as_bytes()).unwrap();
+            builder.insert(name, blob, 0o100644).unwrap();
+        }
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let sig =
+            git2::Signature::new("Test", "test@example.com", &git2::Time::new(time, 0)).unwrap();
+        let parents: Vec<_> = parent
+            .map(|oid| repo.find_commit(oid).unwrap())
+            .into_iter()
+            .collect();
+        let parent_refs: Vec<_> = parents.iter().collect();
+        repo.commit(None, &sig, &sig, "test", &tree, &parent_refs)
+            .unwrap()
+    }
+
     #[test]
     fn touches_path_should_track_entry_changes() {
         let dir = tempfile::tempdir().unwrap();
@@ -495,5 +562,116 @@ mod tests {
         };
         let page = log(&repo, child, &without_stat).unwrap();
         assert!(page.commits.iter().all(|c| c.stat.is_none()));
+    }
+
+    const ALL_REFS_PARAMS: LogParams<'static> = LogParams {
+        path: None,
+        skip: 0,
+        limit: 10,
+        include_body: false,
+        follow: false,
+        include_stat: false,
+    };
+
+    #[test]
+    fn log_all_refs_should_walk_every_branch_and_tag_newest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+
+        // main: c0 (t=100) -> c1 (t=200) -> c2 (t=400).
+        let c0 = commit_files_at(&repo, None, &[("a.txt", "0")], 100);
+        let c1 = commit_files_at(&repo, Some(c0), &[("a.txt", "1")], 200);
+        let c2 = commit_files_at(&repo, Some(c1), &[("a.txt", "2")], 400);
+        repo.reference("refs/heads/main", c2, true, "test").unwrap();
+
+        // dev: forked from c0, one commit at t=300 — interleaves between
+        // main's c1 and c2 under date order.
+        let dev = commit_files_at(&repo, Some(c0), &[("dev.txt", "d")], 300);
+        repo.reference("refs/heads/dev", dev, true, "test").unwrap();
+
+        // Reachable only via a tag, oldest of all (t=50) — proves
+        // `refs/tags/*` is walked too, not just branches.
+        let tagged = commit_files_at(&repo, None, &[("t.txt", "t")], 50);
+        repo.reference("refs/tags/v1", tagged, true, "test")
+            .unwrap();
+
+        let commits = log_all_refs(&repo, &ALL_REFS_PARAMS).unwrap();
+        let shas: Vec<_> = commits.iter().map(|c| c.sha.as_str()).collect();
+        // Newest first by date, interleaved across tips — this is exactly
+        // the ordering the default (unsorted DFS) walk would get wrong: it
+        // would drain one tip's ancestry before touching the next.
+        assert_eq!(
+            shas,
+            [
+                c2.to_string(),
+                dev.to_string(),
+                c1.to_string(),
+                c0.to_string(),
+                tagged.to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn log_all_refs_should_respect_limit_and_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+
+        let c0 = commit_files_at(&repo, None, &[("a.txt", "0")], 100);
+        let c1 = commit_files_at(&repo, Some(c0), &[("a.txt", "1"), ("b.txt", "b")], 200);
+        repo.reference("refs/heads/main", c1, true, "test").unwrap();
+        let dev = commit_files_at(&repo, Some(c0), &[("dev.txt", "d")], 150);
+        repo.reference("refs/heads/dev", dev, true, "test").unwrap();
+
+        let limited = log_all_refs(
+            &repo,
+            &LogParams {
+                limit: 2,
+                ..ALL_REFS_PARAMS
+            },
+        )
+        .unwrap();
+        let shas: Vec<_> = limited.iter().map(|c| c.sha.as_str()).collect();
+        assert_eq!(shas, [c1.to_string(), dev.to_string()]);
+
+        // The path filter narrows across branches the same way it does for
+        // a single-tip walk — only c1 touches b.txt.
+        let filtered = log_all_refs(
+            &repo,
+            &LogParams {
+                path: Some(Path::new("b.txt")),
+                ..ALL_REFS_PARAMS
+            },
+        )
+        .unwrap();
+        let shas: Vec<_> = filtered.iter().map(|c| c.sha.as_str()).collect();
+        assert_eq!(shas, [c1.to_string()]);
+    }
+
+    #[test]
+    fn log_all_refs_should_return_nothing_for_a_repo_with_no_refs() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let commits = log_all_refs(&repo, &ALL_REFS_PARAMS).unwrap();
+        assert!(commits.is_empty());
+    }
+
+    #[test]
+    fn log_all_refs_should_skip_a_ref_that_does_not_peel_to_a_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files_at(&repo, None, &[("a.txt", "0")], 100);
+        repo.reference("refs/heads/main", root, true, "test")
+            .unwrap();
+
+        // A tag pointing directly at a blob, not a commit — `push_glob`
+        // must silently skip it rather than erroring the whole walk.
+        let blob = repo.blob(b"not a commit").unwrap();
+        repo.reference("refs/tags/blob-tag", blob, true, "test")
+            .unwrap();
+
+        let commits = log_all_refs(&repo, &ALL_REFS_PARAMS).unwrap();
+        let shas: Vec<_> = commits.iter().map(|c| c.sha.as_str()).collect();
+        assert_eq!(shas, [root.to_string()]);
     }
 }

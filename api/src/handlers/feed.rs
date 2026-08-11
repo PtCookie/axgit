@@ -5,27 +5,57 @@
 //! (docs/DECISIONS.md #12). Entry ids are `urn:sha1:` IRIs so they stay
 //! stable no matter which host or proxy served the request.
 
-use axum::extract::{Path, State};
+use std::path::Path as FsPath;
+
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
+use serde::Deserialize;
+use utoipa::IntoParams;
 
-use super::{ATOM_CONTENT_TYPE, cached_response};
+use super::{ATOM_CONTENT_TYPE, cached_response, clean_path, parse_flag, parse_limit};
 use crate::error::{ApiError, ErrorResponse};
-use crate::repo::commits::{self, CommitInfo, CommitsPage};
-use crate::repo::{RepoInfo, meta};
+use crate::repo::commits::{self, CommitInfo};
+use crate::repo::{RepoInfo, meta, resolve};
 use crate::state::AppState;
 
-const FEED_ENTRY_LIMIT: usize = 20;
+const FEED_DEFAULT_LIMIT: usize = 20;
 
 /// Fallback for commits with unrepresentable timestamps — Atom requires
 /// `<updated>` on every feed and entry.
 const EPOCH: &str = "1970-01-01T00:00:00Z";
 
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct FeedQuery {
+    /// Branch, tag, or commit sha; HEAD when absent. Ignored when `all=1`.
+    #[serde(rename = "ref")]
+    #[param(example = "main")]
+    r#ref: Option<String>,
+    /// Only commits that changed this file or directory. A path that never
+    /// existed yields an entry-less feed rather than a 404. No `follow`
+    /// support — unlike the commit log, the feed never tracks a path across
+    /// renames (docs/DECISIONS.md #61).
+    path: Option<String>,
+    /// `1`/`true` walks every local branch and tag (`refs/heads/*` +
+    /// `refs/tags/*`) instead of just the selected `ref`, newest first by
+    /// committer date. Any other value is `400 invalid_param`.
+    #[param(value_type = Option<bool>)]
+    all: Option<String>,
+    /// Number of entries, default 20. Parsed manually so an invalid value
+    /// yields the JSON `invalid_param` envelope instead of axum's plain-text
+    /// 400. Never clamped.
+    #[param(value_type = Option<u32>, minimum = 1, maximum = 100, example = 20)]
+    limit: Option<String>,
+}
+
 /// Atom feed of recent commits
 ///
-/// The 20 most recent commits on HEAD. Absolute URLs are reconstructed from
-/// `X-Forwarded-Proto`/`X-Forwarded-Host`, falling back to `Host`; entry ids
-/// are `urn:sha1:{sha}` so they stay stable across hosts. An empty repository
+/// The most recent commits on `ref` (HEAD by default), 20 entries by
+/// default. `all=1` walks every branch and tag instead. Absolute URLs are
+/// reconstructed from `X-Forwarded-Proto`/`X-Forwarded-Host`, falling back
+/// to `Host`; entry ids are `urn:sha1:{sha}` so they stay stable across
+/// hosts. An empty repository, or `all=1` on a repository with no refs,
 /// returns `200` with no entries.
 #[utoipa::path(
     get,
@@ -33,6 +63,7 @@ const EPOCH: &str = "1970-01-01T00:00:00Z";
     tag = "repos",
     params(
         ("repo" = String, Path, description = "Repository name without the `.git` suffix", example = "git-compose"),
+        FeedQuery,
     ),
     responses(
         (status = 200, description = "Atom 1.0 feed",
@@ -44,17 +75,29 @@ const EPOCH: &str = "1970-01-01T00:00:00Z";
             ),
         ),
         (status = 304, description = "`If-None-Match` matched the current `ETag`"),
-        (status = 404, description = "`repo_not_found`", body = ErrorResponse),
+        (status = 400, description = "`invalid_param` — bad `all` or `limit`", body = ErrorResponse),
+        (status = 404, description = "`repo_not_found`, `ref_not_found`", body = ErrorResponse),
     ),
 )]
 pub async fn get_feed(
     State(state): State<AppState>,
     Path(name): Path<String>,
+    Query(query): Query<FeedQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
+    let all = parse_flag(query.all.as_deref(), "all")?;
+    let limit = parse_limit(query.limit.as_deref(), FEED_DEFAULT_LIMIT)?;
+    let path = clean_path(query.path.as_deref());
+    // `all=1` walks every ref, so there is no ref to select — dropped here
+    // so the cache key, the canonical query, and the walk all agree (the
+    // same way `/commits`' `cursor` makes it ignore `ref`).
+    let effective_ref = if all { None } else { query.r#ref.clone() };
+    let feed_query = canonical_query(all, effective_ref.as_deref(), path.as_deref(), limit);
+
     let base = base_url(&headers);
-    // The rendered XML embeds the base URL, so it is part of the cache key.
-    let params = format!("base={base}");
+    // The rendered XML embeds the base URL and the canonical query, so both
+    // are part of the cache key — as is every param that changes the walk.
+    let params = format!("base={base}&all={all}&ref={effective_ref:?}&path={path:?}&limit={limit}");
     let feed_name = name.clone();
     cached_response(
         &state,
@@ -65,31 +108,60 @@ pub async fn get_feed(
         &headers,
         move |repo| {
             let info = meta::read_repo_info(repo, &feed_name);
-            // Unborn HEAD (empty repository) serves an entry-less feed, not 404 —
-            // the repo exists and feed readers keep polling it.
-            let page = match repo.head().ok().and_then(|head| head.target()) {
-                Some(oid) => commits::log(
-                    repo,
-                    oid,
-                    &commits::LogParams {
-                        path: None,
-                        skip: 0,
-                        limit: FEED_ENTRY_LIMIT,
-                        include_body: false,
-                        follow: false,
-                        include_stat: false,
-                    },
-                )?,
-                None => CommitsPage {
-                    commits: Vec::new(),
-                    next_cursor: None,
-                },
+            let log_params = commits::LogParams {
+                path: path.as_deref(),
+                skip: 0,
+                limit,
+                include_body: false,
+                follow: false,
+                include_stat: false,
             };
-            let xml = render_feed(&base, &feed_name, &info, &page.commits);
+            let commits = if all {
+                commits::log_all_refs(repo, &log_params)?
+            } else {
+                // Unborn HEAD (empty repository) serves an entry-less feed,
+                // not 404 — the repo exists and feed readers keep polling it.
+                let start = match &effective_ref {
+                    Some(refname) => Some(resolve::resolve_commit(repo, refname)?.id()),
+                    None => repo.head().ok().and_then(|head| head.target()),
+                };
+                match start {
+                    Some(oid) => commits::log(repo, oid, &log_params)?.commits,
+                    None => Vec::new(),
+                }
+            };
+            let xml = render_feed(&base, &feed_name, &feed_query, &info, &commits);
             Ok((false, xml.into_bytes()))
         },
     )
     .await
+}
+
+/// The canonical query string for this feed's `<id>`/`rel="self"`. Built
+/// from the *parsed* params, not the raw query string, so that
+/// `?path=/src/`, `?path=src`, and `?limit=20&path=src` all name the same
+/// feed (RFC 4287 §4.2.6 requires a feed id that is stable and unique per
+/// feed). Fixed param order regardless of request order; defaults are
+/// omitted so the all-defaults feed's id matches today's un-parameterized
+/// one exactly.
+fn canonical_query(all: bool, r#ref: Option<&str>, path: Option<&FsPath>, limit: usize) -> String {
+    let mut parts = Vec::new();
+    if all {
+        parts.push("all=1".to_owned());
+    } else if let Some(refname) = r#ref {
+        parts.push(format!("ref={}", encode_segment(refname)));
+    }
+    if let Some(path) = path {
+        parts.push(format!("path={}", encode_segment(&path.to_string_lossy())));
+    }
+    if limit != FEED_DEFAULT_LIMIT {
+        parts.push(format!("limit={limit}"));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", parts.join("&"))
+    }
 }
 
 /// Reconstructs the external base URL from proxy headers. TLS terminates at
@@ -117,11 +189,22 @@ fn header_value<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
         .filter(|value| !value.is_empty())
 }
 
-fn render_feed(base: &str, name: &str, info: &RepoInfo, commits: &[CommitInfo]) -> String {
+fn render_feed(
+    base: &str,
+    name: &str,
+    query: &str,
+    info: &RepoInfo,
+    commits: &[CommitInfo],
+) -> String {
     // `<id>`/`rel="self"` must be this document's own URL, so they stay on
     // the API route even though entries' `rel="alternate"` points at the web
-    // UI (see render_entry).
-    let self_url = format!("{base}/api/v1/repos/{}/feed.atom", encode_segment(name));
+    // UI (see render_entry). `query` is the canonical query string built by
+    // `canonical_query`, so distinct parameterizations get distinct feed ids
+    // (RFC 4287 §4.2.6).
+    let self_url = format!(
+        "{base}/api/v1/repos/{}/feed.atom{query}",
+        encode_segment(name)
+    );
     let updated = commits
         .first()
         .and_then(|commit| commit.authored_at.as_deref())
@@ -250,10 +333,54 @@ mod tests {
             default_branch: None,
             last_modified: None,
         };
-        let xml = render_feed("http://localhost", "empty", &info, &[]);
+        let xml = render_feed("http://localhost", "empty", "", &info, &[]);
         assert!(xml.contains("<feed xmlns=\"http://www.w3.org/2005/Atom\">"));
         assert!(xml.contains(&format!("<updated>{EPOCH}</updated>")));
         assert!(!xml.contains("<entry>"));
         assert!(!xml.contains("<subtitle>"));
+    }
+
+    #[test]
+    fn render_feed_should_carry_the_query_into_id_and_self_link() {
+        let info = RepoInfo {
+            name: "repo".to_owned(),
+            section: None,
+            owner: None,
+            description: None,
+            default_branch: None,
+            last_modified: None,
+        };
+        let xml = render_feed("http://localhost", "repo", "?ref=dev&limit=5", &info, &[]);
+        let expected_url = "http://localhost/api/v1/repos/repo/feed.atom?ref=dev&limit=5";
+        assert!(xml.contains(&format!("<id>{}</id>", xml_escape(expected_url))));
+        assert!(xml.contains(&format!(
+            "<link rel=\"self\" href=\"{}\"/>",
+            xml_escape(expected_url)
+        )));
+    }
+
+    #[test]
+    fn canonical_query_should_omit_defaults_and_fix_order() {
+        assert_eq!(canonical_query(false, None, None, FEED_DEFAULT_LIMIT), "");
+        assert_eq!(canonical_query(false, None, None, 5), "?limit=5");
+        assert_eq!(
+            canonical_query(false, Some("feature/x"), None, 5),
+            "?ref=feature%2Fx&limit=5"
+        );
+        // `all=1` wins over `ref` — the same order the handler computes
+        // `effective_ref` in.
+        assert_eq!(
+            canonical_query(
+                true,
+                Some("dev"),
+                Some(FsPath::new("src")),
+                FEED_DEFAULT_LIMIT
+            ),
+            "?all=1&path=src"
+        );
+        assert_eq!(
+            canonical_query(false, None, Some(FsPath::new("a b&c")), FEED_DEFAULT_LIMIT),
+            "?path=a%20b%26c"
+        );
     }
 }

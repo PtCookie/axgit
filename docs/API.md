@@ -647,14 +647,34 @@ maintained Rust encoder.
   over-capacity request waits rather than failing, since archives are never response-cached and
   each encoder holds meaningful memory for the request's duration.
 
-### `GET /api/v1/repos/{repo}/feed.atom`
+### `GET /api/v1/repos/{repo}/feed.atom?ref=&path=&all=&limit=`
 
-An Atom feed of the default branch's (HEAD's) most recent **20 commits**.
-`Content-Type: application/atom+xml; charset=utf-8`.
+An Atom feed of a repository's most recent commits — the default branch (HEAD) and **20** entries
+by default. `Content-Type: application/atom+xml; charset=utf-8`.
 
-- Feed: `<title>` = repo name, `<subtitle>` = description (only if present), `<id>` and the
-  `rel="self"` link = this endpoint's absolute URL, `<updated>` = the latest commit's authordate
-  (epoch if there are no commits).
+- `ref`: branch, tag, or commit sha; HEAD when absent. Ignored when `all=1` (see below).
+  `404 ref_not_found` on resolution failure.
+- `path`: only commits that changed this file or directory, the same `touches_path` predicate the
+  commit log's own `path` filter uses. A path that never existed yields an entry-less feed rather
+  than a 404. **No `follow` support** — unlike the commit log, the feed never tracks a path across
+  renames (cgit's Atom view doesn't either).
+- `all`: `0`/`1`/`true`/`false`, default off (cgit's `all=1`). When on, the feed walks every local
+  branch and tag (`refs/heads/*` + `refs/tags/*` — the same scope the ref-shorthand resolver
+  covers, not `refs/remotes`) instead of just `ref`, newest first by **committer** date (not the
+  author date `<updated>` reports, so a rebased history can show a non-monotonic `<updated>`
+  sequence — acceptable, cgit has the same property). `ref` is ignored when `all=1` is set, the
+  same way the commit log's `cursor` makes it ignore `ref`: a stale bookmarked `ref` must not turn
+  a working feed into a permanent `404`. Any other value is `400 invalid_param`.
+- `limit`: default 20, allowed range 1–100. **0, values over 100, or non-integers are
+  `400 invalid_param`** (not clamped) — same rule as the commit log's `limit`, different default.
+- Feed: `<title>` = repo name, `<subtitle>` = description (only if present), `<updated>` = the
+  latest commit's authordate (epoch if there are no commits).
+- `<id>` and the `rel="self"` link = this endpoint's absolute URL, including a **canonical query
+  string** built from the parsed params (not echoed from the request) so that every distinct
+  parameterization gets a distinct, stable feed id (RFC 4287 §4.2.6): fixed order `all`, `ref`,
+  `path`, `limit`; a param is omitted entirely when it's at its default (so the all-defaults feed's
+  id is byte-identical to the un-parameterized form); `ref`/`path` values are percent-encoded.
+  E.g. `?limit=5&ref=feature/x` → `...feed.atom?ref=feature%2Fx&limit=5`.
 - Entry: `<title>` = commit summary (`(no message)` if non-UTF-8), `<id>` =
   **`urn:sha1:{full sha}`** (stable regardless of host — avoids duplicate entries in feed
   readers), `<updated>` = authordate, `<author><name>` only (not even a hashed email), the
@@ -662,9 +682,15 @@ An Atom feed of the default branch's (HEAD's) most recent **20 commits**.
 - The absolute URL base is reconstructed from `X-Forwarded-Proto` (default `http`) +
   `X-Forwarded-Host` → `Host` (default `localhost`) headers (no separate base URL config,
   DECISIONS.md #12). The repository name is percent-encoded wherever it appears in an emitted URL.
-- An empty repository (unborn HEAD) returns `200` with an entry-less feed, not a 404.
-- ETag + `Cache-Control: no-cache` (see the caching headers section). Since the body embeds the
-  base URL, the server response cache key includes the base URL too.
+- An empty repository (unborn HEAD) returns `200` with an entry-less feed, not a 404. So does
+  `all=1` on a repository with no branches or tags at all. An unborn HEAD with existing branches
+  or tags is not empty under `all=1` — it only affects the default (no-`ref`, no-`all`) feed.
+- ETag + `Cache-Control: no-cache` (see the caching headers section) — **never immutable**, even
+  when `ref` resolves to a full sha: the body's `<subtitle>` reads the repository's live
+  `[cgit]`/`[axgit]` description, so a sha-pinned feed could otherwise serve a stale subtitle
+  forever. Since the body embeds the base URL and the canonical query, both are part of the server
+  response cache key, along with every other param that changes the walk (`all`, `ref`, `path`,
+  `limit`).
 
 ### `GET /api/v1/repos/{repo}/search?q=&type=&ref=&limit=`
 

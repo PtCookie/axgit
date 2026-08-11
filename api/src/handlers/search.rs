@@ -7,7 +7,7 @@ use axum::response::Response;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use super::{JSON_CONTENT_TYPE, cached_response, parse_limit};
+use super::{DEFAULT_LIMIT, JSON_CONTENT_TYPE, cached_response, parse_limit};
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::resolve;
 use crate::repo::search::{self, SearchKind, SearchResults};
@@ -99,7 +99,7 @@ pub async fn get_search(
 ) -> Result<Response, ApiError> {
     let q = parse_query(query.q.as_deref())?;
     let kind = parse_kind(query.r#type.as_deref())?;
-    let limit = parse_limit(query.limit.as_deref())?;
+    let limit = parse_limit(query.limit.as_deref(), DEFAULT_LIMIT)?;
     let params = format!("q={q:?}&type={kind:?}&ref={:?}&limit={limit}", query.r#ref);
     cached_response(
         &state,

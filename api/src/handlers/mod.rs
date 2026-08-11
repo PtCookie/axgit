@@ -37,13 +37,15 @@ pub(crate) const TEXT_PLAIN_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
 pub(crate) const DEFAULT_LIMIT: usize = 50;
 pub(crate) const MAX_LIMIT: usize = 100;
 
-/// Shared by `commits::list_commits` and `search::get_search` — both page
-/// results with the same "default 50, 1-100, never clamped" rule
-/// (docs/API.md). Parsed manually so an invalid value yields the JSON
-/// `invalid_param` envelope instead of axum's plain-text 400.
-pub(crate) fn parse_limit(raw: Option<&str>) -> Result<usize, ApiError> {
+/// Shared by `commits::list_commits`, `search::get_search`, `stats::get_stats`,
+/// and `feed::get_feed` — all page or cap results with the same "1-100,
+/// never clamped" rule (docs/API.md), differing only in their default
+/// (`DEFAULT_LIMIT` for the first three, `FEED_DEFAULT_LIMIT` for the feed).
+/// Parsed manually so an invalid value yields the JSON `invalid_param`
+/// envelope instead of axum's plain-text 400.
+pub(crate) fn parse_limit(raw: Option<&str>, default: usize) -> Result<usize, ApiError> {
     let Some(raw) = raw else {
-        return Ok(DEFAULT_LIMIT);
+        return Ok(default);
     };
     match raw.parse::<usize>() {
         Ok(limit) if (1..=MAX_LIMIT).contains(&limit) => Ok(limit),
