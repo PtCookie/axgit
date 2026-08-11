@@ -1849,3 +1849,81 @@ rather than in response to an actual repository that would use it.
 - Test fixtures use `git update-ref refs/remotes/{name} {target}` directly — no real `git remote
   add`/`fetch` involved, matching the finding above that this is a hand-configured shape, not
   something to simulate a whole second repository for.
+
+## #53 Object links for non-commit refs (`GET /objects/{oid}`, cgit's `cgit_object_link()` parity)
+
+Closed the last "Tags and refs" cgit-parity gap, left open on purpose by #51: a tag's target that
+isn't a commit had a known kind (`TagDetail.object.type`) but nowhere to link to — axgit's
+tree/blob/raw routes are all ref+path based, with no by-oid equivalent anywhere in the API. Also
+closed the separate "Fetching a blob directly by object id" gap under "Tree and blob" — one
+feature, two gap bullets. Landed as five commits: `GET /refs` learning the target kind, the by-oid
+detail endpoint, the by-oid raw endpoint, the web object page, then wiring the two existing
+non-commit-target call sites (`RefsView`, `TagView`) onto it.
+
+- **`TagRef` gains `object: { sha, type }`, and `target` becomes nullable** — `GET /refs` used to
+  fall back to the *peeled object id* for a tag that never reaches a commit, writing a non-commit
+  oid into the same field a commit sha goes into; `RefsView.tsx` then rendered it under a column
+  literally headed "Commit". That fallback is deleted; `object` is now the same one-level
+  dereference `GET /tags/{name}` already reports (same name, same shape, same meaning, per #51's
+  "one word, one meaning" rule), and `target` keeps `GET /tags/{name}`'s existing nullable meaning
+  instead of a separate one. The dereference logic itself is shared via a new
+  `tag::dereference` helper (extracted from `tag::detail`) so the two endpoints structurally cannot
+  drift apart again.
+- **`GET /objects/{oid}` requires a full 40-character hex id — abbreviations are `400
+  invalid_param`.** Every link axgit itself emits already carries a full oid, and requiring one is
+  what lets the endpoint be **unconditionally immutable-cached**: unlike every other tag/branch-
+  shaped URL in this API, the address here *is* the content, so there's no validator to check.
+  `repo::object::parse_full_oid` rejects on length or non-hex bytes before touching the repository
+  or the cache.
+  - **One envelope, not a `oneOf` union** (`ObjectDetail { sha, type, tree, blob, tag }`, only the
+    `type`-matching payload non-null): keeps this document's "every key always present" invariant
+    rather than special-casing this one endpoint. A `commit`-typed object carries no payload at
+    all — the web view links straight to `GET /commits/{sha}` instead of duplicating that data
+    here.
+  - **`TreeEntryInfo` gains `sha`** (additive on `GET /tree` too) so a tree's entries can link
+    onward by oid; the entry-building loop (`repo::tree::list_tree`) is now shared via a new
+    `entries_of` helper between the ref+path tree endpoint and the by-oid one, so the two can't
+    disagree on ordering or field shape either.
+  - **`repo::tag` gains a second, parallel dereference helper (`dereference_object`)** rather than
+    reusing `dereference`: the shared one takes a `git2::Reference` and calls
+    `Reference::peel_to_commit()` for `target` (a single native libgit2 call that already walks
+    nested tags), but a tag reached by its own oid has no reference behind it — only a resolved
+    `git2::Tag` — so `dereference_object` walks to the peeled commit via `Object::peel` instead.
+    Both are thin wrappers over the same libgit2 peeling behavior; kept as two functions rather than
+    one accepting either input, since unifying them would mean threading a `Reference`-or-`Object`
+    enum through code that's otherwise identical either way.
+  - **`ApiError::ObjectNotFound` (`404 object_not_found`) is a new variant**, not a reuse of
+    `RefNotFound`: there's no ref or sha *resolution* involved in a by-oid lookup, just a direct
+    object-database miss — conflating the two would blur a distinction every other 404 in this API
+    already draws (`path_not_found` vs. `ref_not_found`).
+- **`GET /objects/{oid}/raw`** is the by-oid analogue of `GET /raw/{ref}/{path...}`: blob bytes
+  only (`404 object_not_found` for any other kind), always immutable, always
+  `X-Content-Type-Options: nosniff`. With no filename behind an oid there's no extension to guess a
+  `Content-Type` from, so it's always `text/plain; charset=utf-8` or `application/octet-stream` —
+  never `mime_guess`.
+- **Web: `/{repo}/object/{oid}`, a new placeholder-shell route** (`shellFor`/`shell_for` both gain
+  an exactly-3-segment arm, same shape as `commit`'s — an oid never contains `/`), not a `RepoNav`
+  tab: `RepoLayout`'s nav highlighting maps it to "Refs", the same choice #51 made for the tag
+  page, since both are drill-downs reached from Refs/tag pages rather than places a user browses to
+  directly.
+  - **Tree navigation inside the object page is oid-to-oid, with no path context** — there's no
+    root commit behind a bare oid to build a breadcrumb or a `path` from, so `ObjectView.tsx`
+    doesn't try to fake one; each entry just links to another `GET /objects/{oid}` call by its own
+    `sha`. A gitlink entry stays inert text, same as `TreeView.tsx`'s submodule row — its sha names
+    a commit in another repository, unreachable through this one.
+  - **A blob's `CodeBlock` gets `path=""`** — there's no filename behind an oid for Shiki to guess
+    a language from, so it renders as plain text, the same fallback an unrecognized extension
+    already gets elsewhere.
+  - **A tag's non-commit dereference links onward through the object page too** (not just
+    `RefsView`/`TagView`'s existing rows) — this is what actually lets a nested tag be followed one
+    hop at a time; without it, the object page itself would dead-end exactly where the gap started.
+  - **`Disallow: /*/object/` added to `robots.txt`**: the object graph is walkable link-by-link —
+    cheap per request, but not something worth handing a crawler, matching the existing scan-
+    budgeted-endpoint rule (`search`/`stats`/`blame`/`diff`).
+- **`RefsView.tsx`'s tag Object cell and `TagView.tsx`'s Object row both route by `object.type`**:
+  `commit` → `commitHref` (unchanged), anything else → the new `objectHref`. This is the change that
+  actually closes the gap — #51 had already narrowed it by making the *kind* knowable
+  (`TagDetail.object.type`); until this commit neither call site acted on a non-commit kind, so a
+  tree/blob/nested-tag target still rendered as inert text with nowhere to go.
+- **Fixtures gained a tag on a tree** (`tree-tag`, alongside #51's existing blob tag) so the by-oid
+  tree case — not just the blob case — is reachable in a local run (`scripts/make-fixtures.sh`).

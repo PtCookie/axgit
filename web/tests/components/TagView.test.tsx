@@ -85,7 +85,7 @@ describe("TagView", () => {
       .toHaveAttribute("href", "/git-compose/commit/commit000000000000000000000000000000000000");
   });
 
-  it("renders a blob target unlinked, with no Tree/Log/download links", async () => {
+  it("links a blob target to the by-oid object page, with no Tree/Log/download links", async () => {
     mockedGetTag.mockResolvedValue({
       ...ANNOTATED,
       object: { sha: "blob00000000000000000000000000000000000000", type: "blob" },
@@ -93,10 +93,11 @@ describe("TagView", () => {
     });
     render(<TagView repo="git-compose" name="blob-tag" />);
 
-    await expect.element(page.getByText("blob00000000000000000000000000000000000000")).toBeVisible();
     await expect
       .element(page.getByRole("link", { name: "blob00000000000000000000000000000000000000" }))
-      .not.toBeInTheDocument();
+      .toHaveAttribute("href", "/git-compose/object/blob00000000000000000000000000000000000000");
+    // A tag with no target still can't be archived or browsed as a tree —
+    // only the object row's link changed, not the `canBrowse` gate.
     await expect.element(page.getByRole("link", { name: "tar.gz" })).not.toBeInTheDocument();
     await expect.element(page.getByRole("link", { name: "Browse the tree at this tag" })).not.toBeInTheDocument();
   });

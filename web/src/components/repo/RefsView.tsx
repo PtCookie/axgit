@@ -5,7 +5,7 @@ import { archiveUrl, getRefs, type ArchiveFormat } from "@/lib/api/repos";
 import type { RefsInfo } from "@/lib/api/schemas";
 import { useDefaultBranch } from "@/lib/default-branch";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
-import { commitHref, compareHref, logHref, tagHref } from "@/lib/repo-href";
+import { commitHref, compareHref, logHref, objectHref, tagHref } from "@/lib/repo-href";
 import { repoFromPathname } from "@/lib/repo-param";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -247,17 +247,20 @@ export default function RefsView({ repo }: RefsViewProps) {
                     </a>
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono">
-                    {/* Only a commit target is browsable today — cgit's
-                        `cgit_object_link()` parity for tree/blob/nested-tag
-                        targets is a separate by-oid object page (docs/ROADMAP.md's
-                        "Tags and refs" gap), not yet wired up here. */}
-                    {tag.object.type === "commit" ? (
-                      <a className="hover:underline" href={commitHref(resolvedRepo, tag.object.sha)}>
-                        {tag.object.sha.slice(0, 12)}
-                      </a>
-                    ) : (
-                      <span title={tag.object.type}>{tag.object.sha.slice(0, 12)}</span>
-                    )}
+                    {/* A commit target links to the commit page; anything
+                        else (tree/blob/nested tag) links to the by-oid
+                        object page — cgit's `cgit_object_link()` parity
+                        (docs/DECISIONS.md #53). */}
+                    <a
+                      className="hover:underline"
+                      href={
+                        tag.object.type === "commit"
+                          ? commitHref(resolvedRepo, tag.object.sha)
+                          : objectHref(resolvedRepo, tag.object.sha)
+                      }
+                    >
+                      {tag.object.sha.slice(0, 12)}
+                    </a>
                     {tag.object.type !== "commit" && <span className="not-italic"> ({tag.object.type})</span>}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{tag.annotation ?? "—"}</TableCell>

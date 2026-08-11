@@ -1012,6 +1012,21 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   branch `origin` alongside a remote branch `origin/main`) not worth taking on without a real user.
   `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated.
 
+- **Object links for non-commit refs** (DECISIONS.md #53), closing the last "Tags and refs"
+  cgit-parity gap left open by #51/#52, and separately closing "Fetching a blob directly by object
+  id" under "Tree and blob" — one feature, two gap bullets. Five commits: `GET /refs` learning each
+  tag's dereferenced object (`TagRef` gains `object: { sha, type }`, `target` becomes nullable — the
+  `peel(ObjectType::Any)` fallback that silently wrote a non-commit oid into a "Commit" column is
+  gone), a new `GET /objects/{oid}` (tree/blob/commit/tag detail; `{oid}` must be a full
+  40-character hex id, which is also what makes the endpoint unconditionally immutable-cached) and
+  `GET /objects/{oid}/raw`, a new `/{repo}/object/{oid}` web page (tree entries link onward by their
+  own oid — no path context, since there's no commit behind a bare oid — a blob shows content with
+  no filename for Shiki to key off, a tag's non-commit dereference links one hop further so a nested
+  tag can be walked), then wiring `RefsView`'s tag Object column and `TagView`'s Object row onto it
+  (previously inert text for anything but a commit). `repo::tree::TreeEntryInfo` gained `sha`
+  (additive on `GET /tree` too). Fixtures gained a tag on a tree alongside the existing blob tag.
+  `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (two new operations).
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1025,12 +1040,12 @@ the `git notes` item under "Commit page" (archive download links on the commit p
 there), author/committer/range search (#46/#47) closed the last remaining item under "Log", and
 per-row quick links (#48) closed the `enable-index-links` gap under "Repository index" and the
 log/raw/blame gap under "Tree and blob", symlink targets (#49) closed one more there (submodule
-links, single-child directory collapsing, the hex dump view, and blob-by-oid remain open), the
-`Others (N)` row (#50) left `path=` as the only open item under "Stats", the tag detail page plus
-per-tag downloads (#51) closed all but two items under "Tags and refs", and remote branches (#52)
-closed one of those two — object links for non-commit refs (narrowed, not closed: the `/refs` list
-rows themselves still link every tag blind to the commit page) is now the only item left open under
-"Tags and refs". Pick the next piece of work from the candidates below, or from a fresh request.
+links, single-child directory collapsing, and the hex dump view remain open), the `Others (N)` row
+(#50) left `path=` as the only open item under "Stats", the tag detail page plus per-tag downloads
+(#51) closed all but two items under "Tags and refs", remote branches (#52) closed one of those
+two, and object links for non-commit refs (#53) closed the last one — **"Tags and refs" has no open
+items left**, and object-by-id (#53) also closed the blob-by-oid item under "Tree and blob". Pick
+the next piece of work from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1067,18 +1082,12 @@ recorded separately below instead of listed as gaps.
     renames (#36); log is the remaining piece. cgit's `handle_rename()` rewrites the link's path
     too.
   - Files / Lines changed columns (`enable-log-filecount`, `enable-log-linecount`).
-- **Tags and refs**
-  - Object links for non-commit refs (`cgit_object_link`) — narrowed but not closed by the tag
-    detail page (#51): a tree/blob/tag target renders as inert text there, since axgit's tree/raw
-    routes are ref+path based with no by-oid equivalent. The `/refs` list rows still link every tag
-    blind to the commit page regardless of target kind.
 - **Tree and blob**
   - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
   - Hex dump view for binary blobs (`<table class='bin-blob'>`, 32 bytes/row + ascii) — axgit shows
     only a binary notice and a Raw link.
-  - Fetching a blob directly by object id (`blob?id=<oid>`) — `/raw` requires a ref and path.
 - **Archive** — format coverage: cgit supports `tar`, `tar.gz`, `tar.bz2`, `tar.lz`, `tar.xz`,
   `tar.zst`, `zip` (piping tar through external compressors); axgit has `tar.gz` and `zip` only.
 - **Feed and discovery**

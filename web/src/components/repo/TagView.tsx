@@ -5,7 +5,7 @@ import { archiveUrl, getTag } from "@/lib/api/repos";
 import type { TagDetail } from "@/lib/api/schemas";
 import { linkify } from "@/lib/format/linkify";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
-import { commitHref, logHref, treeHref } from "@/lib/repo-href";
+import { commitHref, logHref, objectHref, treeHref } from "@/lib/repo-href";
 import { repoFromPathname, tagNameFromPathname } from "@/lib/repo-param";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -115,13 +115,19 @@ export default function TagView({ repo, name }: TagViewProps) {
           )}
           <dt className="text-muted-foreground">Object</dt>
           <dd className="font-mono break-all">
-            {detail.object.type === "commit" ? (
-              <a className="underline" href={commitHref(resolvedRepo, detail.object.sha)}>
-                {detail.object.sha}
-              </a>
-            ) : (
-              <span title={detail.object.type}>{detail.object.sha}</span>
-            )}
+            {/* A commit target links to the commit page; anything else
+                (tree/blob/nested tag) links to the by-oid object page —
+                cgit's `cgit_object_link()` parity (docs/DECISIONS.md #53). */}
+            <a
+              className="underline"
+              href={
+                detail.object.type === "commit"
+                  ? commitHref(resolvedRepo, detail.object.sha)
+                  : objectHref(resolvedRepo, detail.object.sha)
+              }
+            >
+              {detail.object.sha}
+            </a>
             <span className="text-muted-foreground not-italic"> ({detail.object.type})</span>
           </dd>
           {showCommitRow && (

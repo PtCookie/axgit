@@ -61,8 +61,13 @@ git -C "$W" tag release/0.9 "$COMPOSE_SHA"
 # case, and the case where the tag has no archive download).
 README_BLOB="$(git -C "$W" rev-parse HEAD:README.md)"
 GIT_COMMITTER_DATE="2026-07-22T19:05:00+09:00" git -C "$W" tag -a readme-blob -m "Tag pointing at a blob" "$README_BLOB"
+# An annotated tag on the root tree — reaches the by-oid object page's tree
+# case (`GET /objects/{oid}`, docs/DECISIONS.md #53) from the refs/tag pages
+# in a local run, the same way readme-blob reaches the blob case.
+ROOT_TREE="$(git -C "$W" rev-parse HEAD^{tree})"
+GIT_COMMITTER_DATE="2026-07-22T19:10:00+09:00" git -C "$W" tag -a tree-tag -m "Tag pointing at a tree" "$ROOT_TREE"
 git -C "$W" push --quiet "$BARE" main:main \
-    refs/tags/v1.0.0 refs/tags/release/0.9 refs/tags/readme-blob \
+    refs/tags/v1.0.0 refs/tags/release/0.9 refs/tags/readme-blob refs/tags/tree-tag \
     refs/notes/commits:refs/notes/commits
 mkdir -p "$BARE/info/web"
 echo "2026-07-24 13:06:00 +0900" > "$BARE/info/web/last-modified"

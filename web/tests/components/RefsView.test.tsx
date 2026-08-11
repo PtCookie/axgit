@@ -71,6 +71,15 @@ describe("RefsView", () => {
     await expect.element(page.getByText("First release")).toBeVisible();
   });
 
+  it("links a commit-typed tag object to the commit page", async () => {
+    mockedGetRefs.mockResolvedValue(REFS);
+    render(<RefsView repo="git-compose" />);
+
+    await expect
+      .element(page.getByRole("link", { name: REFS.tags[0].object.sha.slice(0, 12) }))
+      .toHaveAttribute("href", `/git-compose/commit/${REFS.tags[0].object.sha}`);
+  });
+
   it("shows empty-state messages when there are no branches or tags", async () => {
     mockedGetRefs.mockResolvedValue({ branches: [], remote_branches: [], tags: [] });
     render(<RefsView repo="scratch" />);
@@ -156,7 +165,7 @@ describe("RefsView", () => {
     await expect.element(page.getByRole("link", { name: "Download main as tar.gz" })).not.toBeInTheDocument();
   });
 
-  it("shows the object type and no Compare/Download for a tag that never reaches a commit", async () => {
+  it("links the object sha to the by-oid object page, with no Compare/Download, for a tag that never reaches a commit", async () => {
     mockedGetRefs.mockResolvedValue({
       branches: REFS.branches,
       remote_branches: REFS.remote_branches,
@@ -175,8 +184,9 @@ describe("RefsView", () => {
     await expect.element(page.getByText("(blob)")).toBeVisible();
     await expect.element(page.getByRole("link", { name: "Compare readme-blob with main" })).not.toBeInTheDocument();
     await expect.element(page.getByRole("link", { name: "Download readme-blob as tar.gz" })).not.toBeInTheDocument();
-    // The object sha itself isn't linked either — no by-oid route exists yet.
-    await expect.element(page.getByRole("link", { name: "deadbeef0123" })).not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole("link", { name: "deadbeef0123" }))
+      .toHaveAttribute("href", "/git-compose/object/deadbeef0123");
   });
 
   it("links a tag name to its tag detail page", async () => {

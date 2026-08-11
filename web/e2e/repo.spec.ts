@@ -28,7 +28,13 @@ const REFS = {
   branches: [{ name: "main", target: "abc123def456", committed_at: "2026-07-24T13:06:00+09:00" }],
   remote_branches: [],
   tags: [
-    { name: "v1.0.0", target: "def456abc123", annotation: "First release", tagged_at: "2026-01-01T00:00:00+09:00" },
+    {
+      name: "v1.0.0",
+      object: { sha: "def456abc123", type: "commit" },
+      target: "def456abc123",
+      annotation: "First release",
+      tagged_at: "2026-01-01T00:00:00+09:00",
+    },
   ],
 };
 
