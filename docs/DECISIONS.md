@@ -2041,3 +2041,62 @@ sha, so no API change was needed.
   `RefsView`'s table cell + `aria-label`, `TagView`'s and now `CommitView`'s inline text). Each
   wraps the links differently enough that a shared component would just grow option props; the
   actual duplication — the format list — is already centralized in `ARCHIVE_FORMATS` (#54).
+
+## #56 Rename following in the commit log's path filter (`follow=1`, cgit's `enable-follow-links`)
+
+Closed the first of the two remaining "Log" cgit-parity gaps. Without this, `path=`'s history
+simplification (`commits.rs::touches_path`, entry-id comparison against every parent) treats a
+rename as "the old path stopped existing, the new path started existing" — correct in isolation,
+but it means the log for a renamed file's new name silently ends at the rename instead of
+continuing into its history under the old name, the way `git log --follow` and `repo::blame`
+(#36) both do.
+
+- **`commits::log` grew a `LogParams` struct** (`path`/`skip`/`limit`/`include_body`/`follow`),
+  replacing five positional arguments — the same "one params struct" shape `diff::DiffParams`
+  already uses, and needed now that a sixth parameter (stat counts, see the next candidate item)
+  was already on the horizon.
+- **The walk tracks a mutable `tracked: Option<PathBuf>`, reseeded from `path` on every call**,
+  not resumed from anywhere — consistent with the walk itself always restarting from `start`
+  rather than a boundary commit (#37's cursor design). This is what keeps a `follow=1` cursor page
+  lossless the same way a plain `path=` one is: every page re-derives the same rename chain from
+  scratch, so there is nothing page-boundary-dependent to get out of sync.
+- **Rename detection only runs where a rename could plausibly be** — when `path_entry_id` shows
+  the tracked path present in the commit but absent from its first parent (`first_parent_lacks_path`,
+  new in `commits.rs`). An ordinary add or modify never reaches the (relatively expensive) full
+  first-parent-tree diff this guards; a `diff::rename_source` lookup (new in `diff.rs`) only runs
+  for the shape a rename actually has.
+- **`diff::rename_source` diffs the *whole* first-parent tree, not a pathspec-restricted one** —
+  unlike every other `build_diff` caller in that file. A rename's old path can't be predicted, so
+  there is nothing to restrict the pathspec to; it reuses `find_similar`'s libgit2 defaults (same
+  50% similarity threshold as the diffstat/diff endpoints) to actually find the match.
+- **Only `Delta::Renamed`, not `Delta::Copied`, is followed** — matching `repo::blame`'s existing
+  "only whole-file renames are tracked" rule (its `orig_path` field), so the two history-following
+  features agree with each other. cgit's own `--follow`-equivalent doesn't follow copies either.
+- **`MAX_FOLLOW_RENAME_LOOKUPS = 100`** bounds how many of these full-tree diffs a single walk can
+  attempt, same scan-budget rationale as `Cursor::MAX_OFFSET` and search/stats' budgets
+  (#26/#28). Past the cap, the walk keeps filtering on whatever path it was last tracking rather
+  than erroring — a rename chain that long is already far outside any real usage this endpoint
+  sees.
+- **`follow` is silently a no-op without `path`**, both in the api (the whole tracked-path branch
+  of the walk is skipped when `path` is `None`, so the flag is never even read) and in
+  `CommitLog.tsx` (`following` is computed as `Boolean(resolvedPath) && resolvedFollow === "1"`,
+  so a stray `?follow=1` with no `path=` never reaches `listCommits` or renders the toggle). No
+  `400` — cgit's own `enable-follow-links` has nothing to be invalid about either, it just does
+  nothing without a single-file path.
+- **`CommitInfo` gained `renamed_from: Option<String>`, key omitted (not `null`) when absent** —
+  same convention `body` established (#44): off by default, present only on the one entry that is
+  the renaming commit itself. `commit_info()`/`commit_info_with_body()` both default it to `None`,
+  so `/search`'s reuse of `commit_info()` is untouched — search has no `follow` concept and never
+  sets the field.
+- **`follow` joined `msg` in the cache key's `params` string** (`handlers/commits.rs`) — same
+  reasoning as #44: it doesn't change which walk-start is cache-relevant (a fixed start makes
+  `follow` a pure "which commits/fields come back" selector, just like `path`/`limit`/`msg`), but
+  it does change the response body, so a `follow=1` response must not alias onto the non-follow
+  entry for the same request.
+- **Web**: `CommitLog.tsx`'s existing path-filter banner gained a `Follow renames`/
+  `Stop following renames` URL-only toggle next to `clear filter` — same "display option lives in
+  the URL" rule `msg=1` (#44) and `stat=1` (#43) established, preserving `ref`/`cursor`/`msg` (and
+  vice versa: the `Expand messages` toggle now preserves `follow` too, and `Older →` carries both).
+  A row whose commit carries `renamed_from` shows `renamed from <old path>` next to its `RefBadges`.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /commits` gained
+  `follow`, `CommitInfo` gained optional `renamed_from`).

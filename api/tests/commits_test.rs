@@ -9,6 +9,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 use common::CommitSpec;
+use common::commit_all;
 use common::router_for;
 
 /// sha256 of `author@example.com` (the fixed fixture author email).
@@ -650,5 +651,172 @@ async fn commits_pagination_keeps_side_branch_commits() {
     assert_eq!(
         collected, expected,
         "pagination must match a single unpaginated walk exactly, with no drops or duplicates"
+    );
+}
+
+/// `renamed.git`; shas oldest → newest:
+/// 0. root: `a.txt` = "one"
+/// 1. modify `a.txt` = "two"
+/// 2. `git mv a.txt renamed.txt`
+/// 3. modify `renamed.txt` = "three"
+fn setup_rename_history() -> (TempDir, Vec<String>) {
+    let root = tempfile::tempdir().expect("failed to create fixture root");
+    let bare = common::create_bare_repo(root.path(), "renamed.git");
+    let work = tempfile::tempdir().expect("failed to create work dir");
+    let work_path = work.path();
+    common::git(
+        work_path,
+        &["clone", "--quiet", bare.to_str().unwrap(), "."],
+    );
+    let mut shas = Vec::new();
+
+    std::fs::write(work_path.join("a.txt"), "one\n").unwrap();
+    shas.push(commit_all(work_path, "feat: add a"));
+
+    std::fs::write(work_path.join("a.txt"), "two\n").unwrap();
+    shas.push(commit_all(work_path, "fix: update a"));
+
+    common::git(work_path, &["mv", "a.txt", "renamed.txt"]);
+    shas.push(commit_all(work_path, "refactor: rename a"));
+
+    std::fs::write(work_path.join("renamed.txt"), "three\n").unwrap();
+    shas.push(commit_all(work_path, "fix: update renamed"));
+
+    common::git(work_path, &["push", "--quiet", "origin", "HEAD:main"]);
+    (root, shas)
+}
+
+#[tokio::test]
+async fn commits_path_filter_stops_at_a_rename_without_follow() {
+    let (root, shas) = setup_rename_history();
+
+    let json = get_ok(
+        root.path(),
+        "/api/v1/repos/renamed/commits?path=renamed.txt",
+    )
+    .await;
+
+    // Only the rename commit and what came after it — the pre-rename `a.txt`
+    // history is invisible without `follow=1`.
+    assert_eq!(shas_of(&json), [shas[3].as_str(), shas[2].as_str()]);
+    for commit in json["commits"].as_array().unwrap() {
+        assert!(
+            commit.get("renamed_from").is_none(),
+            "renamed_from must be omitted without follow=1: {commit}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn commits_follow_extends_the_path_filter_across_a_rename() {
+    let (root, shas) = setup_rename_history();
+
+    let json = get_ok(
+        root.path(),
+        "/api/v1/repos/renamed/commits?path=renamed.txt&follow=1",
+    )
+    .await;
+
+    assert_eq!(
+        shas_of(&json),
+        [
+            shas[3].as_str(),
+            shas[2].as_str(),
+            shas[1].as_str(),
+            shas[0].as_str()
+        ],
+        "unexpected response: {json}"
+    );
+    let commits = json["commits"].as_array().unwrap();
+    // `renamed_from` is present only on the renaming commit itself.
+    assert!(commits[0].get("renamed_from").is_none(), "{commits:?}");
+    assert_eq!(commits[1]["renamed_from"], "a.txt");
+    assert!(commits[2].get("renamed_from").is_none(), "{commits:?}");
+    assert!(commits[3].get("renamed_from").is_none(), "{commits:?}");
+}
+
+#[tokio::test]
+async fn commits_follow_without_path_is_a_no_op() {
+    let (root, shas) = setup_rename_history();
+
+    let json = get_ok(root.path(), "/api/v1/repos/renamed/commits?follow=1").await;
+
+    let mut expected = shas.clone();
+    expected.reverse();
+    assert_eq!(shas_of(&json), expected, "unexpected response: {json}");
+    for commit in json["commits"].as_array().unwrap() {
+        assert!(commit.get("renamed_from").is_none(), "{commit}");
+    }
+}
+
+#[tokio::test]
+async fn commits_rejects_invalid_follow() {
+    let (root, _shas) = setup_rename_history();
+
+    let (status, json) = common::get_json(
+        router_for(root.path()),
+        "/api/v1/repos/renamed/commits?follow=bogus",
+    )
+    .await;
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_param")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn commits_uses_a_separate_cache_entry_for_follow() {
+    let (root, _shas) = setup_rename_history();
+    let router = router_for(root.path());
+
+    let without_follow = common::get_json(
+        router.clone(),
+        "/api/v1/repos/renamed/commits?path=renamed.txt",
+    )
+    .await
+    .1;
+    let with_follow = common::get_json(
+        router,
+        "/api/v1/repos/renamed/commits?path=renamed.txt&follow=1",
+    )
+    .await
+    .1;
+
+    assert_eq!(shas_of(&without_follow).len(), 2);
+    assert_eq!(
+        shas_of(&with_follow).len(),
+        4,
+        "the follow=1 response should not have reused the non-follow cache entry: {with_follow}"
+    );
+}
+
+#[tokio::test]
+async fn commits_follow_paginates_without_dropping_pre_rename_history() {
+    let (root, shas) = setup_rename_history();
+
+    let mut collected = Vec::new();
+    let mut uri = "/api/v1/repos/renamed/commits?path=renamed.txt&follow=1&limit=1".to_owned();
+    loop {
+        let json = get_ok(root.path(), &uri).await;
+        collected.extend(shas_of(&json));
+        match json["next_cursor"].as_str() {
+            Some(cursor) => {
+                uri = format!(
+                    "/api/v1/repos/renamed/commits?path=renamed.txt&follow=1&limit=1&cursor={cursor}"
+                )
+            }
+            None => break,
+        }
+    }
+
+    assert_eq!(
+        collected,
+        [
+            shas[3].as_str(),
+            shas[2].as_str(),
+            shas[1].as_str(),
+            shas[0].as_str()
+        ]
     );
 }

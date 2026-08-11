@@ -44,6 +44,7 @@ interface CommitLogProps {
   path?: string;
   cursor?: string;
   msg?: string;
+  follow?: string;
 }
 
 /** Also rendered statically into the page shell as the island's
@@ -64,13 +65,18 @@ export default function CommitLog({
   path: pathParam,
   cursor: cursorParam,
   msg: msgParam,
+  follow: followParam,
 }: CommitLogProps) {
   const resolvedRepo = repo ?? repoFromPathname(window.location.pathname);
   const resolvedRef = refParam ?? paramFromSearch("ref", window.location.search);
   const resolvedPath = pathParam ?? paramFromSearch("path", window.location.search);
   const resolvedCursor = cursorParam ?? paramFromSearch("cursor", window.location.search);
   const resolvedMsg = msgParam ?? paramFromSearch("msg", window.location.search);
+  const resolvedFollow = followParam ?? paramFromSearch("follow", window.location.search);
   const expanded = resolvedMsg === "1";
+  // Meaningless without a path filter (docs/API.md's `follow` rule) — dropped
+  // from every href built below whenever `resolvedPath` is unset.
+  const following = Boolean(resolvedPath) && resolvedFollow === "1";
   const [state, setState] = useState<State>({ status: "loading" });
   const refsBySha = useCommitRefs(resolvedRepo);
 
@@ -90,6 +96,7 @@ export default function CommitLog({
       path: resolvedPath,
       cursor: resolvedCursor,
       msg: expanded ? 1 : undefined,
+      follow: following ? 1 : undefined,
     })
       .then((page) => {
         if (!cancelled) {
@@ -109,7 +116,7 @@ export default function CommitLog({
     return () => {
       cancelled = true;
     };
-  }, [resolvedRepo, resolvedRef, resolvedPath, resolvedCursor, expanded]);
+  }, [resolvedRepo, resolvedRef, resolvedPath, resolvedCursor, expanded, following]);
 
   if (state.status === "loading") {
     return <CommitLogSkeleton />;
@@ -125,7 +132,12 @@ export default function CommitLog({
   }
 
   const { page } = state;
-  const current = { ref: resolvedRef, path: resolvedPath, msg: resolvedMsg };
+  const current = {
+    ref: resolvedRef,
+    path: resolvedPath,
+    msg: resolvedMsg,
+    follow: following ? "1" : undefined,
+  };
   // Hidden under a path filter: `touches_path` yields a subsequence, so
   // displayed commits are usually not each other's parents and edges would
   // be arbitrary (docs/DECISIONS.md #33).
@@ -139,6 +151,17 @@ export default function CommitLog({
           Filtered by path <code className="text-foreground">{resolvedPath}</code> —{" "}
           <a className="underline" href={logHref(resolvedRepo, { ref: resolvedRef })}>
             clear filter
+          </a>{" "}
+          ·{" "}
+          <a
+            className="underline"
+            href={logHref(resolvedRepo, {
+              ...current,
+              cursor: resolvedCursor,
+              follow: following ? undefined : "1",
+            })}
+          >
+            {following ? "Stop following renames" : "Follow renames"}
           </a>
         </p>
       )}
@@ -148,8 +171,7 @@ export default function CommitLog({
           <a
             className="text-muted-foreground hover:text-foreground underline"
             href={logHref(resolvedRepo, {
-              ref: resolvedRef,
-              path: resolvedPath,
+              ...current,
               cursor: resolvedCursor,
               msg: expanded ? undefined : "1",
             })}
@@ -200,6 +222,11 @@ export default function CommitLog({
                         {commit.summary ?? "(no commit message)"}
                       </a>
                       <RefBadges repo={resolvedRepo} refs={refsBySha.get(commit.sha) ?? []} max={MAX_ROW_BADGES} />
+                      {commit.renamed_from && (
+                        <span className="text-muted-foreground text-xs font-normal">
+                          renamed from <code className="text-foreground">{commit.renamed_from}</code>
+                        </span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono">{commit.sha.slice(0, 12)}</TableCell>

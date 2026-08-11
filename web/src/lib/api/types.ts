@@ -123,7 +123,8 @@ export interface paths {
      * Commit log
      * @description Cursor-paginated, newest first. Merge commits survive the `path` filter
      *     only when the path differs from **every** parent — an approximation of
-     *     `git log -- <path>` simplification.
+     *     `git log -- <path>` simplification. `follow=1` extends the `path` filter
+     *     across whole-file renames (cgit's `enable-follow-links`).
      */
     get: operations["list_commits"];
     put?: never;
@@ -708,6 +709,14 @@ export interface components {
        */
       authored_at: string | null;
       parents: string[];
+      /**
+       * @description The path filter's previous name, when this commit is the rename this
+       *     entry was followed across (`follow=1`, docs/DECISIONS.md #56). Present
+       *     only on the renaming commit itself, never on the commits before or
+       *     after it — the key is omitted, not `null`, everywhere else (same rule
+       *     as `body`, #44).
+       */
+      renamed_from?: string | null;
     };
     CommitsPage: {
       commits: components["schemas"]["CommitInfo"][];
@@ -1502,6 +1511,12 @@ export interface operations {
          *     `body` (past the summary line). Absent/`0`/`false` by default.
          */
         msg?: boolean;
+        /**
+         * @description When `1`/`true`, the `path` filter follows the file across whole-file
+         *     renames (cgit's `enable-follow-links`). Ignored when `path` is absent.
+         *     Absent/`0`/`false` by default.
+         */
+        follow?: boolean;
       };
       header?: never;
       path: {

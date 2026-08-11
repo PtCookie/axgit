@@ -118,6 +118,92 @@ describe("CommitLog", () => {
     await expect.element(clear).toHaveAttribute("href", "/git-compose/log");
   });
 
+  it("shows no follow-renames toggle without a path filter", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(page.getByRole("link", { name: "Follow renames" }).elements().length).toBe(0);
+  });
+
+  it("requests follow=1 only when both path and follow are set", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" path="src/main.rs" follow="1" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(mockedListCommits).toHaveBeenCalledWith("git-compose", {
+      ref: undefined,
+      path: "src/main.rs",
+      cursor: undefined,
+      msg: undefined,
+      follow: 1,
+    });
+  });
+
+  it("ignores follow=1 when no path filter is set (docs/API.md's follow rule)", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" follow="1" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    expect(mockedListCommits).toHaveBeenCalledWith("git-compose", {
+      ref: undefined,
+      path: undefined,
+      cursor: undefined,
+      msg: undefined,
+      follow: undefined,
+    });
+    expect(page.getByRole("link", { name: "Follow renames" }).elements().length).toBe(0);
+  });
+
+  it("shows a Follow renames link that carries follow=1 and preserves ref/path", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" ref="main" path="src" />);
+
+    const followLink = page.getByRole("link", { name: "Follow renames" });
+    await expect.element(followLink).toBeVisible();
+    const href = await followLink.element().getAttribute("href");
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.pathname).toBe("/git-compose/log");
+    expect(url.searchParams.get("follow")).toBe("1");
+    expect(url.searchParams.get("ref")).toBe("main");
+    expect(url.searchParams.get("path")).toBe("src");
+  });
+
+  it("shows a Stop following renames link that drops follow and preserves path", async () => {
+    mockedListCommits.mockResolvedValue(PAGE);
+    render(<CommitLog repo="git-compose" path="src" follow="1" />);
+
+    const stopLink = page.getByRole("link", { name: "Stop following renames" });
+    await expect.element(stopLink).toBeVisible();
+    const href = await stopLink.element().getAttribute("href");
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.searchParams.get("follow")).toBeNull();
+    expect(url.searchParams.get("path")).toBe("src");
+  });
+
+  it("renders the renamed-from path on the commit that crossed a rename", async () => {
+    mockedListCommits.mockResolvedValue({
+      commits: [{ ...PAGE.commits[0], renamed_from: "old-name.rs" }],
+      next_cursor: null,
+    });
+    render(<CommitLog repo="git-compose" path="src/main.rs" follow="1" />);
+
+    await expect.element(page.getByText("fix: update readme")).toBeVisible();
+    await expect.element(page.getByText("old-name.rs")).toBeVisible();
+  });
+
+  it("keeps the Older link's follow=1 when following renames", async () => {
+    mockedListCommits.mockResolvedValue({ ...PAGE, next_cursor: "def456" });
+    render(<CommitLog repo="git-compose" path="src" follow="1" />);
+
+    const older = page.getByRole("link", { name: "Older →" });
+    await expect.element(older).toBeVisible();
+    const href = await older.element().getAttribute("href");
+    const url = new URL(href ?? "", "http://localhost");
+    expect(url.searchParams.get("follow")).toBe("1");
+    expect(url.searchParams.get("path")).toBe("src");
+  });
+
   it("renders one graph cell per commit", async () => {
     const twoCommits: CommitsPage = {
       commits: [

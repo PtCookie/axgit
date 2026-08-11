@@ -441,6 +441,43 @@ fn build_diff<'r>(
     Ok(diff)
 }
 
+/// The path `new_path` had in `commit`'s first parent, when `commit` is the
+/// one that renamed it there — `git log --follow`/cgit `enable-follow-links`
+/// parity for the commit log's path filter (`docs/DECISIONS.md` #56). `None`
+/// for a root commit, or when `commit` is not a pure rename of `new_path`.
+///
+/// Deliberately **not** pathspec-restricted like [`build_diff`]'s other
+/// callers: a rename's old path can't be predicted, so the full first-parent
+/// tree is diffed. Copies are not followed — only `Delta::Renamed` — matching
+/// `repo::blame`'s "only whole-file renames are tracked" rule so the two
+/// history-following features stay consistent with each other.
+pub(crate) fn rename_source(
+    repo: &Repository,
+    commit: &Commit,
+    new_path: &Path,
+) -> Result<Option<String>, ApiError> {
+    if commit.parent_count() == 0 {
+        return Ok(None);
+    }
+    let old_tree = commit.parent(0)?.tree()?;
+    let new_tree = commit.tree()?;
+    let mut diff = repo.diff_tree_to_tree(Some(&old_tree), Some(&new_tree), None)?;
+    diff.find_similar(None)?;
+    for idx in 0..diff.deltas().len() {
+        let Some(delta) = diff.get_delta(idx) else {
+            continue;
+        };
+        if delta.status() != Delta::Renamed || delta.new_file().path() != Some(new_path) {
+            continue;
+        }
+        return Ok(delta
+            .old_file()
+            .path()
+            .map(|p| p.to_string_lossy().into_owned()));
+    }
+    Ok(None)
+}
+
 /// Runs the [`MAX_DIFF_FILES`]/[`MAX_FILE_DIFF_LINES`] render loop shared by
 /// every JSON diff entry point. Returns `(files, truncated)`.
 fn render_files(diff: &Diff<'_>) -> Result<(Vec<FileDiff>, bool), ApiError> {

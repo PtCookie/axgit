@@ -420,7 +420,7 @@
           "commits"
         ],
         "summary": "Commit log",
-        "description": "Cursor-paginated, newest first. Merge commits survive the `path` filter\nonly when the path differs from **every** parent — an approximation of\n`git log -- <path>` simplification.",
+        "description": "Cursor-paginated, newest first. Merge commits survive the `path` filter\nonly when the path differs from **every** parent — an approximation of\n`git log -- <path>` simplification. `follow=1` extends the `path` filter\nacross whole-file renames (cgit's `enable-follow-links`).",
         "operationId": "list_commits",
         "parameters": [
           {
@@ -478,6 +478,15 @@
             "name": "msg",
             "in": "query",
             "description": "When `1`/`true`, each log entry also carries the commit message's\n`body` (past the summary line). Absent/`0`/`false` by default.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "follow",
+            "in": "query",
+            "description": "When `1`/`true`, the `path` filter follows the file across whole-file\nrenames (cgit's `enable-follow-links`). Ignored when `path` is absent.\nAbsent/`0`/`false` by default.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -2508,6 +2517,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "renamed_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The path filter's previous name, when this commit is the rename this\nentry was followed across (`follow=1`, docs/DECISIONS.md #56). Present\nonly on the renaming commit itself, never on the commits before or\nafter it — the key is omitted, not `null`, everywhere else (same rule\nas `body`, #44)."
           }
         }
       },

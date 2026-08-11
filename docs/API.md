@@ -248,7 +248,7 @@ Blob bytes by id — the by-oid analogue of `GET /raw/{ref}/{path...}`. Same `{o
 there's no extension to guess a `Content-Type` from: always `text/plain; charset=utf-8` or
 `application/octet-stream`, and always `X-Content-Type-Options: nosniff`. Always immutably cached.
 
-### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=`
+### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=&follow=`
 
 Commit log. When `path` is given, only commits that changed that path (cgit log's path filter).
 
@@ -258,7 +258,7 @@ Commit log. When `path` is given, only commits that changed that path (cgit log'
     {
       "sha": "...", "summary": "...", "body": "...",
       "author": { "name": "...", "email_hash": "<sha256, avatar seed>" },
-      "authored_at": "...", "parents": ["..."]
+      "authored_at": "...", "parents": ["..."], "renamed_from": "..."
     }
   ],
   "next_cursor": "<sha|null>"
@@ -284,6 +284,17 @@ address (the gravatar approach).
   A merge commit is included only when the path differs from **all** parents (an approximation of
   `git log -- <path>`'s default simplification — some side-branch commits may show up that
   wouldn't with the real `git log`).
+- `follow`: `0`/`1`/`true`/`false`, default off (cgit's `enable-follow-links`). When on and `path`
+  is a single file that got renamed, the filter keeps following it under its previous name(s) once
+  the walk reaches the renaming commit. **Ignored when `path` is absent** — there is nothing to
+  follow. Only whole-file renames are tracked (same rule as the blame endpoint's `orig_path`), not
+  copies. Because the walk order is not topological, a side-branch commit visited after the rename
+  point may still be evaluated against the old name even though a strict `git log --follow` would
+  have switched by then — the same kind of approximation `path` alone already makes for merges.
+  Any other value is `400 invalid_param`.
+- `renamed_from`: present only on the entry for the commit that performed the rename `follow`
+  crossed, carrying the path's previous name. **The key itself is omitted**, not set to `null`, on
+  every other entry and whenever `follow` is off — same convention as `body`.
 - Empty repository (unborn HEAD): omitting `ref` returns `200` +
   `{"commits": [], "next_cursor": null}`. An explicit `ref` returns `404 ref_not_found`.
 - `summary`: the commit message's first line. `summary`/`authored_at` are `null` for non-UTF-8
@@ -296,9 +307,9 @@ address (the gravatar approach).
 - **Immutable caching** when the request pins the walk start to a full sha: `cursor` always does
   (the token encodes one), and `ref` does when it equals the resolved commit's full sha as a
   string. Everything else — no `ref`, a symbolic `ref`, or the empty-repository page — is `ETag` +
-  `Cache-Control: no-cache`. `path`, `limit`, and `msg` don't affect this: for a fixed walk start
-  the page is a pure function of the request. `msg` is part of the cache key, so a `msg=1` response
-  never collides with the default (bodyless) one for the same request.
+  `Cache-Control: no-cache`. `path`, `limit`, `msg`, and `follow` don't affect this: for a fixed
+  walk start the page is a pure function of the request. `msg`/`follow` are part of the cache key,
+  so a `msg=1` or `follow=1` response never collides with the default one for the same request.
 
 ### `GET /api/v1/repos/{repo}/commits/{sha}`
 

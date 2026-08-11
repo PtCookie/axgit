@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use git2::{Commit, Oid, Repository};
 use serde::Serialize;
@@ -36,6 +36,13 @@ pub struct CommitInfo {
     #[schema(required = true, example = "2026-07-01T14:00:00+09:00")]
     pub authored_at: Option<String>,
     pub parents: Vec<String>,
+    /// The path filter's previous name, when this commit is the rename this
+    /// entry was followed across (`follow=1`, docs/DECISIONS.md #56). Present
+    /// only on the renaming commit itself, never on the commits before or
+    /// after it — the key is omitted, not `null`, everywhere else (same rule
+    /// as `body`, #44).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -143,6 +150,27 @@ fn note(repo: &Repository, commit: &Commit) -> Option<String> {
     (!message.trim().is_empty()).then(|| message.to_owned())
 }
 
+/// Parameters for [`log`] — grouped once `follow` joined `path`/`skip`/
+/// `limit`/`include_body`, the same "one params struct" shape as
+/// `diff::DiffParams`.
+pub struct LogParams<'a> {
+    pub path: Option<&'a Path>,
+    pub skip: usize,
+    pub limit: usize,
+    pub include_body: bool,
+    /// Follow the `path` filter across whole-file renames (`follow=1`,
+    /// docs/DECISIONS.md #56). Ignored when `path` is `None` — there is
+    /// nothing to follow.
+    pub follow: bool,
+}
+
+/// Bounds how many rename lookups (each a full first-parent tree diff via
+/// `diff::rename_source`) a single `follow=1` walk performs — same
+/// rationale as `Cursor::MAX_OFFSET` and search/stats' scan budgets
+/// (`docs/DECISIONS.md` #26/#28). Once hit, the walk keeps filtering on
+/// whichever path it was last tracking rather than erroring.
+const MAX_FOLLOW_RENAME_LOOKUPS: usize = 100;
+
 /// Walks history from `start` (inclusive), skips the first `skip` commits
 /// that pass the `path` filter, then collects up to `limit` more. libgit2's
 /// default walk order is the closest match to `git log`, so no explicit
@@ -150,27 +178,49 @@ fn note(repo: &Repository, commit: &Commit) -> Option<String> {
 ///
 /// Re-walking from the same fixed `start` on every page (instead of resuming
 /// from the boundary commit alone) is deliberate: it's what makes pagination
-/// lossless across side branches (`docs/DECISIONS.md` #37).
-pub fn log(
-    repo: &Repository,
-    start: Oid,
-    path: Option<&Path>,
-    skip: usize,
-    limit: usize,
-    include_body: bool,
-) -> Result<CommitsPage, ApiError> {
+/// lossless across side branches (`docs/DECISIONS.md` #37) — and, with
+/// `follow`, what keeps the tracked path's rename history identical on every
+/// page, since it's re-derived from `start` each time rather than resumed.
+pub fn log(repo: &Repository, start: Oid, params: &LogParams<'_>) -> Result<CommitsPage, ApiError> {
+    let &LogParams {
+        path,
+        skip,
+        limit,
+        include_body,
+        follow,
+    } = params;
     let mut revwalk = repo.revwalk()?;
     revwalk.push(start)?;
     let mut commits = Vec::new();
     let mut skipped = 0usize;
     let mut has_more = false;
+    // The path currently being filtered on; mutates mid-walk when `follow`
+    // crosses a rename.
+    let mut tracked = path.map(Path::to_path_buf);
+    let mut follow_lookups = 0usize;
     for oid in revwalk {
         let oid = oid?;
         let commit = repo.find_commit(oid)?;
-        if let Some(path) = path
-            && !touches_path(&commit, path)
-        {
-            continue;
+        let mut renamed_from = None;
+        if let Some(path) = tracked.as_deref() {
+            if !touches_path(&commit, path) {
+                continue;
+            }
+            // A rename looks like this from `path`'s side: the entry is
+            // present in `commit` but absent from its first parent. Only
+            // attempt the (relatively expensive) full tree diff when that
+            // shape holds, so an ordinary modify/add never pays for it.
+            if follow
+                && follow_lookups < MAX_FOLLOW_RENAME_LOOKUPS
+                && path_entry_id(&commit, path).is_some()
+                && first_parent_lacks_path(&commit, path)
+            {
+                follow_lookups += 1;
+                if let Some(old) = diff::rename_source(repo, &commit, path)? {
+                    tracked = Some(PathBuf::from(&old));
+                    renamed_from = Some(old);
+                }
+            }
         }
         if skipped < skip {
             skipped += 1;
@@ -180,11 +230,13 @@ pub fn log(
             has_more = true;
             break;
         }
-        commits.push(if include_body {
+        let mut info = if include_body {
             commit_info_with_body(&commit)
         } else {
             commit_info(&commit)
-        });
+        };
+        info.renamed_from = renamed_from;
+        commits.push(info);
     }
     let next_cursor = has_more.then(|| {
         Cursor {
@@ -209,6 +261,7 @@ pub(crate) fn commit_info(commit: &Commit) -> CommitInfo {
         author: signature_info(&commit.author()),
         authored_at: time_rfc3339(commit.author().when()),
         parents: commit.parent_ids().map(|id| id.to_string()).collect(),
+        renamed_from: None,
     }
 }
 
@@ -250,6 +303,17 @@ fn touches_path(commit: &Commit, path: &Path) -> bool {
 fn path_entry_id(commit: &Commit, path: &Path) -> Option<Oid> {
     let tree = commit.tree().ok()?;
     tree.get_path(path).ok().map(|entry| entry.id())
+}
+
+/// Whether `commit`'s first parent has no entry at `path` — the shape a
+/// rename takes on `path`'s side (the old path vanishes, the new one
+/// appears). `true` for a root commit (no first parent to check), which is
+/// harmless: [`diff::rename_source`] short-circuits to `None` for those too.
+fn first_parent_lacks_path(commit: &Commit, path: &Path) -> bool {
+    match commit.parent(0) {
+        Ok(parent) => path_entry_id(&parent, path).is_none(),
+        Err(_) => true,
+    }
 }
 
 /// Trimmed + lowercased (gravatar-style) so the avatar seed is stable across
@@ -330,5 +394,43 @@ mod tests {
         assert!(touches_path(&child, Path::new("b.txt")));
         assert!(!touches_path(&child, Path::new("a.txt")));
         assert!(!touches_path(&child, Path::new("missing.txt")));
+    }
+
+    #[test]
+    fn log_should_follow_renames_only_when_requested() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let root = commit_files(&repo, None, &[("a.txt", "one\ntwo\n")]);
+        // Same content under a new name: a pure rename from `find_similar`'s
+        // perspective, same trick `repo::blame`'s rename test uses.
+        let renamed = commit_files(&repo, Some(root), &[("b.txt", "one\ntwo\n")]);
+        let child = commit_files(&repo, Some(renamed), &[("b.txt", "one\nTHREE\n")]);
+
+        let params = LogParams {
+            path: Some(Path::new("b.txt")),
+            skip: 0,
+            limit: 10,
+            include_body: false,
+            follow: true,
+        };
+        let page = log(&repo, child, &params).unwrap();
+        let shas: Vec<_> = page.commits.iter().map(|c| c.sha.as_str()).collect();
+        assert_eq!(
+            shas,
+            [child.to_string(), renamed.to_string(), root.to_string()]
+        );
+        assert!(page.commits[0].renamed_from.is_none());
+        assert_eq!(page.commits[1].renamed_from.as_deref(), Some("a.txt"));
+        assert!(page.commits[2].renamed_from.is_none());
+
+        // Without `follow`, the walk stops at the renaming commit.
+        let no_follow = LogParams {
+            follow: false,
+            ..params
+        };
+        let page = log(&repo, child, &no_follow).unwrap();
+        let shas: Vec<_> = page.commits.iter().map(|c| c.sha.as_str()).collect();
+        assert_eq!(shas, [child.to_string(), renamed.to_string()]);
+        assert!(page.commits.iter().all(|c| c.renamed_from.is_none()));
     }
 }

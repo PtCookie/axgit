@@ -36,13 +36,19 @@ pub struct CommitsQuery {
     /// `body` (past the summary line). Absent/`0`/`false` by default.
     #[param(value_type = Option<bool>)]
     msg: Option<String>,
+    /// When `1`/`true`, the `path` filter follows the file across whole-file
+    /// renames (cgit's `enable-follow-links`). Ignored when `path` is absent.
+    /// Absent/`0`/`false` by default.
+    #[param(value_type = Option<bool>)]
+    follow: Option<String>,
 }
 
 /// Commit log
 ///
 /// Cursor-paginated, newest first. Merge commits survive the `path` filter
 /// only when the path differs from **every** parent — an approximation of
-/// `git log -- <path>` simplification.
+/// `git log -- <path>` simplification. `follow=1` extends the `path` filter
+/// across whole-file renames (cgit's `enable-follow-links`).
 #[utoipa::path(
     get,
     path = "/api/v1/repos/{repo}/commits",
@@ -72,14 +78,15 @@ pub async fn list_commits(
     let limit = parse_limit(query.limit.as_deref())?;
     let path = clean_path(query.path.as_deref());
     let include_body = parse_flag(query.msg.as_deref(), "msg")?;
+    let follow = parse_flag(query.follow.as_deref(), "follow")?;
     // A missing `ref` is not normalized to HEAD: the two take different
     // unborn-HEAD paths (empty page vs 404), so they stay distinct keys.
-    // `msg` must be part of the key too: it doesn't change the walk (so it's
-    // irrelevant to the immutability decision below, same as `path`/`limit`)
-    // but it does change the response body, and the cache is keyed on params
-    // alone.
+    // `msg`/`follow` must be part of the key too: neither changes the walk's
+    // cache-relevant identity (so they're irrelevant to the immutability
+    // decision below, same as `path`/`limit`) but both change the response
+    // body, and the cache is keyed on params alone.
     let params = format!(
-        "ref={:?}&path={:?}&cursor={:?}&limit={limit}&msg={include_body}",
+        "ref={:?}&path={:?}&cursor={:?}&limit={limit}&msg={include_body}&follow={follow}",
         query.r#ref, path, query.cursor
     );
     cached_response(
@@ -116,7 +123,17 @@ pub async fn list_commits(
                     }
                 }
             };
-            let page = commits::log(repo, start, path.as_deref(), skip, limit, include_body)?;
+            let page = commits::log(
+                repo,
+                start,
+                &commits::LogParams {
+                    path: path.as_deref(),
+                    skip,
+                    limit,
+                    include_body,
+                    follow,
+                },
+            )?;
             // Immutable when the request itself pins the walk start to a full
             // sha, which makes the page a pure function of the request
             // (DECISIONS.md #42): a cursor always does — it encodes a

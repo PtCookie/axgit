@@ -1049,6 +1049,17 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   `ARCHIVE_FORMATS` links, addressed by the commit's own resolved sha (not the URL's possibly
   abbreviated one) so the request stays on the immutable-cache path.
 
+- **Rename following in the commit log's path filter** (DECISIONS.md #56), closing the first of
+  the two remaining "Log" cgit-parity gaps. `GET /commits` gained `follow=1`: once the walk (still
+  restarting from a fixed cursor `start` every page, #37) reaches the commit that renamed the
+  tracked path, it looks up the rename via a first-parent tree diff (`diff::rename_source`, new)
+  and keeps filtering under the old name, the same whole-file-rename-only rule `repo::blame` (#36)
+  already follows. Entries gained an omit-when-absent `renamed_from`, set only on the renaming
+  commit itself. `CommitLog.tsx` gained a `Follow renames`/`Stop following renames` URL toggle next
+  to the existing path-filter banner (a no-op, both server- and client-side, without `path=`), and
+  a `renamed from <old path>` label on the row it applies to. `docs/API.md`/`docs/openapi.json`/
+  `web/src/lib/api/types.ts` updated.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1066,12 +1077,14 @@ remain open), the `Others (N)` row (#50) left `path=` as the only open item unde
 detail page plus per-tag downloads (#51) closed all but two items under "Tags and refs", remote
 branches (#52) closed one of those two, object links for non-commit refs (#53) closed the last one
 (also closing the blob-by-oid item under "Tree and blob"), archive format coverage (#54) closed
-the last open item under "Archive", and archive download links on the commit page (#55) closed the
-last open item under "Commit page" — **"Archive", "Tags and refs", and "Commit page" all have no
-open items left**. The remaining cgit-parity gaps are submodule links, single-child directory
-collapsing, and a hex dump view for binary blobs (all under "Tree and blob"), and Atom feed
-parameters (branch/path filter/`all=1`/item count) under "Feed and discovery". Pick the next piece
-of work from there, from the candidates below, or from a fresh request.
+the last open item under "Archive", archive download links on the commit page (#55) closed the
+last open item under "Commit page", and rename following in the commit log (#56) closed one of the
+two remaining items under "Log" — **"Archive", "Tags and refs", and "Commit page" all have no open
+items left**. The remaining cgit-parity gaps are Files/Lines changed columns on the log
+(`enable-log-filecount`/`enable-log-linecount`, the last "Log" item), submodule links, single-child
+directory collapsing, and a hex dump view for binary blobs (all under "Tree and blob"), and Atom
+feed parameters (branch/path filter/`all=1`/item count) under "Feed and discovery". Pick the next
+piece of work from there, from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1104,9 +1117,6 @@ the candidates above. Items that turned out to be merged, or built differently o
 recorded separately below instead of listed as gaps.
 
 - **Log**
-  - Rename-following in the path filter (`follow=1`, `enable-follow-links`) — blame already follows
-    renames (#36); log is the remaining piece. cgit's `handle_rename()` rewrites the link's path
-    too.
   - Files / Lines changed columns (`enable-log-filecount`, `enable-log-linecount`).
 - **Tree and blob**
   - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
