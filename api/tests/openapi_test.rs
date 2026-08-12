@@ -44,6 +44,7 @@ const EXPECTED_OPERATIONS: &[(&str, &str)] = &[
     ("/api/v1/repos/{repo}/feed.atom", "get"),
     ("/api/v1/repos/{repo}/search", "get"),
     ("/api/v1/repos/{repo}/stats", "get"),
+    ("/api/v1/site", "get"),
     ("/{repo_git}/info/refs", "get"),
     ("/{repo_git}/git-upload-pack", "post"),
     ("/{repo_git}/git-receive-pack", "post"),

@@ -73,7 +73,9 @@ A two-layer improvement on cgit's disk TTL cache:
      (`AXGIT_CACHE_RESPONSE_TTL`) acts as a staleness ceiling for changes the validator can't see
      (e.g. manual config edits).
    - Exclusions: the repo list is a scan snapshot, so it keeps using `ScanCache` (a single-value
-     TTL) as-is; raw is large binary data and archive is streamed, so neither is cached.
+     TTL) as-is; the site endpoint reads config plus, for the readme, the filesystem directly, so
+     it isn't cached at all — a hash-of-body ETag still gives clients 304s; raw is large binary
+     data and archive is streamed, so neither is cached.
 2. **Client-side cache** — requests pinned to a full sha get `immutable`; everything else gets
    `ETag` (validator-based) + `no-cache` + 304.
 
@@ -170,6 +172,8 @@ render.
   `AXGIT_LISTEN` (default `0.0.0.0:8080`), `AXGIT_CLONE_URL_BASE` (for displaying clone URLs),
   `AXGIT_CACHE_SCAN_TTL` (repo scan TTL, default 60s), `AXGIT_CACHE_RESPONSE_TTL` (response cache
   TTL, default 300s), `AXGIT_CACHE_RESPONSE_MAX_BYTES` (response cache capacity, default 32 MiB),
-  `AXGIT_REPOSITORY_SORT` (repository index default sort order, default `name`).
+  `AXGIT_REPOSITORY_SORT` (repository index default sort order, default `name`),
+  `AXGIT_ROOT_TITLE`/`AXGIT_ROOT_DESC`/`AXGIT_ROOT_README` (site-wide title/description/readme,
+  all unset by default).
 - Logs go to stdout/stderr as JSON (`tracing` + `tracing-subscriber`) — collected by the stack's
   fluentd logging driver.

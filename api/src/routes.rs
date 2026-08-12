@@ -8,7 +8,9 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::error::{ApiError, ErrorResponse};
-use crate::handlers::{archive, commits, diff, feed, files, objects, repos, search, stats, tags};
+use crate::handlers::{
+    archive, commits, diff, feed, files, objects, repos, search, site, stats, tags,
+};
 use crate::openapi::ApiDoc;
 use crate::shell;
 use crate::smart_http;
@@ -57,6 +59,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/repos/{repo}/feed.atom", get(feed::get_feed))
         .route("/repos/{repo}/search", get(search::get_search))
         .route("/repos/{repo}/stats", get(stats::get_stats))
+        .route("/site", get(site::get_site))
         // `nest`ed routers inherit the outer `fallback_service` (the SPA shell
         // below), so an unmatched `/api/v1/...` path must get its own JSON
         // 404 rather than falling through to `index.html`.
@@ -86,13 +89,30 @@ pub fn build_router(state: AppState) -> Router {
         // map whatever is left onto the matching prerendered page shell —
         // or `404.html` with a real 404 status. `clone_url_base` rides along
         // so a `__repo__` shell can get its `rel="vcs-git"` link injected
-        // (docs/DECISIONS.md #63).
+        // (docs/DECISIONS.md #63); `site` similarly carries
+        // `root_title`/`root_desc` into every shell's injected `<meta>`s
+        // (docs/DECISIONS.md #70).
         let dir = static_dir.clone();
         let clone_url_base = state.config.clone_url_base.clone();
+        let site = shell::SiteHead {
+            title: state.config.root_title.clone(),
+            description: state.config.root_desc.clone(),
+        };
         let shell: MethodRouter<()> = get(move |uri: Uri| {
-            shell::serve_shell_or_redirect(dir.clone(), clone_url_base.clone(), uri)
+            shell::serve_shell_or_redirect(dir.clone(), clone_url_base.clone(), site.clone(), uri)
         });
-        router = router.fallback_service(ServeDir::new(static_dir).fallback(shell));
+        // `append_index_html_on_directories` is off: with it on, `ServeDir`
+        // would serve `static_dir/index.html` for `/` itself directly, bypassing
+        // `fallback(shell)` (and so `site`'s injected `<meta>`s) entirely —
+        // the only request shape in this build that maps onto a real
+        // directory. Every other route shape (e.g. `/git-compose`) has no
+        // matching directory at all, so it already fell through to the
+        // shell regardless of this flag; this only changes `/` itself.
+        router = router.fallback_service(
+            ServeDir::new(static_dir)
+                .append_index_html_on_directories(false)
+                .fallback(shell),
+        );
     }
 
     router.layer(TraceLayer::new_for_http()).with_state(state)

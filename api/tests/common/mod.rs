@@ -33,6 +33,9 @@ pub fn test_config(repo_root: &Path) -> Config {
         cache_response_ttl_secs: 300,
         cache_response_max_bytes: 32 * 1024 * 1024,
         repository_sort: RepoOrder::default(),
+        root_title: None,
+        root_desc: None,
+        root_readme: None,
     }
 }
 
@@ -58,6 +61,22 @@ pub fn router_with_static_and_clone_base(
     let mut config = test_config(repo_root);
     config.static_dir = Some(static_dir.to_owned());
     config.clone_url_base = Some(clone_url_base.to_owned());
+    build_router(AppState::new(config))
+}
+
+/// Like [`router_with_static`], plus `root_title`/`root_desc` — for
+/// asserting the page shell's injected `axgit:site-*` `<meta>`s
+/// (docs/DECISIONS.md #70).
+pub fn router_with_static_and_site(
+    repo_root: &Path,
+    static_dir: &Path,
+    root_title: Option<&str>,
+    root_desc: Option<&str>,
+) -> Router {
+    let mut config = test_config(repo_root);
+    config.static_dir = Some(static_dir.to_owned());
+    config.root_title = root_title.map(str::to_owned);
+    config.root_desc = root_desc.map(str::to_owned);
     build_router(AppState::new(config))
 }
 

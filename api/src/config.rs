@@ -49,6 +49,24 @@ pub struct Config {
         value_parser = parse_repository_sort,
     )]
     pub repository_sort: RepoOrder,
+
+    /// Site-wide title, shown as the header brand and browser tab on non-
+    /// repository pages (falls back to "Axgit" when unset) — cgit's
+    /// `root-title`.
+    #[arg(long, env = "AXGIT_ROOT_TITLE")]
+    pub root_title: Option<String>,
+
+    /// Site-wide description, shown on the index page and in `<meta
+    /// name="description">` — cgit's `root-desc`.
+    #[arg(long, env = "AXGIT_ROOT_DESC")]
+    pub root_desc: Option<String>,
+
+    /// Path to a markdown/reStructuredText/plain-text file rendered on the
+    /// index page — cgit's `root-readme`. Read from the filesystem at
+    /// request time; operator config, not user input, so it is not subject
+    /// to any traversal check.
+    #[arg(long, env = "AXGIT_ROOT_README")]
+    pub root_readme: Option<PathBuf>,
 }
 
 fn parse_repository_sort(raw: &str) -> Result<RepoOrder, String> {

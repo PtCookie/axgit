@@ -18,6 +18,7 @@ use tempfile::TempDir;
 
 use common::{
     get_bytes_with_headers, router_for, router_with_static, router_with_static_and_clone_base,
+    router_with_static_and_site,
 };
 
 // Each fixture carries a real `<head></head>` so the injected `<link>`s
@@ -336,6 +337,65 @@ async fn non_repo_shells_should_carry_no_head_links() {
             "uri {uri} unexpectedly carries a vcs-git link: {body:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn every_shell_carries_the_configured_site_meta() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/", "/git-compose", "/git-compose/bogus"] {
+        let router = router_with_static_and_site(
+            repo_root.path(),
+            static_dir.path(),
+            Some("PtCookie Git"),
+            Some("Self-hosted repositories"),
+        );
+        let (_, _, body) = get_bytes_with_headers(router, uri).await;
+        let body = String::from_utf8(body).unwrap();
+
+        assert!(
+            body.contains("<meta name=\"axgit:site-title\" content=\"PtCookie Git\">"),
+            "uri {uri} missing the site-title meta: {body:?}"
+        );
+        assert!(
+            body.contains("<meta name=\"axgit:site-desc\" content=\"Self-hosted repositories\">"),
+            "uri {uri} missing the site-desc meta: {body:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn no_shell_carries_site_meta_when_unconfigured() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/", "/git-compose", "/git-compose/bogus"] {
+        let router = router_with_static(repo_root.path(), static_dir.path());
+        let (_, _, body) = get_bytes_with_headers(router, uri).await;
+        let body = String::from_utf8(body).unwrap();
+
+        assert!(
+            !body.contains("axgit:site-"),
+            "uri {uri} unexpectedly carries site meta: {body:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn site_meta_and_repo_head_links_coexist_on_a_repo_shell() {
+    let (repo_root, static_dir) = setup_fixtures();
+    let mut config = common::test_config(repo_root.path());
+    config.static_dir = Some(static_dir.path().to_owned());
+    config.root_title = Some("PtCookie Git".to_owned());
+    config.clone_url_base = Some("https://git.example.net".to_owned());
+    let router = axgit::routes::build_router(axgit::state::AppState::new(config));
+
+    let (_, _, body) = get_bytes_with_headers(router, "/git-compose").await;
+    let body = String::from_utf8(body).unwrap();
+
+    assert!(body.contains("<meta name=\"axgit:site-title\" content=\"PtCookie Git\">"));
+    assert!(body.contains(
+        "<link rel=\"vcs-git\" title=\"Git repository\" href=\"https://git.example.net/git-compose.git\">"
+    ));
 }
 
 #[tokio::test]

@@ -60,3 +60,6 @@ All settings are environment variables (also available as CLI flags — `axgit -
 | `AXGIT_CACHE_RESPONSE_TTL` | `300` | Response cache TTL, in seconds (a safety net — pushes invalidate entries immediately via the HEAD/agefile validator) |
 | `AXGIT_CACHE_RESPONSE_MAX_BYTES` | `33554432` (32 MiB) | Response cache capacity, in bytes |
 | `AXGIT_REPOSITORY_SORT` | `name` | Default repository index sort order (`name`, `desc`, `owner`, `idle`, `section`, optionally `-`-prefixed); a request's own `?sort=` overrides it |
+| `AXGIT_ROOT_TITLE` | _(unset)_ | Site-wide title, shown as the header brand and falling back to "Axgit" |
+| `AXGIT_ROOT_DESC` | _(unset)_ | Site-wide description, shown on the index page |
+| `AXGIT_ROOT_README` | _(unset)_ | Path to a markdown/reStructuredText/plain-text file rendered on the index page |

@@ -29,6 +29,9 @@ services:
       # AXGIT_CACHE_RESPONSE_TTL: "300"
       # AXGIT_CACHE_RESPONSE_MAX_BYTES: "33554432"
       # AXGIT_REPOSITORY_SORT: name
+      # AXGIT_ROOT_TITLE: PtCookie Git
+      # AXGIT_ROOT_DESC: Self-hosted repositories
+      # AXGIT_ROOT_README: /srv/git/README.md
     expose:
       - "8080"
     healthcheck:

@@ -2017,6 +2017,45 @@
         }
       }
     },
+    "/api/v1/site": {
+      "get": {
+        "tags": [
+          "site"
+        ],
+        "summary": "Site-wide metadata",
+        "description": "Not tied to a repository — like `GET /api/v1/repos`, this is served with\na body-hash `ETag` rather than the HEAD/agefile validator every\nper-repository endpoint uses.",
+        "operationId": "get_site",
+        "responses": {
+          "200": {
+            "description": "Site metadata",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Hash of the response body; opaque"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteInfo"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          }
+        }
+      }
+    },
     "/{repo_git}/git-receive-pack": {
       "post": {
         "tags": [
@@ -3436,6 +3475,54 @@
           }
         }
       },
+      "SiteInfo": {
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "readme"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "`AXGIT_ROOT_TITLE`, falling back to `\"Axgit\"` when unset — always\npresent, unlike `description`/`readme`.",
+            "example": "Axgit"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`AXGIT_ROOT_DESC`. `null` when unset."
+          },
+          "readme": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SiteReadme",
+                "description": "From `AXGIT_ROOT_README`. `null` when unset, unreadable, over the\nsize limit, or not valid UTF-8."
+              }
+            ]
+          }
+        }
+      },
+      "SiteReadme": {
+        "type": "object",
+        "required": [
+          "format",
+          "content"
+        ],
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/ReadmeFormat"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
       "StatCounts": {
         "type": "object",
         "description": "File/line counts for the commit log's `stat=1` column (cgit's\n`enable-log-filecount`/`enable-log-linecount`, docs/DECISIONS.md #57).",
@@ -3738,6 +3825,10 @@
     {
       "name": "search",
       "description": "Content, path, and commit-message search within a repository"
+    },
+    {
+      "name": "site",
+      "description": "Site-wide title, description, and readme — not tied to any one repository"
     },
     {
       "name": "smart-http",

@@ -6,6 +6,7 @@ pub mod files;
 pub mod objects;
 pub mod repos;
 pub mod search;
+pub mod site;
 pub mod stats;
 pub mod tags;
 

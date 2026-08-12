@@ -2632,3 +2632,64 @@ index" — the `homepage` field has existed in the API since #67, but nothing on
   change exercises both the present and absent cases everywhere it's used.
 - No API contract change — `RepoSummary.tsx`, `RepoList.tsx`, `IconLink.tsx`, and test fixtures
   only.
+
+## #70 Site title, description, and readme
+
+Closes "Site-level readme / title / description" — the last open "Repository index" cgit-parity
+item — with the API half: three new `Config` fields, a new `GET /api/v1/site`, and server-side
+`<head>` injection so the site's own identity isn't hardcoded to "Axgit" everywhere. The web page
+actually rendering these is a follow-up commit (#71), same two-commit shape as #64/#65 and #67/#69.
+
+- **A new, non-repo-scoped endpoint, not fields tacked onto `GET /api/v1/repos`.** Title/
+  description/readme describe the *deployment*, not any repository, and the readme in particular
+  needs its own response shape (`format`/`content`, mirroring `repo/readme.rs::ReadmeInfo` without
+  its repo-specific `path`) — folding them into the repo list would conflate two different
+  resources the way `RepoInfo`/`RepoSummary` were deliberately kept apart from the start (#1-era
+  decision, still honored by #64-#69). `title` is always present (falls back to `"Axgit"`);
+  `description`/`readme` are `null` when unset, the standard rule (docs/API.md:18).
+- **The readme is read from the filesystem at request time, with no traversal check.**
+  `AXGIT_ROOT_README` is operator configuration passed on the command line/environment, not user
+  input reachable from any request parameter — the same trust boundary `AXGIT_REPO_ROOT` itself
+  already sits on. Capped at 512 KiB (matching the per-repository blob/readme limit) so a
+  misconfigured path pointing at a huge file can't blow up response size; over the cap, missing, or
+  non-UTF-8 all degrade to `readme: null` rather than failing the whole response — `title`/
+  `description` are unaffected either way, the same "one bad config value degrades one field"
+  stance #66/#67/#68 already established for `hide`/`homepage`/`defbranch`.
+- **Format is guessed from the configured path's extension**
+  (`.md`/`.markdown`→markdown, `.rst`→rst, else plain), reusing `repo/readme.rs::ReadmeFormat`
+  itself rather than duplicating the three-value enum. This is a *different* guess from
+  `repo/readme.rs::CANDIDATES`'s name-based one (`README.md` vs. `README.rst` vs. …) — an
+  operator-chosen path has no fixed candidate list to match against, only an extension to read.
+- **Not cached at all** — no `ScanCache` entry, no moka response-cache entry — same "not tied to a
+  repository" treatment the repo list gets (#6's carve-out), just with nothing to snapshot in the
+  first place: config is already in memory and the readme read is one stat plus one read. A
+  body-hash `ETag` still gives clients a 304 path.
+- **`<head>` injection generalized, not duplicated.** #63's `inject_repo_head_links` became
+  `inject_before_head_close(body, extra)`, a pure byte-splice taking pre-built markup instead of
+  building repo `<link>`s itself; a new `site_head_meta` builds `<meta name="axgit:site-title">`/
+  `<meta name="axgit:site-desc">` (omitted when unset), and `serve_shell` concatenates both extras
+  before a single splice. **Custom `axgit:` meta names, not overwriting the real `<title>`/
+  `<meta name="description">` directly** — the shells are prerendered once per route *shape*, so
+  the real elements' content is already baked in at build time; overwriting them server-side would
+  work for `<head>` itself, but the header **brand text** is in `<body>`, which needs client-side
+  filling regardless (exactly `fillRepoShell`'s existing job for the repository name) — so the
+  custom metas exist to smuggle config into the browser for one client script (`fillSiteChrome`,
+  #71) to apply consistently to both places, rather than having two different mechanisms (one
+  server-side for `<head>`, one client-side for `<body>`) disagree or race.
+- **Injected into *every* shell — index, repo pages, and 404 — unlike #63's repo-only `<link>`s.**
+  A site title/description is deployment-wide, not per-repository.
+- **Found and fixed a real bug while wiring this up**: `GET /` never reached `serve_shell` at all.
+  `ServeDir`'s default `append_index_html_on_directories(true)` serves `static_dir/index.html`
+  directly for a bare `/` request — the only route shape in this build that corresponds to a real
+  on-disk directory — bypassing the `.fallback(shell)` closure (and so #63's own injection logic,
+  had the index page ever needed it) entirely. Invisible before now because #63 only injects into
+  repo shells, and the index page never carried per-repo links to miss. Fixed by
+  `.append_index_html_on_directories(false)` on the `ServeDir` in `routes.rs`; every other route
+  shape was already unaffected, since none of them correspond to a real directory on disk (only
+  `__repo__/` does, and nothing requests that literal path).
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /api/v1/site`, new
+  `site` tag). `README.md`/`docs/ARCHITECTURE.md`/`docs/compose.example.yaml` gained
+  `AXGIT_ROOT_TITLE`/`AXGIT_ROOT_DESC`/`AXGIT_ROOT_README`. New `api/tests/site_test.rs`
+  (defaults, configured values, readme format guessing, missing/oversized readme, ETag round-trip)
+  and `static_shell_test.rs` cases for the injected metas across index/repo/404 shells and their
+  coexistence with #63's repo `<link>`s.

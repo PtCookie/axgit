@@ -497,6 +497,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/site": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Site-wide metadata
+     * @description Not tied to a repository — like `GET /api/v1/repos`, this is served with
+     *     a body-hash `ETag` rather than the HEAD/agefile validator every
+     *     per-repository endpoint uses.
+     */
+    get: operations["get_site"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/{repo_git}/git-receive-pack": {
     parameters: {
       query?: never;
@@ -1078,6 +1100,21 @@ export interface components {
        *     the frontend can render matches the same way as log rows.
        */
       commits: components["schemas"]["CommitInfo"][];
+    };
+    SiteInfo: {
+      /**
+       * @description `AXGIT_ROOT_TITLE`, falling back to `"Axgit"` when unset — always
+       *     present, unlike `description`/`readme`.
+       * @example Axgit
+       */
+      title: string;
+      /** @description `AXGIT_ROOT_DESC`. `null` when unset. */
+      description: string | null;
+      readme: null | components["schemas"]["SiteReadme"];
+    };
+    SiteReadme: {
+      format: components["schemas"]["ReadmeFormat"];
+      content: string;
     };
     /**
      * @description File/line counts for the commit log's `stat=1` column (cgit's
@@ -2628,6 +2665,37 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
+      };
+    };
+  };
+  get_site: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Site metadata */
+      200: {
+        headers: {
+          /** @description `no-cache` */
+          "Cache-Control"?: string;
+          /** @description Hash of the response body; opaque */
+          ETag?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SiteInfo"];
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

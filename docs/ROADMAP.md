@@ -1215,22 +1215,34 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   actually leave the site; every other use of either component is unaffected. No API contract
   change.
 
+- **Site title, description, and readme (API half)** (DECISIONS.md #70), most of the last open
+  "Repository index" cgit-parity item (`root-title`/`root-desc`/`root-readme`). Three new `Config`
+  fields (`AXGIT_ROOT_TITLE`/`AXGIT_ROOT_DESC`/`AXGIT_ROOT_README`, all unset by default), a new
+  non-repo-scoped `GET /api/v1/site` returning `{ title, description, readme }` (`title` always
+  present, falling back to `"Axgit"`; the readme read from the filesystem at request time — capped
+  at 512 KiB, no traversal check since this is operator config — with its format guessed from the
+  path's extension, reusing `repo/readme.rs::ReadmeFormat`), and `api/src/shell.rs` injecting
+  `<meta name="axgit:site-title">`/`<meta name="axgit:site-desc">` into *every* shell's `<head>`
+  when configured, by generalizing #63's byte-splice injection (`inject_before_head_close`, no
+  longer repo-only). Custom meta names rather than overwriting the real `<title>`/`<meta
+  name="description">` server-side — the header **brand text** lives in `<body>` and needs
+  client-side filling regardless (#71), so both go through the same script. Along the way, fixed a
+  real bug: `GET /` was bypassing the shell fallback (and so any injection) entirely, because
+  `ServeDir`'s default `append_index_html_on_directories` served `index.html` directly for the one
+  route shape that maps onto a real on-disk directory.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /api/v1/site`, new
+    `site` tag). The web page rendering it is a follow-up commit (#71).
+
 ## Next up
 
-**Site-level title, description, and readme** (DECISIONS.md #70/#71, cgit's `root-title`/
-`root-desc`/`root-readme`), the last open "Repository index" cgit-parity item. Two commits, same
-API-first shape as #64/#65 and #67/#69:
-
-- **#70 (API)**: three new `Config` fields (`AXGIT_ROOT_TITLE`/`AXGIT_ROOT_DESC`/
-  `AXGIT_ROOT_README`, all unset by default), a new `GET /api/v1/site` returning
-  `{ title, description, readme }` (`title` always present, falling back to `"Axgit"`; the readme
-  read from the filesystem at request time, format guessed from its extension reusing
-  `repo/readme.rs`'s `ReadmeFormat`), and `api/src/shell.rs` injecting `<meta name="axgit:site-*">`
-  into every shell's `<head>` (generalizing #63's byte-splice injection, currently repo-shell-only).
-- **#71 (web)**: `Layout.astro`'s header brand and `<meta name="description">` read those injected
-  metas via a new `window.__axgit.fillSiteChrome` (next to `fillRepoShell`); a new `SiteIntro.tsx`
-  island on `index.astro` renders the site `<h1>` (the index page has none today), description, and
-  readme (via the existing `ReadmeView`/`ReadmeMarkdown`) when configured.
+**Site title, description, and readme (web half)** (DECISIONS.md #71, following up on #70's API):
+`Layout.astro`'s header brand and `<meta name="description">` read the injected `axgit:site-*`
+metas via a new `window.__axgit.fillSiteChrome`, registered next to `fillRepoShell` and run on load
+and `astro:after-swap`; on non-repo pages only, it also sets `document.title` (repo pages keep
+`fillRepoShell`'s `name + suffix`). A new `SiteIntro.tsx` island on `index.astro` fetches
+`GET /api/v1/site` and renders the site `<h1>` (the index page has none today), description, and
+readme (via the existing `ReadmeView`/`ReadmeMarkdown`) — rendering nothing when all three are
+unset, so an unconfigured deployment's index page is unchanged.
 
 After that: the two "Tree and blob" gaps (submodule links, single-child directory collapsing) are
 what's left overall. Pick the next piece from there, the candidates below, or a fresh request.

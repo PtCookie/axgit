@@ -21,6 +21,23 @@ use crate::escape::xml_escape;
 /// Keep in sync with `web/src/lib/shell.ts::REPO_SHELL_PARAM`.
 pub const REPO_SHELL_PARAM: &str = "__repo__";
 
+/// Site-wide `<head>` metadata injected into *every* shell — index, repo
+/// pages, and 404 alike — unlike the repo-only `<link>`s below
+/// (docs/DECISIONS.md #70, `AXGIT_ROOT_TITLE`/`AXGIT_ROOT_DESC`). Both
+/// `None` by default, in which case nothing is injected and the shell's own
+/// hardcoded title/description stand unchanged. The web side
+/// (`window.__axgit.fillSiteChrome`, docs/DECISIONS.md #71) reads these
+/// custom `<meta>`s client-side to fill in the header brand and the real
+/// `<meta name="description">` — the same split `fillRepoShell` already
+/// draws for the repository name, kept here rather than overwriting the
+/// real `<title>`/`<meta name="description">` server-side, which would only
+/// flash before that same script corrects it.
+#[derive(Clone, Default)]
+pub struct SiteHead {
+    pub title: Option<String>,
+    pub description: Option<String>,
+}
+
 /// Resolves a request path to its shell file (relative to the static build
 /// root) and the status to answer with.
 ///
@@ -113,23 +130,27 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
 pub async fn serve_shell_or_redirect(
     static_dir: PathBuf,
     clone_url_base: Option<String>,
+    site: SiteHead,
     uri: Uri,
 ) -> Response {
     match cgit_compat::redirect_for(&uri) {
         Some(location) => Redirect::permanent(&location).into_response(),
-        None => serve_shell(static_dir, clone_url_base, uri).await,
+        None => serve_shell(static_dir, clone_url_base, site, uri).await,
     }
 }
 
 /// `ServeDir` fallback: a request with no matching file gets the page shell
 /// for its route shape, or the 404 shell — with a real 404 — if there is
-/// none. A `__repo__` shell additionally gets per-repository `<link>`s
-/// injected into its `<head>` (docs/DECISIONS.md #63) — the shell itself is
+/// none. Every shell gets `site`'s `<meta>`s injected when configured
+/// (docs/DECISIONS.md #70); a `__repo__` shell additionally gets
+/// per-repository `<link>`s (docs/DECISIONS.md #63) — the shell itself is
 /// prerendered once under the placeholder param and can't know the
-/// repository name at build time.
+/// repository name (or, for `site`, that any config exists at all) at build
+/// time.
 pub async fn serve_shell(
     static_dir: PathBuf,
     clone_url_base: Option<String>,
+    site: SiteHead,
     uri: Uri,
 ) -> Response {
     let (relative, status) = shell_for(uri.path());
@@ -137,10 +158,11 @@ pub async fn serve_shell(
 
     match tokio::fs::read(&file).await {
         Ok(body) => {
-            let body = match repo_segment_for(uri.path(), &relative) {
-                Some(segment) => inject_repo_head_links(body, segment, clone_url_base.as_deref()),
-                None => body,
-            };
+            let mut extra = site_head_meta(site.title.as_deref(), site.description.as_deref());
+            if let Some(segment) = repo_segment_for(uri.path(), &relative) {
+                extra.push_str(&repo_head_links(segment, clone_url_base.as_deref()));
+            }
+            let body = inject_before_head_close(body, &extra);
             (
                 status,
                 [
@@ -178,21 +200,27 @@ fn repo_segment_for<'u>(path: &'u str, relative: &Path) -> Option<&'u str> {
     path.split('/').find(|segment| !segment.is_empty())
 }
 
-/// Inserts the Atom-discovery and `vcs-git` `<link>`s before the shell's
-/// `</head>`, or returns `body` unchanged if it has none. Byte-oriented
-/// (rather than parsing the HTML) — the shell is a small, controlled
-/// document axgit itself produced, matching this file's and `feed.rs`'s
-/// "hand-build small fixed documents" stance (docs/DECISIONS.md #12).
-fn inject_repo_head_links(body: Vec<u8>, segment: &str, clone_url_base: Option<&str>) -> Vec<u8> {
+/// Inserts `extra` (raw HTML) before the shell's `</head>`, or returns `body`
+/// unchanged if it has none — or if `extra` is empty, the common case when
+/// neither site metadata nor a repo shell applies, which skips the scan
+/// entirely. Byte-oriented (rather than parsing the HTML) — the shell is a
+/// small, controlled document axgit itself produced, matching this file's
+/// and `feed.rs`'s "hand-build small fixed documents" stance
+/// (docs/DECISIONS.md #12). Shared by [`site_head_meta`]'s output and
+/// [`repo_head_links`]'s, concatenated into one insertion by `serve_shell`
+/// rather than splicing twice.
+fn inject_before_head_close(body: Vec<u8>, extra: &str) -> Vec<u8> {
+    if extra.is_empty() {
+        return body;
+    }
     const HEAD_CLOSE: &[u8] = b"</head>";
     let Some(pos) = find_subslice(&body, HEAD_CLOSE) else {
         return body;
     };
 
-    let links = repo_head_links(segment, clone_url_base);
-    let mut out = Vec::with_capacity(body.len() + links.len());
+    let mut out = Vec::with_capacity(body.len() + extra.len());
     out.extend_from_slice(&body[..pos]);
-    out.extend_from_slice(links.as_bytes());
+    out.extend_from_slice(extra.as_bytes());
     out.extend_from_slice(&body[pos..]);
     out
 }
@@ -201,6 +229,26 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
+}
+
+/// Builds the `axgit:site-title`/`axgit:site-desc` `<meta>`s
+/// (docs/DECISIONS.md #70) — each omitted when its config value is unset,
+/// so an unconfigured deployment injects nothing at all.
+fn site_head_meta(title: Option<&str>, description: Option<&str>) -> String {
+    let mut meta = String::new();
+    if let Some(title) = title {
+        meta.push_str(&format!(
+            "<meta name=\"axgit:site-title\" content=\"{}\">",
+            xml_escape(title)
+        ));
+    }
+    if let Some(description) = description {
+        meta.push_str(&format!(
+            "<meta name=\"axgit:site-desc\" content=\"{}\">",
+            xml_escape(description)
+        ));
+    }
+    meta
 }
 
 /// Builds the `<link>` markup itself. Titles are fixed strings rather than
@@ -518,19 +566,55 @@ mod tests {
     }
 
     #[test]
-    fn inject_repo_head_links_should_insert_before_head_close() {
+    fn inject_before_head_close_should_insert_before_head_close() {
         let body =
             b"<!doctype html><html><head><title>x</title></head><body></body></html>".to_vec();
-        let injected = inject_repo_head_links(body, "git-compose", None);
+        let links = repo_head_links("git-compose", None);
+        let injected = inject_before_head_close(body, &links);
         let injected = String::from_utf8(injected).unwrap();
         assert!(injected.contains("<title>x</title><link rel=\"alternate\""));
         assert!(injected.contains("feed.atom?all=1\"></head>"));
     }
 
     #[test]
-    fn inject_repo_head_links_should_leave_a_headless_document_unchanged() {
+    fn inject_before_head_close_should_leave_a_headless_document_unchanged() {
         let body = b"<!doctype html><html><body>no head</body></html>".to_vec();
-        let injected = inject_repo_head_links(body.clone(), "git-compose", None);
+        let links = repo_head_links("git-compose", None);
+        let injected = inject_before_head_close(body.clone(), &links);
         assert_eq!(injected, body);
+    }
+
+    #[test]
+    fn inject_before_head_close_should_be_a_no_op_for_empty_extra() {
+        let body = b"<!doctype html><html><head></head><body></body></html>".to_vec();
+        let injected = inject_before_head_close(body.clone(), "");
+        assert_eq!(injected, body);
+    }
+
+    #[test]
+    fn site_head_meta_should_omit_both_when_unset() {
+        assert_eq!(site_head_meta(None, None), "");
+    }
+
+    #[test]
+    fn site_head_meta_should_include_only_the_configured_fields() {
+        let title_only = site_head_meta(Some("PtCookie Git"), None);
+        assert!(title_only.contains("<meta name=\"axgit:site-title\" content=\"PtCookie Git\">"));
+        assert!(!title_only.contains("site-desc"));
+
+        let desc_only = site_head_meta(None, Some("Self-hosted repositories"));
+        assert!(!desc_only.contains("site-title"));
+        assert!(
+            desc_only
+                .contains("<meta name=\"axgit:site-desc\" content=\"Self-hosted repositories\">")
+        );
+    }
+
+    #[test]
+    fn site_head_meta_should_escape_both_fields() {
+        let meta = site_head_meta(Some(r#"a"b"#), Some(r#"c"d"#));
+        assert!(!meta.contains(r#""a"b""#));
+        assert!(meta.contains("a&quot;b"));
+        assert!(meta.contains("c&quot;d"));
     }
 }

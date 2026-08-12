@@ -56,8 +56,8 @@ axum's `DefaultBodyLimit` returns a plain-text `413`.
   part of the contract — the server derives it from the repo's HEAD sha + agefile mtime, so it
   changes right after a push. Comparison uses RFC 9110 weak comparison (ignoring the `W/` prefix).
 - Exceptions:
-  - `GET /api/v1/repos` (the list) isn't tied to a specific repo, so its ETag is a **hash of the
-    response body**.
+  - `GET /api/v1/repos` (the list) and `GET /api/v1/site` aren't tied to a specific repo, so their
+    ETag is a **hash of the response body**.
   - `raw` isn't subject to the server response cache, but non-sha requests still get an ETag
     (304 still saves transfer bytes).
   - `archive` uses a **weak ETag** (`W/"..."`). On a match, returns 304 without running
@@ -72,6 +72,33 @@ and skips ahead, which is what makes pagination lossless across side branches (s
 row under `/commits` below, and `docs/DECISIONS.md` #37). Default `limit=50`, max 100.
 
 ## Endpoints
+
+### `GET /api/v1/site`
+
+Site-wide metadata. Not tied to any one repository — cgit's `root-title`/`root-desc`/`root-readme`.
+
+```json
+{
+  "title": "Axgit",
+  "description": null,
+  "readme": null
+}
+```
+
+- `title`: `AXGIT_ROOT_TITLE`, falling back to `"Axgit"` — always a string, never `null`, unlike
+  `description`/`readme`.
+- `description`: `AXGIT_ROOT_DESC`. `null` when unset.
+- `readme`: read from the file `AXGIT_ROOT_README` names, at request time. `null` when the
+  variable is unset, the file is missing/unreadable, exceeds 512 KiB, or is not valid UTF-8 — a
+  misconfigured readme never fails the whole response, since `title`/`description` are unaffected.
+  When present: `{ "format": "markdown" | "rst" | "plain", "content": "..." }`. `format` is
+  guessed from the file's extension (`.md`/`.markdown` → `markdown`, `.rst` → `rst`, anything else
+  → `plain`) — the filesystem analogue of the per-repository readme's name-based guess, since an
+  operator-chosen path has no fixed candidate list to match against.
+- `AXGIT_ROOT_README` is operator configuration, not user input, so it is not subject to any path
+  traversal restriction — it may name any file the server process can read.
+- Cached the same way `GET /api/v1/repos` is: not tied to a single repository, so its `ETag` is a
+  hash of the response body rather than a HEAD/agefile validator.
 
 ### `GET /api/v1/repos?sort=`
 
