@@ -8,7 +8,7 @@ use super::{JSON_CONTENT_TYPE, body_etag, cached_response, etag_response};
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::refs::RefsInfo;
 use crate::repo::sort::{RepoOrder, sort_repos};
-use crate::repo::{RepoInfo, RepoSummary, meta, refs};
+use crate::repo::{RepoInfo, RepoSummary, meta, refs, resolve};
 use crate::state::AppState;
 
 #[derive(Deserialize, IntoParams)]
@@ -132,11 +132,10 @@ pub async fn get_repo(
         &headers,
         move |repo| {
             let info = meta::read_repo_info(repo, &compute_name);
-            let head = repo
-                .head()
-                .ok()
-                .and_then(|head| head.target())
-                .map(|oid| oid.to_string());
+            // Follows `defbranch` (docs/DECISIONS.md #68) — the summary's
+            // `head` would otherwise disagree with every other tab, which
+            // all resolve a ref-less request through `resolve::default_commit`.
+            let head = resolve::default_commit(repo).map(|commit| commit.id().to_string());
             let refs = refs::list_refs(repo)?;
             let clone_url = clone_url_base
                 .map(|base| format!("{}/{compute_name}.git", base.trim_end_matches('/')));

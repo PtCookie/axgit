@@ -2560,3 +2560,48 @@ commit (#68), since it changes ref resolution rather than adding a field.
   `RepoSummary` both gain `homepage`). `scripts/make-fixtures.sh`'s `git-compose.git` gained
   `cgit.homepage` so a local run reaches the field. The web page rendering it is a follow-up
   commit (#69), same two-commit shape as #64/#65's sort work.
+
+## #68 Honour the configured `defbranch`
+
+Closes the last piece of "`homepage` (cgit gives it a dedicated nav tab), and a configured
+`defbranch`" — behavioral, unlike #67's `homepage` field: axgit only ever derived the default
+branch from HEAD, so every "no ref given" request (summary, commit log, tree/blob/raw/blame,
+archive, diff, stats, search, feed) resolved against HEAD regardless of `defbranch`.
+
+- **One choke point, not ten.** `resolve::resolve_commit` — already the single function every ref
+  resolution in the api goes through — substitutes the configured `defbranch` for the *literal*
+  `"HEAD"` string before `revparse_single`, gated on an exact `refname == "HEAD"` check so the
+  config read only happens on that one input, never on an explicit branch/tag/sha. This is what
+  makes `/tree/HEAD/...`, `/blob`, `/raw`, `/blame`, `/archive/HEAD.*`, and `/diff?from=HEAD`/
+  `?to=HEAD` all honor `defbranch` for free — `diff.rs`'s and `files.rs`'s readme handler already
+  built the literal string `"HEAD"` as their own "no ref given" default and fed it straight into
+  `resolve_commit`/`resolve_ref_path`, so neither needed a single line changed. Only the four sites
+  that called `repo.head()` directly, bypassing `resolve_commit` entirely — `commits.rs`,
+  `stats.rs`, `search.rs`, `feed.rs` — were switched to a new `resolve::default_commit`, plus the
+  repository summary's own `head` field (`handlers/repos.rs::get_repo`), which would otherwise show
+  a different tip than every other tab.
+- **A stale or misconfigured `defbranch` degrades to HEAD, silently.** `meta::configured_default_branch`
+  checks `repo.find_branch(name, Local)` before returning the value — a renamed or deleted branch
+  doesn't 404 the whole repository on every ref-less request, it just behaves as if `defbranch`
+  were never set. Same reasoning as `homepage`'s scheme filter (#67): one bad config value degrades
+  one field/behavior, never fails the request outright.
+- **`RepoInfo.default_branch`/`RepoSummary.default_branch` now report the configured branch too**
+  (`meta::default_branch` prefers `configured_default_branch` over HEAD's own shorthand) — no
+  schema change, since the field already existed and was always `Option<String>`.
+- **Left on HEAD, deliberately**: `meta::validator` (the cache freshness check — any ref movement,
+  defbranch or not, should still be a change signal) and `last_modified`'s `head_authordate`
+  fallback (a push to a non-HEAD `defbranch` still touches the agefile, so freshness tracking is
+  unaffected either way).
+- **No cache-key change.** `HEAD` and an explicit branch name remain distinct `params` strings in
+  every `cached_response` call — resolving to the same commit under `defbranch` just means two
+  cache entries with identical bodies, not a correctness problem. A `defbranch` edit itself is
+  config-only and invisible to the HEAD/agefile validator, so it inherits the existing
+  `AXGIT_CACHE_RESPONSE_TTL` staleness ceiling (docs/ARCHITECTURE.md's documented safety net for
+  exactly this class of out-of-band change) — same as `homepage`'s caching story in #67.
+- `docs/API.md` updated (the ref-parameter convention, `default_branch`, and the summary's `head`
+  field) — no schema change, so no `docs/openapi.json`/`web/src/lib/api/types.ts` diff.
+  `scripts/make-fixtures.sh`'s `dotfiles.git` gained a `legacy` branch (created before its second
+  commit, so it diverges from `main`) plus `cgit.defbranch legacy`, so a local run can tell
+  `defbranch` apart from HEAD by more than a config key existing. New
+  `api/tests/defbranch_test.rs` covers the summary, the ref-less commit log, and the ref-less tree,
+  plus the unset and nonexistent-branch fallback cases.

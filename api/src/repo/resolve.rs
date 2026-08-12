@@ -1,15 +1,36 @@
 use git2::{Commit, Repository};
 
+use super::meta;
 use crate::error::ApiError;
 
 /// Resolves a user-supplied ref (branch, tag, or commit sha) to a commit.
 /// Both resolution and peeling failures map to [`ApiError::RefNotFound`] —
 /// never `?`-propagate git2 errors here, that would turn a bad ref into a 500.
-/// Callers handle the "no ref given" default (usually HEAD) themselves.
+/// Callers handle the "no ref given" default (usually the literal `"HEAD"`)
+/// themselves.
+///
+/// The literal `"HEAD"` — never any other spelling — is substituted with the
+/// configured `defbranch`, if any (docs/DECISIONS.md #68): every caller that
+/// builds `"HEAD"` as its own default (`diff.rs`, `files.rs`'s readme
+/// handler) inherits this automatically, and the config read only happens on
+/// that one input, never on an explicit branch/tag/sha.
 pub fn resolve_commit<'r>(repo: &'r Repository, refname: &str) -> Result<Commit<'r>, ApiError> {
-    repo.revparse_single(refname)
+    let resolved = if refname == "HEAD" {
+        meta::configured_default_branch(repo)
+    } else {
+        None
+    };
+    repo.revparse_single(resolved.as_deref().unwrap_or(refname))
         .and_then(|object| object.peel_to_commit())
         .map_err(|_| ApiError::RefNotFound(refname.to_owned()))
+}
+
+/// The commit `"HEAD"` currently resolves to, honoring `defbranch` the same
+/// way [`resolve_commit`] does. `None` only for an empty repository (unborn
+/// HEAD) — every caller already treats that as "no commits yet", not a
+/// resolution failure, so this never surfaces `ApiError::RefNotFound`.
+pub fn default_commit(repo: &Repository) -> Option<Commit<'_>> {
+    resolve_commit(repo, "HEAD").ok()
 }
 
 /// A `{ref}/{path...}` wildcard split into its resolved parts.

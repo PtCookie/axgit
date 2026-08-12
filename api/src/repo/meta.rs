@@ -101,8 +101,23 @@ pub fn is_ignored(repo: &Repository) -> bool {
         .is_some_and(|cfg| config_flag(cfg, "ignore"))
 }
 
+/// The configured `defbranch` wins over HEAD's own shorthand
+/// (docs/DECISIONS.md #68) — cgit's own `defbranch`.
 fn default_branch(repo: &Repository) -> Option<String> {
-    repo.head().ok()?.shorthand().map(str::to_owned)
+    configured_default_branch(repo).or_else(|| repo.head().ok()?.shorthand().map(str::to_owned))
+}
+
+/// The repo's `defbranch` config value, if set and if it names an existing
+/// local branch. A stale/misconfigured value (renamed or deleted branch)
+/// degrades to `None` — callers fall back to HEAD — rather than making every
+/// "no ref given" request fail because of one bad config value.
+pub(crate) fn configured_default_branch(repo: &Repository) -> Option<String> {
+    let config = repo.config().and_then(|mut cfg| cfg.snapshot()).ok();
+    let name = config
+        .as_ref()
+        .and_then(|cfg| config_value(cfg, "defbranch"))?;
+    repo.find_branch(&name, git2::BranchType::Local).ok()?;
+    Some(name)
 }
 
 /// agefile content → agefile mtime → HEAD authordate (docs/DECISIONS.md #5).

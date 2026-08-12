@@ -14,7 +14,9 @@ limits, refs longest-match, merge simplification, conditions under which a field
 - All responses are `application/json` (except raw/archive/feed)
 - Repository identifier `{repo}`: the repository name with the `.git` suffix removed
   (e.g. `git-compose`)
-- The ref parameter accepts branch names, tag names, and commit shas. Defaults to HEAD if omitted.
+- The ref parameter accepts branch names, tag names, and commit shas. Defaults to HEAD if omitted —
+  and `HEAD` itself resolves to the repo config's `defbranch`, if set and if it names an existing
+  local branch; otherwise the repository's actual HEAD, unchanged from before `defbranch` existed.
 - Fields in response objects are **always present as keys**, even when they have no value
   (serialized as `null`, never omitted).
 
@@ -97,6 +99,8 @@ Repository list. Equivalent to cgit's index.
 - `homepage`: `null` unless the configured value is a `http://` or `https://` URL — it's served
   directly in an `<a href>`, so any other scheme (in particular `javascript:`) is dropped rather
   than exposed.
+- `default_branch`: the repo config's `defbranch`, if set and if it names an existing local branch;
+  otherwise HEAD's own shorthand.
 - `last_modified`: from the agefile (`info/web/last-modified`), else HEAD authordate.
 - `default_branch`/`last_modified`: `null` for an empty repository (no commits, no agefile).
 - `sort`: `name` (default), `desc`, `owner`, `idle`, or `section`, optionally prefixed with `-` to
@@ -135,8 +139,9 @@ branch/tag counts, and the clone URL.
 ```
 
 - `name` through `last_modified`: same rules as the list item.
-- `head`: HEAD commit sha. `null` for an empty repository (unborn HEAD) — this returns `200`, not
-  404, with `default_branch`/`last_modified` also `null` and counts at 0.
+- `head`: the commit `default_branch` points at (i.e. `HEAD`, honoring `defbranch` the same way
+  every other endpoint's ref-less request does). `null` for an empty repository (unborn HEAD) —
+  this returns `200`, not 404, with `default_branch`/`last_modified` also `null` and counts at 0.
 - `branch_count`: **local branches only** — does not include `GET /refs`' `remote_branches`.
 - `clone_url`: `{clone_url_base}/{repo}.git`. `null` if `--clone-url-base`
   (`AXGIT_CLONE_URL_BASE`) is not configured.

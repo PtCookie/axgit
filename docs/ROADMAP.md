@@ -1191,6 +1191,20 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated. The web page rendering it
     is a follow-up commit (#69).
 
+- **Honour the configured `defbranch`** (DECISIONS.md #68), closing the last piece of "`homepage` +
+  a configured `defbranch`" — the behavioral half, unlike #67's `homepage` field. Every "no ref
+  given" request now resolves `HEAD` through `defbranch` if it's set and names an existing local
+  branch, via one choke point: `resolve::resolve_commit` substitutes `defbranch` for the *literal*
+  `"HEAD"` string before revparsing it. Sites that already built `"HEAD"` as their own default
+  (`diff.rs`, `files.rs`'s readme handler) inherited this for free; the four sites that called
+  `repo.head()` directly (`commits.rs`, `stats.rs`, `search.rs`, `feed.rs`), plus the summary's own
+  `head` field, were switched to a new `resolve::default_commit`. A stale/misconfigured `defbranch`
+  degrades to HEAD silently rather than 404ing the repository. No cache-key change — `HEAD` and an
+  explicit branch name stay distinct `params` strings even when they resolve to the same commit.
+  - `docs/API.md` updated (no schema change, so no `openapi.json`/`types.ts` diff).
+    `scripts/make-fixtures.sh`'s `dotfiles.git` gained a diverging `legacy` branch +
+    `cgit.defbranch`. New `api/tests/defbranch_test.rs`.
+
 ## Next up
 
 **Web-side homepage link** (DECISIONS.md #69, following up on #67's API): a `MetaLink` on
@@ -1199,10 +1213,9 @@ when `homepage` is non-null, `target="_blank"` + `rel="noopener noreferrer"`. No
 tab like cgit — `RepoNav.astro`'s tabs are static and every href is rewritten same-site by
 `fillRepoShell`, which doesn't fit an external, conditionally-present link.
 
-After that: the configured `defbranch` (behavioral, #68) and site-level readme/title/description
-are the only "Repository index" items left, plus the two "Tree and blob" gaps (submodule links,
-single-child directory collapsing). Pick the next piece from there, the candidates below, or a
-fresh request.
+After that: site-level readme/title/description is the only "Repository index" item left, plus the
+two "Tree and blob" gaps (submodule links, single-child directory collapsing). Pick the next piece
+from there, the candidates below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1242,8 +1255,8 @@ recorded separately below instead of listed as gaps.
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
 - **Repository index**
-  - Site-level readme / title / description (`root-readme`, `root-title`, `root-desc`).
-  - A configured `defbranch` (axgit only derives it from HEAD) — `homepage` closed by #67/#69.
+  - Site-level readme / title / description (`root-readme`, `root-title`, `root-desc`) —
+    `homepage`/`defbranch` closed by #67/#68/#69.
 
 ### cgit parity notes (merged or deliberately different — not planned)
 

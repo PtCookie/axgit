@@ -112,7 +112,7 @@ pub async fn get_search(
             let commit = if let Some(refname) = &query.r#ref {
                 Some(resolve::resolve_commit(repo, refname)?)
             } else {
-                repo.head().ok().and_then(|head| head.peel_to_commit().ok())
+                resolve::default_commit(repo)
             };
             let Some(commit) = commit else {
                 // Empty repository (unborn HEAD): an empty result, not an

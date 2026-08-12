@@ -124,7 +124,7 @@ pub async fn get_feed(
                 // not 404 — the repo exists and feed readers keep polling it.
                 let start = match &effective_ref {
                     Some(refname) => Some(resolve::resolve_commit(repo, refname)?.id()),
-                    None => repo.head().ok().and_then(|head| head.target()),
+                    None => resolve::default_commit(repo).map(|commit| commit.id()),
                 };
                 match start {
                     Some(oid) => commits::log(repo, oid, &log_params)?.commits,

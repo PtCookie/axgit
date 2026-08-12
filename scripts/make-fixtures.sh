@@ -83,19 +83,24 @@ mkdir -p "$BARE/info/web"
 echo "2026-07-24 13:06:00 +0900" > "$BARE/info/web/last-modified"
 
 # --- dotfiles.git: partial metadata, no agefile (HEAD authordate fallback) ---
+# Also exercises cgit.defbranch (docs/DECISIONS.md #68): `legacy` branches off
+# before the second commit, so it diverges from `main` (HEAD) — a `defbranch`
+# reader that just followed HEAD wouldn't tell them apart.
 BARE="$DEST/dotfiles.git"
 git init --quiet --bare --initial-branch=main "$BARE"
 git config --file "$BARE/config" cgit.desc "Personal dotfiles"
+git config --file "$BARE/config" cgit.defbranch legacy
 
 W="$WORK/dotfiles"
 git init --quiet --initial-branch=main "$W"
 echo "set -g mouse on" > "$W/tmux.conf"
 git -C "$W" add .
 commit "$W" "2026-06-01T08:00:00+09:00" "feat: add tmux config"
+git -C "$W" branch legacy
 echo "alias ll='ls -al'" > "$W/aliases.fish"
 git -C "$W" add .
 commit "$W" "2026-06-15T21:10:00+09:00" "feat: add fish aliases"
-git -C "$W" push --quiet "$BARE" main:main
+git -C "$W" push --quiet "$BARE" main:main legacy:legacy
 
 # --- axgit.git: [cgit] and [axgit] both set ([axgit] must win) ---------------
 BARE="$DEST/axgit.git"

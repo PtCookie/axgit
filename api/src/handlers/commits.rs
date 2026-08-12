@@ -118,7 +118,7 @@ pub async fn list_commits(
             } else if let Some(refname) = &query.r#ref {
                 (resolve::resolve_commit(repo, refname)?.id(), 0)
             } else {
-                match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
+                match resolve::default_commit(repo) {
                     Some(commit) => (commit.id(), 0),
                     // Empty repository (unborn HEAD): an empty page, not an
                     // error — and, having no pinned start, not immutable.
