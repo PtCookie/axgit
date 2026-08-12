@@ -40,6 +40,7 @@ const SUMMARY: RepoSummary = {
   section: "infra",
   owner: "PtCookie",
   description: "Compose project of Git server",
+  homepage: null,
   default_branch: "main",
   last_modified: "2026-07-24T13:06:00+09:00",
   head: "abc123def456",

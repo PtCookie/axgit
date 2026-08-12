@@ -55,6 +55,21 @@ test("follows a row's Tree quick link into the repository's tree page", async ({
   await expect(page).toHaveURL("/git-compose/tree");
 });
 
+test("gives a row with a configured homepage a Homepage quick link", async ({ page }) => {
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({ json: fixture });
+  });
+
+  await page.goto("/");
+
+  const link = page.getByRole("link", { name: "Homepage for git-compose" });
+  await expect(link).toHaveAttribute("href", "https://git.ptcookie.net/git-compose");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  // axgit has no homepage in the fixture.
+  await expect(page.getByRole("link", { name: "Homepage for axgit" })).not.toBeAttached();
+});
+
 test("clicking a column header re-sorts and writes ?sort= to the URL", async ({ page }) => {
   await page.route("**/api/v1/repos", async (route) => {
     await route.fulfill({ json: fixture });

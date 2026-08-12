@@ -5,6 +5,7 @@
             "section": "infra",
             "owner": "PtCookie",
             "description": "Compose project of Git server",
+            "homepage": "https://git.ptcookie.net/git-compose",
             "default_branch": "main",
             "last_modified": "2026-07-24T13:06:00+09:00"
         },
@@ -13,6 +14,7 @@
             "section": "infra",
             "owner": "PtCookie",
             "description": "Web frontend replacing Cgit",
+            "homepage": null,
             "default_branch": "main",
             "last_modified": "2026-07-30T09:00:00+09:00"
         },
@@ -21,6 +23,7 @@
             "section": "tools",
             "owner": null,
             "description": null,
+            "homepage": null,
             "default_branch": "master",
             "last_modified": "2025-01-01T00:00:00+09:00"
         },
@@ -29,6 +32,7 @@
             "section": null,
             "owner": null,
             "description": "Scratch repository",
+            "homepage": null,
             "default_branch": null,
             "last_modified": null
         }

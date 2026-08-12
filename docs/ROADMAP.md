@@ -1205,17 +1205,35 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     `scripts/make-fixtures.sh`'s `dotfiles.git` gained a diverging `legacy` branch +
     `cgit.defbranch`. New `api/tests/defbranch_test.rs`.
 
+- **Link each repository's homepage** (DECISIONS.md #69), the web-side follow-up to #67 and the
+  close of the "`homepage`" cgit-parity gap end to end. `RepoSummary.tsx` gained a `MetaItem`
+  row, `RepoList.tsx` a third per-row `IconLink` (alongside #48's Log/Tree), both shown only when
+  `homepage` is non-null. Not a dedicated nav tab like cgit — `RepoNav.astro`'s tabs are static and
+  every href is rewritten same-site by `fillRepoShell`, which has no notion of an external,
+  conditionally-present URL. `MetaLink`/`IconLink` both gained an `external` prop
+  (`target="_blank"` + `rel="noopener noreferrer"`) — `homepage` is the first link in the app to
+  actually leave the site; every other use of either component is unaffected. No API contract
+  change.
+
 ## Next up
 
-**Web-side homepage link** (DECISIONS.md #69, following up on #67's API): a `MetaLink` on
-`RepoSummary.tsx` and a third `IconLink` on `RepoList.tsx`'s per-row actions, both rendered only
-when `homepage` is non-null, `target="_blank"` + `rel="noopener noreferrer"`. Not a dedicated nav
-tab like cgit — `RepoNav.astro`'s tabs are static and every href is rewritten same-site by
-`fillRepoShell`, which doesn't fit an external, conditionally-present link.
+**Site-level title, description, and readme** (DECISIONS.md #70/#71, cgit's `root-title`/
+`root-desc`/`root-readme`), the last open "Repository index" cgit-parity item. Two commits, same
+API-first shape as #64/#65 and #67/#69:
 
-After that: site-level readme/title/description is the only "Repository index" item left, plus the
-two "Tree and blob" gaps (submodule links, single-child directory collapsing). Pick the next piece
-from there, the candidates below, or a fresh request.
+- **#70 (API)**: three new `Config` fields (`AXGIT_ROOT_TITLE`/`AXGIT_ROOT_DESC`/
+  `AXGIT_ROOT_README`, all unset by default), a new `GET /api/v1/site` returning
+  `{ title, description, readme }` (`title` always present, falling back to `"Axgit"`; the readme
+  read from the filesystem at request time, format guessed from its extension reusing
+  `repo/readme.rs`'s `ReadmeFormat`), and `api/src/shell.rs` injecting `<meta name="axgit:site-*">`
+  into every shell's `<head>` (generalizing #63's byte-splice injection, currently repo-shell-only).
+- **#71 (web)**: `Layout.astro`'s header brand and `<meta name="description">` read those injected
+  metas via a new `window.__axgit.fillSiteChrome` (next to `fillRepoShell`); a new `SiteIntro.tsx`
+  island on `index.astro` renders the site `<h1>` (the index page has none today), description, and
+  readme (via the existing `ReadmeView`/`ReadmeMarkdown`) when configured.
+
+After that: the two "Tree and blob" gaps (submodule links, single-child directory collapsing) are
+what's left overall. Pick the next piece from there, the candidates below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 

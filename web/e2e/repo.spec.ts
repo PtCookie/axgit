@@ -5,6 +5,7 @@ const SUMMARY = {
   section: "infra",
   owner: "PtCookie",
   description: "Compose project of Git server",
+  homepage: null,
   default_branch: "main",
   last_modified: "2026-07-24T13:06:00+09:00",
   head: "abc123def456",
@@ -157,6 +158,22 @@ test("shows the repository summary, README, and links to refs", async ({ page })
   // from "Compare v1.0.0 with main" and "Download v1.0.0 as tar.gz", both of
   // which contain this string too.
   await expect(page.getByRole("link", { name: "v1.0.0", exact: true })).toBeVisible();
+});
+
+test("links the homepage in a new tab when configured", async ({ page }) => {
+  await page.route("**/api/v1/repos/git-compose", async (route) => {
+    await route.fulfill({ json: { ...SUMMARY, homepage: "https://example.com/git-compose" } });
+  });
+  await page.route("**/api/v1/repos/git-compose/readme*", async (route) => {
+    await route.fulfill({ json: README });
+  });
+
+  await page.goto("/git-compose");
+
+  const link = page.getByRole("link", { name: "https://example.com/git-compose" });
+  await expect(link).toHaveAttribute("href", "https://example.com/git-compose");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
 });
 
 test("navigates from the log to a commit's detail, showing its ref badge on both pages", async ({ page }) => {

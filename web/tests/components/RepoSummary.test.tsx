@@ -22,6 +22,7 @@ const SUMMARY: RepoSummaryData = {
   section: "infra",
   owner: "PtCookie",
   description: "Compose project of Git server",
+  homepage: null,
   default_branch: "main",
   last_modified: "2026-07-24T13:06:00+09:00",
   head: "abc123def456",
@@ -112,5 +113,23 @@ describe("RepoSummary", () => {
     render(<RepoSummary repo="git-compose" />);
 
     await expect.element(page.getByText("git@git.ptcookie.net:git-compose.git")).toBeVisible();
+  });
+
+  it("omits the Homepage row when unset", async () => {
+    mockedGetRepo.mockResolvedValue(SUMMARY);
+    render(<RepoSummary repo="git-compose" />);
+
+    await expect.element(page.getByText("Compose project of Git server")).toBeVisible();
+    expect(page.getByText("Homepage").elements().length).toBe(0);
+  });
+
+  it("links the homepage in a new tab when set", async () => {
+    mockedGetRepo.mockResolvedValue({ ...SUMMARY, homepage: "https://example.com/git-compose" });
+    render(<RepoSummary repo="git-compose" />);
+
+    const link = page.getByRole("link", { name: "https://example.com/git-compose" });
+    await expect.element(link).toHaveAttribute("href", "https://example.com/git-compose");
+    await expect.element(link).toHaveAttribute("target", "_blank");
+    await expect.element(link).toHaveAttribute("rel", "noopener noreferrer");
   });
 });

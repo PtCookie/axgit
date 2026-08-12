@@ -2,6 +2,7 @@ import { CaretDownIcon } from "@phosphor-icons/react/dist/ssr/CaretDown";
 import { CaretUpIcon } from "@phosphor-icons/react/dist/ssr/CaretUp";
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ClockCounterClockwise";
 import { FolderOpenIcon } from "@phosphor-icons/react/dist/ssr/FolderOpen";
+import { HouseIcon } from "@phosphor-icons/react/dist/ssr/House";
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
@@ -284,6 +285,14 @@ export default function RepoList() {
                             label={`Tree for ${repo.name}`}
                             Icon={FolderOpenIcon}
                           />
+                          {repo.homepage && (
+                            <IconLink
+                              href={repo.homepage}
+                              label={`Homepage for ${repo.name}`}
+                              Icon={HouseIcon}
+                              external
+                            />
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

@@ -1,5 +1,6 @@
 import { DownloadSimpleIcon } from "@phosphor-icons/react/dist/ssr/DownloadSimple";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/ssr/GitBranch";
+import { HouseIcon } from "@phosphor-icons/react/dist/ssr/House";
 import { RssIcon } from "@phosphor-icons/react/dist/ssr/Rss";
 import { TagIcon } from "@phosphor-icons/react/dist/ssr/Tag";
 import { useEffect, useState, type ReactNode } from "react";
@@ -43,10 +44,28 @@ const LINK_CLASS = "text-primary underline underline-offset-2";
 /** An icon + label link row. `aria-hidden` on the icon is load-bearing: the
  *  accessible name must stay exactly the label text ("tar.gz", "Atom", …),
  *  which is what both the component tests and the e2e spec look these up
- *  by. Same `size-4` / `aria-hidden` idiom as `components/theme.tsx`. */
-function MetaLink({ href, Icon, children }: { href: string; Icon: typeof GitBranchIcon; children: ReactNode }) {
+ *  by. Same `size-4` / `aria-hidden` idiom as `components/theme.tsx`.
+ *  `external` adds `target="_blank"` + `rel="noopener noreferrer"` — every
+ *  other `MetaLink` points back into axgit itself, but `homepage` is
+ *  operator-configured and genuinely off-site. */
+function MetaLink({
+  href,
+  Icon,
+  external,
+  children,
+}: {
+  href: string;
+  Icon: typeof GitBranchIcon;
+  external?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <a href={href} className={cn(LINK_CLASS, "inline-flex items-center gap-1.5")}>
+    <a
+      href={href}
+      className={cn(LINK_CLASS, "inline-flex items-center gap-1.5")}
+      target={external ? "_blank" : undefined}
+      rel={external ? "noopener noreferrer" : undefined}
+    >
       <Icon className="size-4" aria-hidden="true" />
       {children}
     </a>
@@ -133,6 +152,13 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
       <dl className={cn("space-y-4", summary.description && "border-border border-t pt-4")}>
         {summary.section && <MetaItem label="Section">{summary.section}</MetaItem>}
         {summary.owner && <MetaItem label="Owner">{summary.owner}</MetaItem>}
+        {summary.homepage && (
+          <MetaItem label="Homepage">
+            <MetaLink href={summary.homepage} Icon={HouseIcon} external>
+              {summary.homepage}
+            </MetaLink>
+          </MetaItem>
+        )}
         <MetaItem label="Default branch">{summary.default_branch ?? "—"}</MetaItem>
         <MetaItem label="Last activity">
           {summary.last_modified ? (

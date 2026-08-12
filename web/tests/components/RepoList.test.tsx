@@ -61,6 +61,19 @@ describe("RepoList", () => {
       .toHaveAttribute("href", "/git-compose/tree");
   });
 
+  it("gives a row a Homepage quick link only when the repo has one configured", async () => {
+    mockedListRepos.mockResolvedValue(fixture);
+    render(<RepoList />);
+
+    const homepage = page.getByRole("link", { name: "Homepage for git-compose" });
+    await expect.element(homepage).toHaveAttribute("href", "https://git.ptcookie.net/git-compose");
+    await expect.element(homepage).toHaveAttribute("target", "_blank");
+    await expect.element(homepage).toHaveAttribute("rel", "noopener noreferrer");
+
+    // axgit has no homepage in the fixture.
+    expect(page.getByRole("link", { name: "Homepage for axgit" }).elements().length).toBe(0);
+  });
+
   it("shows an empty-state message when there are no repositories", async () => {
     mockedListRepos.mockResolvedValue({ repos: [], sort: "name" });
     render(<RepoList />);

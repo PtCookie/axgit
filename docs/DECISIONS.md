@@ -2605,3 +2605,30 @@ archive, diff, stats, search, feed) resolved against HEAD regardless of `defbran
   `defbranch` apart from HEAD by more than a config key existing. New
   `api/tests/defbranch_test.rs` covers the summary, the ref-less commit log, and the ref-less tree,
   plus the unset and nonexistent-branch fallback cases.
+
+## #69 Link each repository's homepage
+
+Web-side follow-up to #67: renders `RepoSummary.homepage`/`RepoInfo.homepage` as an actual link,
+closing the "`homepage` (cgit gives it a dedicated nav tab)" cgit-parity gap under "Repository
+index" — the `homepage` field has existed in the API since #67, but nothing on the web read it.
+
+- **Not a nav tab, unlike cgit.** `RepoNav.astro`'s tab bar is static Astro, prerendered once under
+  the `__repo__` placeholder param (#17); every tab's href is rewritten same-site by
+  `window.__axgit.fillRepoShell` (`Layout.astro`), which only knows how to build `/{segment}/{sub}`
+  — it has no notion of an arbitrary external URL, let alone one that may or may not exist per
+  repository. A conditionally-present, external-URL tab doesn't fit that model without rebuilding
+  it, so `homepage` becomes a link instead, in the two places that already show per-repository
+  metadata: a new `MetaItem` row on `RepoSummary.tsx` (placed with `section`/`owner`, the other
+  optional descriptive fields) and a third `IconLink` in `RepoList.tsx`'s per-row actions cell
+  (alongside #48's Log/Tree quick links). Both are rendered only when `homepage` is non-null.
+  Recorded here as a deliberate, permanent difference from cgit rather than a gap to close later.
+- **`target="_blank"` + `rel="noopener noreferrer"`, and only for this link.** Both `MetaLink`
+  (`RepoSummary.tsx`) and `IconLink` gained an `external` prop that adds these attributes — every
+  other use of either component points back into axgit itself (refs, archive downloads, the feed,
+  Log/Tree), so `external` defaults to unset/`false` and every existing call site is unchanged.
+  `homepage` is the first link in the app to genuinely leave the site.
+- `web/tests/fixtures/repos.json` gained `homepage` (`git-compose` set, the other three `null`) —
+  shared by the `RepoList` unit test, `repo-filter` test, and the e2e spec, so a single fixture
+  change exercises both the present and absent cases everywhere it's used.
+- No API contract change — `RepoSummary.tsx`, `RepoList.tsx`, `IconLink.tsx`, and test fixtures
+  only.
