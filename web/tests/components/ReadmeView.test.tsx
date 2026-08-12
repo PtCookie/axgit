@@ -34,7 +34,12 @@ describe("ReadmeView", () => {
     mockedGetReadme.mockResolvedValue(MARKDOWN_README);
     render(<ReadmeView repo="git-compose" />);
 
-    await expect.element(page.getByRole("heading", { name: "Axgit", level: 1 })).toBeVisible();
+    // `ReadmeMarkdown` is lazy-loaded (`ReadmeBody.tsx`), and browser-mode
+    // test isolation means this chunk is fetched fresh on every test — under
+    // CI load that fetch can outrun the default 1s retry timeout, failing
+    // the assertion here and orphaning the still-in-flight dynamic import as
+    // an unhandled rejection. Same class of flake as the Shiki wait below.
+    await expect.element(page.getByRole("heading", { name: "Axgit", level: 1 }), { timeout: 5000 }).toBeVisible();
     await expect.element(page.getByText("README.md")).toBeVisible();
   });
 
@@ -43,7 +48,9 @@ describe("ReadmeView", () => {
     render(<ReadmeView repo="git-compose" />);
 
     const link = page.getByRole("link", { name: "docs link" });
-    await expect.element(link).toHaveAttribute("href", "/git-compose/blob/docs/x.md");
+    // See the timeout note above — this is the first assertion to wait on
+    // the lazy-loaded `ReadmeMarkdown` chunk in this test.
+    await expect.element(link, { timeout: 5000 }).toHaveAttribute("href", "/git-compose/blob/docs/x.md");
   });
 
   it("rewrites a relative image src through the raw endpoint", async () => {
@@ -51,7 +58,11 @@ describe("ReadmeView", () => {
     render(<ReadmeView repo="git-compose" />);
 
     const img = page.getByRole("img", { name: "logo" });
-    await expect.element(img).toHaveAttribute("src", "/api/v1/repos/git-compose/raw/HEAD/images/logo.png");
+    // See the timeout note above — this is the first assertion to wait on
+    // the lazy-loaded `ReadmeMarkdown` chunk in this test.
+    await expect
+      .element(img, { timeout: 5000 })
+      .toHaveAttribute("src", "/api/v1/repos/git-compose/raw/HEAD/images/logo.png");
   });
 
   it("highlights a fenced code block via Shiki, keyed off the fence language", async () => {
