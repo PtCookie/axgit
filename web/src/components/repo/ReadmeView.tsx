@@ -1,18 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
 import { getReadme } from "@/lib/api/repos";
 import type { ReadmeInfo } from "@/lib/api/schemas";
 import { repoFromPathname } from "@/lib/repo-param";
+import ReadmeBody from "@/components/repo/ReadmeBody";
 import { Skeleton } from "@/components/ui/skeleton";
-
-// Module scope, not inside the component — otherwise every render would mint
-// a new lazy type and remount the markdown tree. Deliberately *not*
-// pre-warmed alongside the `getReadme` fetch below (contrast `StatsView`'s
-// `importStatsChart`): the whole point of this split is that a repository
-// with no README, or a `rst`/`plain` one, never downloads react-markdown at
-// all — pre-warming would defeat that before `format` is even known.
-const ReadmeMarkdown = lazy(() => import("./ReadmeMarkdown"));
 
 type State =
   | { status: "loading" }
@@ -97,15 +90,7 @@ export default function ReadmeView({ repo }: ReadmeViewProps) {
   return (
     <div className="space-y-3">
       <h2 className="text-muted-foreground font-mono text-xs tracking-wide uppercase">{readme.path}</h2>
-      {readme.format === "markdown" ? (
-        <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-          <ReadmeMarkdown repo={resolvedRepo} content={readme.content} />
-        </Suspense>
-      ) : (
-        <pre className="border-border overflow-x-auto rounded-md border p-3 font-mono text-sm whitespace-pre-wrap">
-          {readme.content}
-        </pre>
-      )}
+      <ReadmeBody format={readme.format} content={readme.content} repo={resolvedRepo} />
     </div>
   );
 }

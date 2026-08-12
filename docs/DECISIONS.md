@@ -2693,3 +2693,67 @@ actually rendering these is a follow-up commit (#71), same two-commit shape as #
   (defaults, configured values, readme format guessing, missing/oversized readme, ETag round-trip)
   and `static_shell_test.rs` cases for the injected metas across index/repo/404 shells and their
   coexistence with #63's repo `<link>`s.
+
+## #71 Render the site title, description, and readme
+
+Web-side follow-up to #70, and the close of the last open "Repository index" cgit-parity item.
+
+- **A shared `ReadmeBody.tsx`, split out of `ReadmeView.tsx`.** `ReadmeView` owned three things
+  that don't all apply to a site-level readme: fetching (`getReadme`), the "path" heading, and the
+  format-driven render (`markdown` → lazy `ReadmeMarkdown` in a `Suspense`, else a `<pre>`). Only
+  the third is shared with `SiteIntro.tsx`, which already has a `SiteReadme` in hand from its own
+  `GET /api/v1/site` fetch and has no per-repo path to head with. Splitting keeps the lazy-loading
+  boundary (react-markdown/remark-gfm/rehype-sanitize, ~135 KB) in exactly one place rather than
+  duplicating the `Suspense`/`lazy` dance in `SiteIntro`, and `ReadmeView` itself is now three
+  lines shorter with identical behavior (its own test suite is unchanged and still passes).
+- **`ReadmeMarkdown`'s `repo` prop becomes optional.** Its relative-link/image rewriting
+  (`resolveRepoPath` → `/{repo}/tree|blob/...` or `rawUrl(repo, ...)`) is meaningless for a
+  site-level readme, which has no single owning repository — a link `./guide.md` in the root
+  readme has no repository tree to resolve against. `repo === undefined` now short-circuits both
+  `rewriteHref`/`rewriteSrc` to pass every URL through unchanged, so `SiteIntro`'s readme renders
+  with its relative links exactly as written (resolved by the browser against the current page),
+  rather than being rewritten into a nonsensical `/{repo}/...` href with an empty `repo`.
+- **`SiteIntro` renders nothing at all when `title === "Axgit"` (the api's own default) and
+  `description`/`readme` are both `null`** — an unconfigured deployment's index page is
+  byte-identical to before this commit. This can't distinguish "nothing configured" from
+  "`AXGIT_ROOT_TITLE` explicitly set to the literal string `Axgit`", but that's the same collapse
+  `api/src/site.rs::effective_title` already makes server-side, not a new ambiguity introduced
+  here. The header brand (`fillSiteChrome`, below) already shows the title regardless, so this
+  component only adds visible content when there's something *beyond* that default to say.
+- **`fillSiteChrome`, not a second injection mechanism.** Defined in `Layout.astro`'s existing
+  `data-repo-shell-init` script, right next to `fillRepoShell`, sharing its `window.__axgit` guard
+  and its `astro:after-swap` registration — the same reasoning #63/#70 already established: every
+  shell carries this script, so the listener must be live before the first navigation regardless of
+  page type. It reads the `axgit:site-title`/`axgit:site-desc` `<meta>`s #70 injects server-side
+  and applies them to three places: the header brand (`[data-site-title]`, a plain-text swap,
+  `transition:persist`ed so this only has to happen once per document, not per navigation), the
+  real `<meta name="description">`'s `content` attribute (not persisted — reverts to the shell's
+  build-time default on every swap, so this genuinely needs the listener to reapply it each time),
+  and — **only on non-repository pages** (checked via the absence of `[data-repo-name]`, the same
+  marker `fillRepoShell` itself keys off) — `document.title`. A repository page's title stays
+  `fillRepoShell`'s own `name + suffix`; `RepoLayout.astro`'s `TITLE_SUFFIXES` are static strings
+  baked at Astro build time (`" — Axgit"`, `" log — Axgit"`, …) with no runtime site-title
+  interpolation, and rebuilding that as a runtime template was left out of this commit's scope —
+  recorded here as a deliberate, revisitable limitation rather than a bug.
+- **A one-time invocation, not just the listener.** The listener alone only fires *after* a client
+  navigation; the *first* load of any page (the common case — most sessions start on a hard
+  navigation, and this codebase runs no server-rendered soft-hydration) needs `fillSiteChrome()`
+  called once directly. `fillRepoShell` gets this from `RepoLayout.astro`'s own body-level inline
+  script, but that only exists on repository pages — `fillSiteChrome` needs it on *every* page
+  (`/`, `/404`, and every repository page all show the header brand). Added as a small
+  `<script is:inline>` in `Layout.astro`'s own body, right after `</header>` — by the time an inline
+  script this far down executes, the preceding `<header>` (and so `[data-site-title]`) is already
+  in the DOM, the same "runs as soon as what it needs exists" property `RepoLayout.astro`'s own
+  call already relies on. Calling it here also means Astro's swap machinery re-runs it (along with
+  every other un-persisted body script) on every navigation too — redundant with the `astro:after-swap`
+  listener, but harmless: the function is idempotent.
+- **e2e coverage stops at the client half, like #63's.** `astro dev` (what the Playwright
+  `webServer` runs) never executes `api/src/shell.rs`'s server-side `<meta>` injection — the same
+  documented gap #63 left. `web/e2e/site.spec.ts` covers `SiteIntro`'s rendering (mocking
+  `GET /api/v1/site` directly, which needs no server injection at all) and, for `fillSiteChrome`,
+  injects the `axgit:site-*` metas by hand via `page.evaluate` and calls the function directly —
+  exercising the real client logic in a real browser without needing the production Rust binary.
+- No API contract change — `web/src/components/repo/ReadmeBody.tsx` (new),
+  `ReadmeMarkdown.tsx`/`ReadmeView.tsx` (refactored), `web/src/components/SiteIntro.tsx` (new),
+  `web/src/lib/api/site.ts` (new), `web/src/lib/api/schemas.ts` (`SiteInfo`/`SiteReadme` exports),
+  `web/src/layouts/Layout.astro`, and `web/src/pages/index.astro` only.

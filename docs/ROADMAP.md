@@ -1233,19 +1233,32 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /api/v1/site`, new
     `site` tag). The web page rendering it is a follow-up commit (#71).
 
+- **Site title, description, and readme (web half)** (DECISIONS.md #71), closing the last open
+  "Repository index" cgit-parity item — **"Repository index" now has no open items left**.
+  `Layout.astro`'s header brand and `<meta name="description">` read the injected `axgit:site-*`
+  metas via a new `window.__axgit.fillSiteChrome`, registered next to `fillRepoShell` and run once
+  on first load plus on every `astro:after-swap`; on non-repository pages only, it also sets
+  `document.title` (a repository page keeps `fillRepoShell`'s own `name + suffix`, whose
+  `TITLE_SUFFIXES` are static strings with no runtime site-title interpolation — a known,
+  deliberate limitation, not a bug). A new `SiteIntro.tsx` island on `index.astro` fetches
+  `GET /api/v1/site` and renders the site `<h1>` (the index page had none before), description, and
+  readme — rendering nothing at all when nothing is configured, so an unconfigured deployment's
+  index page is unchanged. The readme render itself moved into a new shared `ReadmeBody.tsx`
+  (extracted from `ReadmeView.tsx`, used by both), and `ReadmeMarkdown`'s `repo` prop became
+  optional — the site readme has no single owning repository to rewrite its relative links against,
+  so they're left untouched rather than rewritten into a nonsensical `/{repo}/...` href.
+  `web/e2e/site.spec.ts` covers `SiteIntro`'s rendering (mocking `GET /api/v1/site` directly) and
+  exercises `fillSiteChrome` by hand-injecting the metas and calling it directly — `astro dev`
+  (what the e2e `webServer` runs) never executes the server-side injection itself, the same known
+  gap #63 already left for its own `<link>`s. No API contract change.
+
 ## Next up
 
-**Site title, description, and readme (web half)** (DECISIONS.md #71, following up on #70's API):
-`Layout.astro`'s header brand and `<meta name="description">` read the injected `axgit:site-*`
-metas via a new `window.__axgit.fillSiteChrome`, registered next to `fillRepoShell` and run on load
-and `astro:after-swap`; on non-repo pages only, it also sets `document.title` (repo pages keep
-`fillRepoShell`'s `name + suffix`). A new `SiteIntro.tsx` island on `index.astro` fetches
-`GET /api/v1/site` and renders the site `<h1>` (the index page has none today), description, and
-readme (via the existing `ReadmeView`/`ReadmeMarkdown`) — rendering nothing when all three are
-unset, so an unconfigured deployment's index page is unchanged.
-
-After that: the two "Tree and blob" gaps (submodule links, single-child directory collapsing) are
-what's left overall. Pick the next piece from there, the candidates below, or a fresh request.
+None queued — **every cgit-parity item under "Repository index" is now closed** (#64-#71). Only
+two cgit-parity gaps remain overall, both under "Tree and blob": submodule (gitlink) links
+(`TreeView.tsx`'s `entryHref` returns `undefined` for `commit` entries, rendering unlinked text) and
+single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row). Pick one of
+those, a candidate below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1284,9 +1297,6 @@ recorded separately below instead of listed as gaps.
   - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
-- **Repository index**
-  - Site-level readme / title / description (`root-readme`, `root-title`, `root-desc`) —
-    `homepage`/`defbranch` closed by #67/#68/#69.
 
 ### cgit parity notes (merged or deliberately different — not planned)
 

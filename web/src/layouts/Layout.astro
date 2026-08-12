@@ -119,6 +119,10 @@ const { title = "Axgit" } = Astro.props;
         second listener — `document.addEventListener` would also dedupe an
         identical function reference, but the guard also means the function
         only needs to be defined once per document lifetime.
+
+        `fillSiteChrome` (below) lives in this same script for the same
+        reason: it must be defined and its listener registered before the
+        first swap, on every shell, repository or not.
       */
     }
     <script is:inline data-repo-shell-init>
@@ -155,6 +159,37 @@ const { title = "Axgit" } = Astro.props;
         };
 
         document.addEventListener("astro:after-swap", window.__axgit.fillRepoShell);
+
+        // Reads the `axgit:site-*` <meta>s `api/src/shell.rs::serve_shell`
+        // injects server-side when `AXGIT_ROOT_TITLE`/`AXGIT_ROOT_DESC` are
+        // configured (docs/DECISIONS.md #70) — every shell is prerendered
+        // once, so like the repo name above, there's no build-time value to
+        // bake in. Absent metas (unconfigured deployment) leave the shell's
+        // own hardcoded brand/description untouched.
+        window.__axgit.fillSiteChrome = function fillSiteChrome() {
+          const titleMeta = document.querySelector('meta[name="axgit:site-title"]');
+          const descMeta = document.querySelector('meta[name="axgit:site-desc"]');
+          const brand = document.querySelector("[data-site-title]");
+
+          if (titleMeta && brand) {
+            brand.textContent = titleMeta.content;
+          }
+          if (descMeta) {
+            const description = document.querySelector('meta[name="description"]');
+            if (description) {
+              description.setAttribute("content", descMeta.content);
+            }
+          }
+          // A repository page owns its own <title> (`fillRepoShell`'s
+          // `name + suffix`, baked from a build-time suffix map that has no
+          // notion of a runtime site title) — only overwrite it here
+          // everywhere else.
+          if (titleMeta && !document.querySelector("[data-repo-name]")) {
+            document.title = titleMeta.content;
+          }
+        };
+
+        document.addEventListener("astro:after-swap", window.__axgit.fillSiteChrome);
       }
     </script>
   </head>
@@ -170,12 +205,27 @@ const { title = "Axgit" } = Astro.props;
     }
     <header class="border-border border-b" transition:persist>
       <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-        <a href="/" class="font-heading text-lg font-medium">Axgit</a>
+        <a href="/" data-site-title class="font-heading text-lg font-medium">Axgit</a>
         <ThemeToggle client:only="react">
           <div slot="fallback"><ThemeToggleFallback /></div>
         </ThemeToggle>
       </div>
     </header>
+    {
+      /*
+        One-time call for the *first* load of any page: `fillSiteChrome` is
+        only defined and registered as an `astro:after-swap` listener above,
+        in <head> — before <body> (so `[data-site-title]`) exists. Every
+        subsequent navigation re-runs it via that listener instead; the
+        header itself doesn't need a second fill (it's `transition:persist`ed
+        and so never torn down), but `<meta name="description">` and
+        `document.title` are both un-persisted <head> content that swap back
+        to the shell's build-time defaults on every navigation.
+      */
+    }
+    <script is:inline>
+      window.__axgit.fillSiteChrome();
+    </script>
     {
       /*
         Deliberately NOT persisted: every data island inside (RepoSummary,

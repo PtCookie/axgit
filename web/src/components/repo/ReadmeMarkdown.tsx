@@ -9,7 +9,11 @@ import { blobHref, treeHref } from "@/lib/repo-href";
 import { rawUrl } from "@/lib/api/repos";
 
 interface ReadmeMarkdownProps {
-  repo: string;
+  /** Omitted for a readme with no single owning repository (the site-level
+   *  readme, `SiteIntro.tsx`) — relative links/images are then left
+   *  untouched (resolved by the browser against the current page) rather
+   *  than rewritten into a nonsensical `/{repo}/...` href. */
+  repo?: string;
   content: string;
 }
 
@@ -114,16 +118,16 @@ export default function ReadmeMarkdown({ repo, content }: ReadmeMarkdownProps) {
      *  endpoint itself defaults to HEAD, matching the rest of the summary
      *  page. */
     function rewriteHref(url: string): string {
-      if (isExternalUrl(url)) return url;
+      if (repo === undefined || isExternalUrl(url)) return url;
       const resolved = resolveRepoPath("", url);
       if (resolved === null) return url;
       return url.endsWith("/") ? treeHref(repo, resolved, undefined) : blobHref(repo, resolved, undefined);
     }
 
     /** Rewrites a README-relative image reference into a `/raw/...` API URL.
-     *  Same external/root-escape rules as `rewriteHref`. */
+     *  Same external/root-escape/no-`repo` rules as `rewriteHref`. */
     function rewriteSrc(url: string): string {
-      if (isExternalUrl(url)) return url;
+      if (repo === undefined || isExternalUrl(url)) return url;
       const resolved = resolveRepoPath("", url);
       return resolved === null ? url : rawUrl(repo, undefined, resolved);
     }

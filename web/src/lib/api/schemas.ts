@@ -44,3 +44,5 @@ export type StatsResults = components["schemas"]["StatsResults"];
 export type StatsPeriod = components["schemas"]["StatsPeriod"];
 export type BucketStats = components["schemas"]["BucketStats"];
 export type AuthorStats = components["schemas"]["AuthorStats"];
+export type SiteInfo = components["schemas"]["SiteInfo"];
+export type SiteReadme = components["schemas"]["SiteReadme"];

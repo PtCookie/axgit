@@ -1,10 +1,16 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import RepoList, { RepoListSkeleton } from "../components/RepoList";
+import SiteIntro, { SiteIntroSkeleton } from "../components/SiteIntro";
 ---
 
 <Layout>
-  <RepoList client:only="react">
-    <div slot="fallback"><RepoListSkeleton /></div>
-  </RepoList>
+  <div class="space-y-8">
+    <SiteIntro client:only="react">
+      <div slot="fallback"><SiteIntroSkeleton /></div>
+    </SiteIntro>
+    <RepoList client:only="react">
+      <div slot="fallback"><RepoListSkeleton /></div>
+    </RepoList>
+  </div>
 </Layout>
