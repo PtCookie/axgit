@@ -1123,6 +1123,24 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   gained an `Atom feed` link carrying the log's current `ref`/`path`; `RepoSummary.tsx` gained an
   `All refs` link (`all=1`) beside the existing plain feed link. No route or API contract change.
 
+- **`<head>` Atom/`vcs-git` discovery on repository pages** (DECISIONS.md #63), closing the last
+  open "Feed and discovery" cgit-parity gap. Finalized design:
+  - `api/src/shell.rs::serve_shell` injects two `rel="alternate" type="application/atom+xml"` feed
+    links plus, when `AXGIT_CLONE_URL_BASE` is configured, a `rel="vcs-git"` clone link into a
+    `__repo__` shell's `<head>`, server-side and byte-wise, right before `</head>` — the shell is
+    prerendered once under the placeholder param, so there's no per-repo href to bake in at build
+    time. New `repo_segment_for`/`repo_head_links`/`inject_repo_head_links`; `serve_shell`/
+    `serve_shell_or_redirect` gained a `clone_url_base` parameter, threaded from
+    `state.config.clone_url_base` in `routes.rs`.
+  - New `api/src/escape.rs` holds `xml_escape`, moved out of `handlers/feed.rs` — now shared by the
+    feed and the injected `<link>` attributes.
+  - `astro dev`/Playwright never exercise this (the dev middleware only rewrites requests, never
+    response bodies, and `clone_url_base` is api-side config regardless) — `Layout.astro` carries a
+    comment explaining why the feature is invisible from the web source; coverage is Rust-side
+    (`api/tests/static_shell_test.rs`).
+  - No `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` change — no endpoint or schema
+    involved.
+
 ## Next up
 
 None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
@@ -1145,12 +1163,12 @@ last open item under "Commit page", rename following (#56) plus Files/Lines chan
 on the commit log closed both remaining items under "Log" — **"Archive", "Tags and refs", "Commit
 page", and "Log" all have no open items left** — the hex dump view for binary blobs (#58) closed
 one more under "Tree and blob", the stats `path` filter (#59/#60) closed the last item under
-"Stats" — **"Stats" now has no open items left either** — and Atom feed parameters (#61/#62) closed
-the first item under "Feed and discovery". The remaining cgit-parity gaps are submodule links and
-single-child directory collapsing (both under "Tree and blob"), `<head>` Atom/`vcs-git` discovery
-under "Feed and discovery" (now more useful, since per-ref/all-refs feeds exist to discover), and
-the four "Repository index" items. Pick the next piece of work from there, from the candidates
-below, or from a fresh request.
+"Stats" — **"Stats" now has no open items left either** — Atom feed parameters (#61/#62) closed the
+first item under "Feed and discovery", and `<head>` Atom/`vcs-git` discovery (#63) closed the
+last one — **"Feed and discovery" now has no open items left either**. The remaining cgit-parity
+gaps are submodule links and single-child directory collapsing (both under "Tree and blob") and the
+four "Repository index" items. Pick the next piece of work from there, from the candidates below,
+or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1189,14 +1207,6 @@ recorded separately below instead of listed as gaps.
   - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
-- **Feed and discovery**
-  - `<head>` Atom discovery (`<link rel="alternate" type="application/atom+xml">`) and the
-    clone-URL `<link rel="vcs-git">` — neither is in `web/src/layouts/Layout.astro`. Non-trivial:
-    repo pages are prerendered under the `__repo__` placeholder, so a per-repo `<link>` needs a
-    runtime fill-in (`window.__axgit.fillRepoShell`) and would be invisible to non-JS feed
-    readers — deserves its own decision. Now more useful than before #61/#62: with per-`ref` and
-    `all=1` feeds in place, a per-repo discovery link has more than just the default feed to point
-    at.
 - **Repository index**
   - Column sorting (`s=name|desc|owner|idle|section`, `repository-sort=age|name`) — axgit is fixed
     to name order plus the client-side `?q=` filter; cgit's `idle` sort is descending.

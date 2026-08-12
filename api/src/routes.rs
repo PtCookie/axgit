@@ -84,10 +84,14 @@ pub fn build_router(state: AppState) -> Router {
         // The Astro build has one HTML file per route *shape*, not per
         // repository (docs/DECISIONS.md #17): serve real files first, then
         // map whatever is left onto the matching prerendered page shell —
-        // or `404.html` with a real 404 status.
+        // or `404.html` with a real 404 status. `clone_url_base` rides along
+        // so a `__repo__` shell can get its `rel="vcs-git"` link injected
+        // (docs/DECISIONS.md #63).
         let dir = static_dir.clone();
-        let shell: MethodRouter<()> =
-            get(move |uri: Uri| shell::serve_shell_or_redirect(dir.clone(), uri));
+        let clone_url_base = state.config.clone_url_base.clone();
+        let shell: MethodRouter<()> = get(move |uri: Uri| {
+            shell::serve_shell_or_redirect(dir.clone(), clone_url_base.clone(), uri)
+        });
         router = router.fallback_service(ServeDir::new(static_dir).fallback(shell));
     }
 

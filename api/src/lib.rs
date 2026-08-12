@@ -2,6 +2,7 @@ pub mod cache;
 pub mod cgit_compat;
 pub mod config;
 pub mod error;
+mod escape;
 pub mod handlers;
 pub mod openapi;
 pub mod repo;

@@ -15,6 +15,7 @@ use utoipa::IntoParams;
 
 use super::{ATOM_CONTENT_TYPE, cached_response, clean_path, parse_flag, parse_limit};
 use crate::error::{ApiError, ErrorResponse};
+use crate::escape::xml_escape;
 use crate::repo::commits::{self, CommitInfo};
 use crate::repo::{RepoInfo, meta, resolve};
 use crate::state::AppState;
@@ -274,33 +275,9 @@ fn encode_segment(value: &str) -> String {
     encoded
 }
 
-fn xml_escape(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for c in value.chars() {
-        match c {
-            '&' => escaped.push_str("&amp;"),
-            '<' => escaped.push_str("&lt;"),
-            '>' => escaped.push_str("&gt;"),
-            '"' => escaped.push_str("&quot;"),
-            '\'' => escaped.push_str("&apos;"),
-            _ => escaped.push(c),
-        }
-    }
-    escaped
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn xml_escape_should_escape_all_five_specials() {
-        assert_eq!(
-            xml_escape(r#"<b> & "it's""#),
-            "&lt;b&gt; &amp; &quot;it&apos;s&quot;"
-        );
-        assert_eq!(xml_escape("plain"), "plain");
-    }
 
     #[test]
     fn encode_segment_should_percent_encode_reserved_bytes() {

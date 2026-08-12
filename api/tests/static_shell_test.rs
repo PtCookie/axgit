@@ -16,20 +16,38 @@ use axum::http::StatusCode;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use common::{get_bytes_with_headers, router_for, router_with_static};
+use common::{
+    get_bytes_with_headers, router_for, router_with_static, router_with_static_and_clone_base,
+};
 
-const INDEX_HTML: &str = "<!doctype html><html><body>INDEX</body></html>";
-const REPO_HTML: &str = "<!doctype html><html><body>REPO SUMMARY</body></html>";
-const REFS_HTML: &str = "<!doctype html><html><body>REPO REFS</body></html>";
-const LOG_HTML: &str = "<!doctype html><html><body>REPO LOG</body></html>";
-const COMMIT_HTML: &str = "<!doctype html><html><body>REPO COMMIT</body></html>";
-const OBJECT_HTML: &str = "<!doctype html><html><body>REPO OBJECT</body></html>";
-const TREE_HTML: &str = "<!doctype html><html><body>REPO TREE</body></html>";
-const BLOB_HTML: &str = "<!doctype html><html><body>REPO BLOB</body></html>";
-const BLAME_HTML: &str = "<!doctype html><html><body>REPO BLAME</body></html>";
-const TAG_HTML: &str = "<!doctype html><html><body>REPO TAG</body></html>";
-const NOT_FOUND_HTML: &str = "<!doctype html><html><body>NOT FOUND</body></html>";
+// Each fixture carries a real `<head></head>` so the injected `<link>`s
+// (docs/DECISIONS.md #63) have an anchor, and each is checked below via a
+// body-only marker rather than the whole string — an exact match would break
+// on every repo shell once the head is no longer empty.
+const INDEX_HTML: &str = "<!doctype html><html><head></head><body>INDEX</body></html>";
+const REPO_HTML: &str = "<!doctype html><html><head></head><body>REPO SUMMARY</body></html>";
+const REFS_HTML: &str = "<!doctype html><html><head></head><body>REPO REFS</body></html>";
+const LOG_HTML: &str = "<!doctype html><html><head></head><body>REPO LOG</body></html>";
+const COMMIT_HTML: &str = "<!doctype html><html><head></head><body>REPO COMMIT</body></html>";
+const OBJECT_HTML: &str = "<!doctype html><html><head></head><body>REPO OBJECT</body></html>";
+const TREE_HTML: &str = "<!doctype html><html><head></head><body>REPO TREE</body></html>";
+const BLOB_HTML: &str = "<!doctype html><html><head></head><body>REPO BLOB</body></html>";
+const BLAME_HTML: &str = "<!doctype html><html><head></head><body>REPO BLAME</body></html>";
+const TAG_HTML: &str = "<!doctype html><html><head></head><body>REPO TAG</body></html>";
+const NOT_FOUND_HTML: &str = "<!doctype html><html><head></head><body>NOT FOUND</body></html>";
 const ASSET_JS: &str = "console.log('app');";
+
+const INDEX_MARKER: &str = "<body>INDEX</body>";
+const REPO_MARKER: &str = "<body>REPO SUMMARY</body>";
+const REFS_MARKER: &str = "<body>REPO REFS</body>";
+const LOG_MARKER: &str = "<body>REPO LOG</body>";
+const COMMIT_MARKER: &str = "<body>REPO COMMIT</body>";
+const OBJECT_MARKER: &str = "<body>REPO OBJECT</body>";
+const TREE_MARKER: &str = "<body>REPO TREE</body>";
+const BLOB_MARKER: &str = "<body>REPO BLOB</body>";
+const BLAME_MARKER: &str = "<body>REPO BLAME</body>";
+const TAG_MARKER: &str = "<body>REPO TAG</body>";
+const NOT_FOUND_MARKER: &str = "<body>NOT FOUND</body>";
 
 /// A repo root with one repository, and a static dir with the eleven page
 /// shells (`index.html`, `__repo__/index.html`, `__repo__/refs/index.html`,
@@ -91,11 +109,15 @@ fn setup_fixtures() -> (TempDir, TempDir) {
     (repo_root, static_dir)
 }
 
+/// Asserts the served body *contains* `expected_marker` rather than equals it
+/// outright — repository shells now carry injected `<link>`s
+/// (docs/DECISIONS.md #63), so an exact match would break on the marker
+/// fixtures above.
 async fn assert_html_shell(
     router: axum::Router,
     uri: &str,
     expected_status: StatusCode,
-    expected_body: &str,
+    expected_marker: &str,
 ) {
     let (status, headers, body) = get_bytes_with_headers(router, uri).await;
 
@@ -107,7 +129,11 @@ async fn assert_html_shell(
             .starts_with("text/html"),
         "uri {uri} did not serve HTML"
     );
-    assert_eq!(String::from_utf8(body).unwrap(), expected_body, "uri {uri}");
+    let body = String::from_utf8(body).unwrap();
+    assert!(
+        body.contains(expected_marker),
+        "uri {uri} body {body:?} did not contain {expected_marker:?}"
+    );
 }
 
 #[tokio::test]
@@ -115,7 +141,7 @@ async fn root_should_serve_the_index_shell() {
     let (repo_root, static_dir) = setup_fixtures();
     let router = router_with_static(repo_root.path(), static_dir.path());
 
-    assert_html_shell(router, "/", StatusCode::OK, INDEX_HTML).await;
+    assert_html_shell(router, "/", StatusCode::OK, INDEX_MARKER).await;
 }
 
 #[tokio::test]
@@ -124,7 +150,7 @@ async fn repo_paths_should_serve_the_repo_shell() {
 
     for uri in ["/git-compose", "/git-compose/", "/my%20repo"] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, REPO_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, REPO_MARKER).await;
     }
 }
 
@@ -134,7 +160,7 @@ async fn repo_refs_paths_should_serve_the_refs_shell() {
 
     for uri in ["/git-compose/refs", "/git-compose/refs/"] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, REFS_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, REFS_MARKER).await;
     }
 }
 
@@ -144,7 +170,7 @@ async fn repo_log_paths_should_serve_the_log_shell() {
 
     for uri in ["/git-compose/log", "/git-compose/log/"] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, LOG_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, LOG_MARKER).await;
     }
 }
 
@@ -154,7 +180,7 @@ async fn repo_commit_paths_should_serve_the_commit_shell() {
 
     for uri in ["/git-compose/commit/abc123", "/git-compose/commit/abc123/"] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, COMMIT_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, COMMIT_MARKER).await;
     }
 }
 
@@ -164,7 +190,7 @@ async fn repo_object_paths_should_serve_the_object_shell() {
 
     for uri in ["/git-compose/object/abc123", "/git-compose/object/abc123/"] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, OBJECT_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, OBJECT_MARKER).await;
     }
 }
 
@@ -179,7 +205,7 @@ async fn repo_tree_paths_should_serve_the_tree_shell() {
         "/git-compose/tree/src/lib",
     ] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, TREE_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, TREE_MARKER).await;
     }
 }
 
@@ -192,7 +218,7 @@ async fn repo_blob_paths_should_serve_the_blob_shell() {
         "/git-compose/blob/README.md",
     ] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, BLOB_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, BLOB_MARKER).await;
     }
 }
 
@@ -205,7 +231,7 @@ async fn repo_blame_paths_should_serve_the_blame_shell() {
         "/git-compose/blame/README.md",
     ] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, BLAME_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, BLAME_MARKER).await;
     }
 }
 
@@ -215,7 +241,7 @@ async fn repo_tag_paths_should_serve_the_tag_shell() {
 
     for uri in ["/git-compose/tag/v1.0.0", "/git-compose/tag/release/1.0"] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::OK, TAG_HTML).await;
+        assert_html_shell(router, uri, StatusCode::OK, TAG_MARKER).await;
     }
 }
 
@@ -239,7 +265,76 @@ async fn unknown_paths_should_serve_the_404_shell_with_a_404_status() {
         "/a/b/c",
     ] {
         let router = router_with_static(repo_root.path(), static_dir.path());
-        assert_html_shell(router, uri, StatusCode::NOT_FOUND, NOT_FOUND_HTML).await;
+        assert_html_shell(router, uri, StatusCode::NOT_FOUND, NOT_FOUND_MARKER).await;
+    }
+}
+
+#[tokio::test]
+async fn repo_shells_should_carry_both_feed_discovery_links() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/git-compose", "/git-compose/log", "/git-compose/tree/src"] {
+        let router = router_with_static(repo_root.path(), static_dir.path());
+        let (_, _, body) = get_bytes_with_headers(router, uri).await;
+        let body = String::from_utf8(body).unwrap();
+
+        assert!(
+            body.contains(
+                "<link rel=\"alternate\" type=\"application/atom+xml\" title=\"Recent commits\" href=\"/api/v1/repos/git-compose/feed.atom\">"
+            ),
+            "uri {uri} missing the default feed link: {body:?}"
+        );
+        assert!(
+            body.contains(
+                "<link rel=\"alternate\" type=\"application/atom+xml\" title=\"Recent commits (all refs)\" href=\"/api/v1/repos/git-compose/feed.atom?all=1\">"
+            ),
+            "uri {uri} missing the all-refs feed link: {body:?}"
+        );
+        assert!(
+            !body.contains("vcs-git"),
+            "uri {uri} unexpectedly carries vcs-git without a configured clone_url_base"
+        );
+    }
+}
+
+#[tokio::test]
+async fn repo_shells_should_carry_the_vcs_git_link_when_a_clone_base_is_configured() {
+    let (repo_root, static_dir) = setup_fixtures();
+    let router = router_with_static_and_clone_base(
+        repo_root.path(),
+        static_dir.path(),
+        "https://git.example.net",
+    );
+
+    let (_, _, body) = get_bytes_with_headers(router, "/git-compose").await;
+    let body = String::from_utf8(body).unwrap();
+
+    assert!(body.contains(
+        "<link rel=\"vcs-git\" title=\"Git repository\" href=\"https://git.example.net/git-compose.git\">"
+    ));
+}
+
+#[tokio::test]
+async fn non_repo_shells_should_carry_no_head_links() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/", "/git-compose/bogus"] {
+        let router = router_with_static_and_clone_base(
+            repo_root.path(),
+            static_dir.path(),
+            "https://git.example.net",
+        );
+        let (_, _, body) = get_bytes_with_headers(router, uri).await;
+        let body = String::from_utf8(body).unwrap();
+
+        assert!(
+            !body.contains("<link rel=\"alternate\""),
+            "uri {uri} unexpectedly carries a feed link: {body:?}"
+        );
+        assert!(
+            !body.contains("vcs-git"),
+            "uri {uri} unexpectedly carries a vcs-git link: {body:?}"
+        );
     }
 }
 

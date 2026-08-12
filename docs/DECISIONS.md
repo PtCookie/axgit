@@ -2355,3 +2355,61 @@ The web half of #61 — API-then-page, same order #46/#47 and #59/#60 followed.
   no-regression proof for the signature change.
 - No route change, no API contract change — `CommitLog.tsx`, `RepoSummary.tsx`, and
   `lib/api/repos.ts::feedUrl`/`FeedParams` only.
+
+## #63 `<head>` Atom/`vcs-git` discovery on repository pages
+
+Closes the last open "Feed and discovery" cgit-parity gap. cgit emits `<link rel="alternate"
+type="application/atom+xml">` and `<link rel="vcs-git">` in every repository page's `<head>`; axgit
+emitted neither — the feed/clone-URL links #61/#62 built out only exist as visible anchors inside
+`RepoSummary.tsx`/`CommitLog.tsx`, both `client:only="react"` islands invisible to a feed reader or
+any other tool that doesn't run JS, which is exactly who autodiscovery is for.
+
+- **Server-side injection, not a client fill-in.** `/{repo}/*` pages are prerendered once under the
+  `__repo__` placeholder param (#17), so the shell HTML has no per-repo href at build time — the
+  same problem `window.__axgit.fillRepoShell` (`Layout.astro`) already solves for the heading/tab
+  links/title. Filling the `<link>`s in the same way was considered and rejected: it would be
+  invisible to exactly the non-JS consumers autodiscovery exists for, and `rel="vcs-git"` needs
+  `clone_url_base`, which is api-side config the web build never sees. `api/src/shell.rs::serve_shell`
+  already reads the shell file and knows the request path per request, so it injects the links
+  itself, byte-wise, right before `</head>` — matching this file's and `feed.rs`'s "hand-build small
+  fixed documents" stance (#12) rather than pulling in an HTML parser for three `<link>`s.
+- **The segment is used raw, never decoded.** `repo_segment_for` returns the first path segment
+  exactly as the browser sent it — still percent-encoded — and that's reused directly to build both
+  `/api/v1/repos/{segment}/feed.atom` and `{clone_url_base}/{segment}.git`. Both want it
+  percent-encoded exactly that way, so this skips the decode/re-encode `feed.rs::encode_segment`
+  exists for. It's still run through the same `escape::xml_escape` (moved out of `feed.rs` into a
+  new shared module, since both this file and the feed now need it) before interpolation, since an
+  attribute value needs quote-escaping even though the segment shouldn't ever contain one in
+  practice.
+- **No repository-existence check.** The shell already answers `200` for a repository that doesn't
+  exist (the island renders "Repository not found" client-side); adding a filesystem/config read to
+  the static-serving path just to make one inert `<link>` disappear for that case isn't worth the
+  I/O on every request.
+- **Titles are fixed strings** ("Recent commits" / "Recent commits (all refs)" / "Git repository"),
+  not the repository name — the name is only available percent-encoded here, and decoding it back
+  to a display string would need machinery this serve path otherwise has no reason to carry.
+- **`rel="vcs-git"` is omitted when `clone_url_base` is unset**, the same `null` rule
+  `handlers/repos.rs::get_repo`'s `clone_url` field already follows, and built the same way:
+  `format!("{}/{segment}.git", base.trim_end_matches('/'))`.
+- **`?ref=` is deliberately not reflected** into the feed link (cgit's `h=`) — doing so would mean
+  parsing and re-encoding a query parameter inside the static-serving path for a link most readers
+  will use unparameterized anyway. Left as a possible follow-up if a real need shows up.
+- **Verified against Astro's own source, not just its docs, that `<ClientRouter />` navigation
+  doesn't need any extra wiring.** `swapHeadElements`
+  (`node_modules/astro/dist/transitions/swap-functions.js`) removes every non-`transition:persist`ed
+  child of the outgoing `<head>` and appends the incoming document's — so navigating between two
+  repositories (or from `/` into one) always ends up with the new page's `<link>`s, no stale ones
+  left behind.
+- **`astro dev` (and so the Playwright e2e suite) never runs this.** `web/astro.config.mjs`'s
+  `shellFallback` vite middleware only rewrites the incoming request's URL onto the matching page
+  shell — it never touches the response body, so there's no dev-time equivalent of the injection to
+  add. Full dev/production parity isn't achievable here regardless: `clone_url_base` is api-side
+  config that Astro's dev server has no access to. Coverage is Rust-side only
+  (`api/tests/static_shell_test.rs`), plus `Layout.astro` carries a comment recording why the
+  feature doesn't appear anywhere in the web source. Documented as a known, permanent limitation
+  rather than a gap to close later.
+- No `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` change — no endpoint, no schema,
+  no route shape changed; API.md doesn't cover static shell serving. Changed files:
+  `api/src/shell.rs` (the feature), new `api/src/escape.rs` (shared `xml_escape`, moved out of
+  `feed.rs`), `api/src/routes.rs` (threads `clone_url_base` through to the shell fallback),
+  `api/tests/static_shell_test.rs`, `web/src/layouts/Layout.astro` (comment only).

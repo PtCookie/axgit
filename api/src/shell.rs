@@ -15,6 +15,7 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Redirect, Response};
 
 use crate::cgit_compat;
+use crate::escape::xml_escape;
 
 /// The reserved `getStaticPaths` param the `/{repo}` shells are built under.
 /// Keep in sync with `web/src/lib/shell.ts::REPO_SHELL_PARAM`.
@@ -109,32 +110,50 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
 /// or cgit-query-shaped path (`docs/DECISIONS.md #35`) gets a permanent
 /// redirect to its axgit equivalent; everything else falls through to
 /// [`serve_shell`] unchanged.
-pub async fn serve_shell_or_redirect(static_dir: PathBuf, uri: Uri) -> Response {
+pub async fn serve_shell_or_redirect(
+    static_dir: PathBuf,
+    clone_url_base: Option<String>,
+    uri: Uri,
+) -> Response {
     match cgit_compat::redirect_for(&uri) {
         Some(location) => Redirect::permanent(&location).into_response(),
-        None => serve_shell(static_dir, uri).await,
+        None => serve_shell(static_dir, clone_url_base, uri).await,
     }
 }
 
 /// `ServeDir` fallback: a request with no matching file gets the page shell
 /// for its route shape, or the 404 shell — with a real 404 — if there is
-/// none.
-pub async fn serve_shell(static_dir: PathBuf, uri: Uri) -> Response {
+/// none. A `__repo__` shell additionally gets per-repository `<link>`s
+/// injected into its `<head>` (docs/DECISIONS.md #63) — the shell itself is
+/// prerendered once under the placeholder param and can't know the
+/// repository name at build time.
+pub async fn serve_shell(
+    static_dir: PathBuf,
+    clone_url_base: Option<String>,
+    uri: Uri,
+) -> Response {
     let (relative, status) = shell_for(uri.path());
-    let file = static_dir.join(relative);
+    let file = static_dir.join(&relative);
 
     match tokio::fs::read(&file).await {
-        Ok(body) => (
-            status,
-            [
-                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-                // The shell is rebuilt on every deploy and is tiny; never let
-                // a browser hold a stale one against fresh `_astro/` hashes.
-                (header::CACHE_CONTROL, "no-cache"),
-            ],
-            body,
-        )
-            .into_response(),
+        Ok(body) => {
+            let body = match repo_segment_for(uri.path(), &relative) {
+                Some(segment) => inject_repo_head_links(body, segment, clone_url_base.as_deref()),
+                None => body,
+            };
+            (
+                status,
+                [
+                    (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                    // The shell is rebuilt on every deploy and is tiny; never
+                    // let a browser hold a stale one against fresh `_astro/`
+                    // hashes.
+                    (header::CACHE_CONTROL, "no-cache"),
+                ],
+                body,
+            )
+                .into_response()
+        }
         Err(error) => {
             tracing::error!(
                 file = %file.display(),
@@ -144,6 +163,65 @@ pub async fn serve_shell(static_dir: PathBuf, uri: Uri) -> Response {
             StatusCode::NOT_FOUND.into_response()
         }
     }
+}
+
+/// The raw (still percent-encoded) first path segment, when `relative`
+/// resolved to a shell under [`REPO_SHELL_PARAM`] — i.e. the request was for
+/// some `/{repo}/...` shape, not `/`, `/404`, or another top-level route.
+/// Not decoded: the segment is reused as-is to build both an API path and an
+/// external URL, both of which want it percent-encoded exactly as the
+/// browser sent it.
+fn repo_segment_for<'u>(path: &'u str, relative: &Path) -> Option<&'u str> {
+    if !relative.starts_with(REPO_SHELL_PARAM) {
+        return None;
+    }
+    path.split('/').find(|segment| !segment.is_empty())
+}
+
+/// Inserts the Atom-discovery and `vcs-git` `<link>`s before the shell's
+/// `</head>`, or returns `body` unchanged if it has none. Byte-oriented
+/// (rather than parsing the HTML) — the shell is a small, controlled
+/// document axgit itself produced, matching this file's and `feed.rs`'s
+/// "hand-build small fixed documents" stance (docs/DECISIONS.md #12).
+fn inject_repo_head_links(body: Vec<u8>, segment: &str, clone_url_base: Option<&str>) -> Vec<u8> {
+    const HEAD_CLOSE: &[u8] = b"</head>";
+    let Some(pos) = find_subslice(&body, HEAD_CLOSE) else {
+        return body;
+    };
+
+    let links = repo_head_links(segment, clone_url_base);
+    let mut out = Vec::with_capacity(body.len() + links.len());
+    out.extend_from_slice(&body[..pos]);
+    out.extend_from_slice(links.as_bytes());
+    out.extend_from_slice(&body[pos..]);
+    out
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// Builds the `<link>` markup itself. Titles are fixed strings rather than
+/// the repository name — `segment` is only available percent-encoded here,
+/// and decoding it back to a display name would need machinery this
+/// serve-path otherwise has no reason to carry. `rel="vcs-git"` is omitted
+/// when no `clone_url_base` is configured, the same `null` rule
+/// `handlers/repos.rs::get_repo`'s `clone_url` field already follows.
+fn repo_head_links(segment: &str, clone_url_base: Option<&str>) -> String {
+    let segment = xml_escape(segment);
+    let mut links = format!(
+        "<link rel=\"alternate\" type=\"application/atom+xml\" title=\"Recent commits\" href=\"/api/v1/repos/{segment}/feed.atom\">\
+<link rel=\"alternate\" type=\"application/atom+xml\" title=\"Recent commits (all refs)\" href=\"/api/v1/repos/{segment}/feed.atom?all=1\">"
+    );
+    if let Some(base) = clone_url_base {
+        let base = xml_escape(base.trim_end_matches('/'));
+        links.push_str(&format!(
+            "<link rel=\"vcs-git\" title=\"Git repository\" href=\"{base}/{segment}.git\">"
+        ));
+    }
+    links
 }
 
 #[cfg(test)]
@@ -373,5 +451,86 @@ mod tests {
                 "path {path}"
             );
         }
+    }
+
+    #[test]
+    fn repo_segment_for_should_extract_the_raw_first_segment_of_a_repo_shell() {
+        assert_eq!(
+            repo_segment_for(
+                "/git-compose/blob/src/main.rs",
+                &Path::new(REPO_SHELL_PARAM).join("blob").join("index.html"),
+            ),
+            Some("git-compose")
+        );
+        // Still percent-encoded — never decoded here.
+        assert_eq!(
+            repo_segment_for(
+                "/my%20repo",
+                &Path::new(REPO_SHELL_PARAM).join("index.html"),
+            ),
+            Some("my%20repo")
+        );
+    }
+
+    #[test]
+    fn repo_segment_for_should_be_none_off_the_repo_shell() {
+        assert_eq!(repo_segment_for("/", &PathBuf::from("index.html")), None);
+        assert_eq!(
+            repo_segment_for("/git-compose/bogus", &PathBuf::from("404.html")),
+            None
+        );
+    }
+
+    #[test]
+    fn repo_head_links_should_always_include_the_two_feed_links() {
+        let links = repo_head_links("git-compose", None);
+        assert!(links.contains(
+            "<link rel=\"alternate\" type=\"application/atom+xml\" title=\"Recent commits\" href=\"/api/v1/repos/git-compose/feed.atom\">"
+        ));
+        assert!(links.contains(
+            "<link rel=\"alternate\" type=\"application/atom+xml\" title=\"Recent commits (all refs)\" href=\"/api/v1/repos/git-compose/feed.atom?all=1\">"
+        ));
+        assert!(!links.contains("vcs-git"));
+    }
+
+    #[test]
+    fn repo_head_links_should_include_vcs_git_only_when_a_clone_base_is_configured() {
+        let links = repo_head_links("git-compose", Some("https://git.example.net"));
+        assert!(links.contains(
+            "<link rel=\"vcs-git\" title=\"Git repository\" href=\"https://git.example.net/git-compose.git\">"
+        ));
+    }
+
+    #[test]
+    fn repo_head_links_should_trim_a_trailing_slash_off_the_clone_base() {
+        let links = repo_head_links("git-compose", Some("https://git.example.net/"));
+        assert!(links.contains("href=\"https://git.example.net/git-compose.git\""));
+    }
+
+    #[test]
+    fn repo_head_links_should_escape_the_segment() {
+        // A raw `"` should never reach here in practice (the URI is
+        // percent-encoded before axum hands it over), but the escaping is
+        // defense-in-depth against the attribute it's interpolated into.
+        let links = repo_head_links(r#"weird"repo"#, Some("https://git.example.net"));
+        assert!(!links.contains(r#""weird"repo""#));
+        assert!(links.contains("weird&quot;repo"));
+    }
+
+    #[test]
+    fn inject_repo_head_links_should_insert_before_head_close() {
+        let body =
+            b"<!doctype html><html><head><title>x</title></head><body></body></html>".to_vec();
+        let injected = inject_repo_head_links(body, "git-compose", None);
+        let injected = String::from_utf8(injected).unwrap();
+        assert!(injected.contains("<title>x</title><link rel=\"alternate\""));
+        assert!(injected.contains("feed.atom?all=1\"></head>"));
+    }
+
+    #[test]
+    fn inject_repo_head_links_should_leave_a_headless_document_unchanged() {
+        let body = b"<!doctype html><html><body>no head</body></html>".to_vec();
+        let injected = inject_repo_head_links(body.clone(), "git-compose", None);
+        assert_eq!(injected, body);
     }
 }

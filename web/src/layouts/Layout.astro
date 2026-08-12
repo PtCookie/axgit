@@ -24,6 +24,24 @@ const { title = "Axgit" } = Astro.props;
     <ClientRouter />
     {
       /*
+        A repository page's `<head>` also carries two `rel="alternate"
+        type="application/atom+xml"` feed-discovery links and, when
+        `AXGIT_CLONE_URL_BASE` is configured, a `rel="vcs-git"` clone link
+        (docs/DECISIONS.md #63) — but you won't find them here. This shell is
+        prerendered once under the `__repo__` placeholder (see
+        `lib/shell.ts`), so there's no per-repo name at build time to build a
+        per-repo href from; `api/src/shell.rs::serve_shell` injects them
+        server-side, right before `</head>`, once it knows which repository
+        the request is actually for. `astro dev` (and so the Playwright e2e
+        suite) doesn't run that injection path, since `astro.config.mjs`'s
+        dev middleware only rewrites the request, never the response body —
+        this is production-server-only, and there is no dev-time equivalent
+        to fall back to either (`clone_url_base` is api-side config Astro
+        never sees).
+      */
+    }
+    {
+      /*
         Resolves the theme onto <html> before the document has a body, so no
         paint ever happens with the wrong one. `is:inline` keeps this a
         synchronous classic script — a bundled `<script>` becomes a deferred
