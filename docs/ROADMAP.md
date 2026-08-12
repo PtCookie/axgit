@@ -1141,34 +1141,35 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - No `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` change — no endpoint or schema
     involved.
 
+- **`GET /api/v1/repos` gained `?sort=`** (DECISIONS.md #64), closing the "Column sorting" item
+  under "Repository index". First of two commits — the API; the web page's sortable headers are a
+  follow-up (#65). `?sort=` (never cgit's `s=`) accepts `name`/`desc`/`owner`/`idle`/`section`,
+  optionally `-`-prefixed to reverse; `idle` defaults descending (most recently active first,
+  matching cgit's own `idle` sort), every other key defaults ascending, and a leading `-` always
+  flips a key's own default. `AXGIT_REPOSITORY_SORT` sets the server default (`name`) used when
+  `?sort=` is absent; the response's new `sort` field echoes the order actually applied either way.
+  Sorting moved out of `scan.rs` (which now returns directory-read order) into the handler, which
+  sorts a clone of the shared `ScanCache` snapshot per request. A repository missing the sorted
+  field always sorts last regardless of direction; ties break by name ascending; `idle` compares
+  parsed timestamps, not the formatted string (agefiles keep their own UTC offset). No
+  response-cache work needed — the list's ETag is already a hash of the body, so a different `sort`
+  produces a different `ETag` automatically.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated.
+
 ## Next up
 
-None queued — #9's v1 scope is fully built out again (search: #25/#26/#27/#46/#47; stats: #28/#29;
-HTTP push stays permanently excluded, not deferred, by the read-only invariant), the
-build-chunk-size, ref-badge, cgit-compatibility, blame-rename, commit-log-pagination, and
-commit-log-immutable-caching candidates are all resolved, diff/patch output (#38/#39) plus its
-three follow-up candidates (#40, #41, #43) closed the largest cgit parity gap, the feed's alternate
-link plus a `robots.txt` closed two more of the "Feed and discovery" gaps, log message expansion
-(#44) closed the last item under "Log" message search, git notes on the commit page (#45) closed
-the `git notes` item under "Commit page", author/committer/range search (#46/#47) closed the last
-remaining item under "Log", and per-row quick links (#48) closed the `enable-index-links` gap
-under "Repository index" and the log/raw/blame gap under "Tree and blob", symlink targets (#49)
-closed one more there (submodule links, single-child directory collapsing, and the hex dump view
-remain open), the `Others (N)` row (#50) left `path=` as the only open item under "Stats", the tag
-detail page plus per-tag downloads (#51) closed all but two items under "Tags and refs", remote
-branches (#52) closed one of those two, object links for non-commit refs (#53) closed the last one
-(also closing the blob-by-oid item under "Tree and blob"), archive format coverage (#54) closed
-the last open item under "Archive", archive download links on the commit page (#55) closed the
-last open item under "Commit page", rename following (#56) plus Files/Lines changed columns (#57)
-on the commit log closed both remaining items under "Log" — **"Archive", "Tags and refs", "Commit
-page", and "Log" all have no open items left** — the hex dump view for binary blobs (#58) closed
-one more under "Tree and blob", the stats `path` filter (#59/#60) closed the last item under
-"Stats" — **"Stats" now has no open items left either** — Atom feed parameters (#61/#62) closed the
-first item under "Feed and discovery", and `<head>` Atom/`vcs-git` discovery (#63) closed the
-last one — **"Feed and discovery" now has no open items left either**. The remaining cgit-parity
-gaps are submodule links and single-child directory collapsing (both under "Tree and blob") and the
-four "Repository index" items. Pick the next piece of work from there, from the candidates below,
-or from a fresh request.
+**Web-side sortable repository-index headers** (DECISIONS.md #65, following up on #64's API): a
+pure `web/src/lib/repo-sort.ts::sortRepos` mirroring the Rust rules, `RepoList.tsx` reading/writing
+`?sort=` alongside the existing `?q=` (`history.replaceState`, no refetch — sorting an
+already-fetched array happens in memory like `filterRepos`), and clickable `TableHead` buttons for
+Name/Description/Owner/Last activity with `aria-sort`. `section` has no header button (it's the
+group heading, not a column) but stays reachable via `?sort=section`/`AXGIT_REPOSITORY_SORT`. No
+`DropdownMenu` — see `ThemeMenu.tsx`'s note on keeping its ~137 KB floating-ui chunk off `/`.
+
+After that: the remaining three "Repository index" cgit-parity gaps (site-level readme/title/
+description, `hide`/`ignore` repo flags, `homepage` + a configured `defbranch`) and the two "Tree
+and blob" gaps (submodule links, single-child directory collapsing). Pick the next piece of work
+from there, from the candidates below, or from a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1208,8 +1209,6 @@ recorded separately below instead of listed as gaps.
     `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
 - **Repository index**
-  - Column sorting (`s=name|desc|owner|idle|section`, `repository-sort=age|name`) — axgit is fixed
-    to name order plus the client-side `?q=` filter; cgit's `idle` sort is descending.
   - Site-level readme / title / description (`root-readme`, `root-title`, `root-desc`).
   - `hide` / `ignore` repo flags — hidden-but-reachable-by-direct-path vs. not reachable at all;
     fits naturally alongside the `[cgit]`/`[axgit]` config-section invariant.

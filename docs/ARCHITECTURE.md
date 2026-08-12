@@ -169,6 +169,7 @@ render.
 - Configuration is via environment variables: `AXGIT_REPO_ROOT`, `AXGIT_STATIC_DIR`,
   `AXGIT_LISTEN` (default `0.0.0.0:8080`), `AXGIT_CLONE_URL_BASE` (for displaying clone URLs),
   `AXGIT_CACHE_SCAN_TTL` (repo scan TTL, default 60s), `AXGIT_CACHE_RESPONSE_TTL` (response cache
-  TTL, default 300s), `AXGIT_CACHE_RESPONSE_MAX_BYTES` (response cache capacity, default 32 MiB).
+  TTL, default 300s), `AXGIT_CACHE_RESPONSE_MAX_BYTES` (response cache capacity, default 32 MiB),
+  `AXGIT_REPOSITORY_SORT` (repository index default sort order, default `name`).
 - Logs go to stdout/stderr as JSON (`tracing` + `tracing-subscriber`) — collected by the stack's
   fluentd logging driver.

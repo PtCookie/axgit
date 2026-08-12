@@ -2413,3 +2413,46 @@ any other tool that doesn't run JS, which is exactly who autodiscovery is for.
   `api/src/shell.rs` (the feature), new `api/src/escape.rs` (shared `xml_escape`, moved out of
   `feed.rs`), `api/src/routes.rs` (threads `clone_url_base` through to the shell fallback),
   `api/tests/static_shell_test.rs`, `web/src/layouts/Layout.astro` (comment only).
+
+## #64 Repository index sort (`?sort=`, `AXGIT_REPOSITORY_SORT`)
+
+Closes the "Column sorting" cgit-parity gap under "Repository index" (docs/ROADMAP.md) — the index
+was fixed to name order plus #25's client-side `?q=` filter, with no way to reproduce cgit's
+`s=name|desc|owner|idle|section` or `repository-sort=age|name`. First of two commits — this one is
+the API; the web page's sortable headers are a follow-up (#65).
+
+- **`?sort=`, never cgit's `s=`.** #61's `?ref=`-not-`h=` precedent applies again: axgit's own query
+  vocabulary, not a straight port of cgit's spellings.
+- **A single param carries both column and direction**: `name`/`desc`/`owner`/`idle`/`section`,
+  optionally `-`-prefixed to flip. `idle` is the one key whose *un-prefixed* form is descending
+  (most recently active first, matching cgit's own `idle` sort); every other key's un-prefixed form
+  is ascending. A leading `-` always flips a key's own default rather than meaning "always
+  descending" — so `-idle` is ascending (oldest first), not a no-op. `RepoOrder::parse`/`Display`
+  round-trip this exactly, which is what lets `ReposResponse.sort` echo the request's own spelling
+  back unchanged.
+- **`None` always sorts last, regardless of direction.** A repository with no `owner` shouldn't
+  jump to the top under `-owner` just because reversing usually means "last things first" — reverse
+  only flips the comparison between two *present* values (`repo/sort.rs::compare_opt_str`/
+  `compare_idle`), never the `Some`-vs-`None` branches. Ties (including two repositories both
+  missing the sorted field) break by `name` ascending, always, so the order is fully deterministic
+  regardless of the snapshot's incoming order.
+- **`idle` compares parsed timestamps, not the formatted string.** `meta::format_rfc3339` preserves
+  each commit's/agefile's own UTC offset rather than normalizing to UTC, so two repositories
+  recorded under different offsets would sort wrong by string order (`"+0900"` > `"-0500"`
+  lexicographically, even when the `-0500` instant is later). `repo/sort.rs::compare_idle`
+  re-parses each `last_modified` into a `jiff::Timestamp` before comparing.
+- **Sorting moved out of `scan.rs` into the handler.** `scan_repos` used to sort by name as its
+  last step; that made every possible order except name-ascending require a second full scan.
+  `scan_repos` now returns directory-read order, and `list_repos` sorts a clone of the shared
+  `ScanCache` snapshot per request — cheap at this scale, and it's the same clone
+  `handlers/repos.rs` already made to serialize the response.
+- **Server default via `AXGIT_REPOSITORY_SORT`** (`--repository-sort`, default `name`), parsed with
+  the same `RepoOrder::parse`/`400 invalid_param` rule as the query param. A request's `?sort=`
+  overrides it; when absent, `ReposResponse.sort` reports the configured default so a client never
+  has to duplicate the server's own default logic to know what it received.
+- **No response-cache work.** The list is served from `ScanCache` (single-value TTL, no key) with a
+  body-hash `ETag` (#6's carve-out), not the moka response cache — a different `sort` produces a
+  different body and therefore a different `ETag` automatically, with no cache-key change needed.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /api/v1/repos` gained
+  `?sort=` and a `sort` response field, plus `400 invalid_param`). The web page surfacing sortable
+  headers is a follow-up commit (#65).

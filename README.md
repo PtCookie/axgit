@@ -59,3 +59,4 @@ All settings are environment variables (also available as CLI flags — `axgit -
 | `AXGIT_CACHE_SCAN_TTL` | `60` | Repository scan cache TTL, in seconds |
 | `AXGIT_CACHE_RESPONSE_TTL` | `300` | Response cache TTL, in seconds (a safety net — pushes invalidate entries immediately via the HEAD/agefile validator) |
 | `AXGIT_CACHE_RESPONSE_MAX_BYTES` | `33554432` (32 MiB) | Response cache capacity, in bytes |
+| `AXGIT_REPOSITORY_SORT` | `name` | Default repository index sort order (`name`, `desc`, `owner`, `idle`, `section`, optionally `-`-prefixed); a request's own `?sort=` overrides it |

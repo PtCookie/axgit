@@ -15,8 +15,20 @@
           "repos"
         ],
         "summary": "List repositories",
-        "description": "Served from the scan snapshot ([`crate::cache::ScanCache`]), not the\nresponse cache — the list has no single backing repository, so its `ETag`\nis a hash of the serialized body.",
+        "description": "Served from the scan snapshot ([`crate::cache::ScanCache`]), not the\nresponse cache — the list has no single backing repository, so its `ETag`\nis a hash of the serialized body. `sort` changes the body and therefore\nthe `ETag`, so no extra cache-key work is needed for it.",
         "operationId": "list_repos",
+        "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`name` (default), `desc`, `owner`, `idle`, or `section`, optionally\nprefixed with `-` to reverse direction (`idle` reverses to ascending\nunder `-idle`, i.e. oldest first). Falls back to\n`AXGIT_REPOSITORY_SORT` (server default `name`) when absent.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "idle"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Repository list",
@@ -44,6 +56,16 @@
           },
           "304": {
             "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "400": {
+            "description": "`invalid_param` — unknown `sort`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Repository root could not be scanned",
@@ -3288,7 +3310,8 @@
       "ReposResponse": {
         "type": "object",
         "required": [
-          "repos"
+          "repos",
+          "sort"
         ],
         "properties": {
           "repos": {
@@ -3296,6 +3319,11 @@
             "items": {
               "$ref": "#/components/schemas/RepoInfo"
             }
+          },
+          "sort": {
+            "type": "string",
+            "description": "The effective sort order actually applied — the request's `?sort=` if\ngiven, else the server's configured default. Lets a client mark the\nactive column without knowing `AXGIT_REPOSITORY_SORT`.",
+            "example": "name"
           }
         }
       },

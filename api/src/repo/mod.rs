@@ -10,6 +10,7 @@ pub mod refs;
 pub mod resolve;
 pub mod scan;
 pub mod search;
+pub mod sort;
 pub mod stats;
 pub mod tag;
 pub mod tree;

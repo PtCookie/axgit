@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::repo::sort::RepoOrder;
+
 /// Axgit — read-only web frontend for bare Git repositories.
 #[derive(Parser, Debug, Clone)]
 #[command(name = "axgit", version)]
@@ -36,4 +38,21 @@ pub struct Config {
     /// Response cache capacity in bytes.
     #[arg(long, env = "AXGIT_CACHE_RESPONSE_MAX_BYTES", default_value_t = 32 * 1024 * 1024)]
     pub cache_response_max_bytes: u64,
+
+    /// Default repository index sort order (`name`, `desc`, `owner`, `idle`,
+    /// `section`, optionally `-`-prefixed) — cgit's `repository-sort`. A
+    /// request's own `?sort=` overrides this.
+    #[arg(
+        long,
+        env = "AXGIT_REPOSITORY_SORT",
+        default_value = "name",
+        value_parser = parse_repository_sort,
+    )]
+    pub repository_sort: RepoOrder,
+}
+
+fn parse_repository_sort(raw: &str) -> Result<RepoOrder, String> {
+    RepoOrder::parse(raw).map_err(|_| {
+        format!("sort must be one of name, desc, owner, idle, section, optionally prefixed with '-' (got '{raw}')")
+    })
 }

@@ -7,7 +7,9 @@ use super::RepoInfo;
 use super::meta;
 
 /// Scans `root` for bare `*.git` directories (one level deep, cgit
-/// `scan-path` equivalent) and returns them sorted by name.
+/// `scan-path` equivalent). Returned in directory-read order — callers sort
+/// (`repo/sort.rs`), since the order wanted varies per request while the
+/// snapshot this feeds `ScanCache` is shared across all of them.
 ///
 /// Blocking (filesystem + libgit2) — call from `spawn_blocking`.
 pub fn scan_repos(root: &Path) -> anyhow::Result<Vec<RepoInfo>> {
@@ -36,6 +38,5 @@ pub fn scan_repos(root: &Path) -> anyhow::Result<Vec<RepoInfo>> {
             }
         }
     }
-    repos.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(repos)
 }

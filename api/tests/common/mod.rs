@@ -14,6 +14,7 @@ use serde_json::Value;
 use tower::ServiceExt;
 
 use axgit::config::Config;
+use axgit::repo::sort::RepoOrder;
 use axgit::routes::build_router;
 use axgit::state::AppState;
 
@@ -31,6 +32,7 @@ pub fn test_config(repo_root: &Path) -> Config {
         cache_scan_ttl_secs: 60,
         cache_response_ttl_secs: 300,
         cache_response_max_bytes: 32 * 1024 * 1024,
+        repository_sort: RepoOrder::default(),
     }
 }
 

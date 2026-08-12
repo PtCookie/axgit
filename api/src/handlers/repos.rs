@@ -1,29 +1,62 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
-use serde::Serialize;
-use utoipa::ToSchema;
+use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
 use super::{JSON_CONTENT_TYPE, body_etag, cached_response, etag_response};
 use crate::error::{ApiError, ErrorResponse};
 use crate::repo::refs::RefsInfo;
+use crate::repo::sort::{RepoOrder, sort_repos};
 use crate::repo::{RepoInfo, RepoSummary, meta, refs};
 use crate::state::AppState;
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ReposQuery {
+    /// `name` (default), `desc`, `owner`, `idle`, or `section`, optionally
+    /// prefixed with `-` to reverse direction (`idle` reverses to ascending
+    /// under `-idle`, i.e. oldest first). Falls back to
+    /// `AXGIT_REPOSITORY_SORT` (server default `name`) when absent.
+    #[param(value_type = Option<String>, example = "idle")]
+    sort: Option<String>,
+}
+
+/// Parses `?sort=`, falling back to `default` (the server-configured order)
+/// when the param is absent. Parsed manually — see [`super::parse_limit`].
+pub(crate) fn parse_sort(raw: Option<&str>, default: RepoOrder) -> Result<RepoOrder, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(default);
+    };
+    RepoOrder::parse(raw).map_err(|_| {
+        ApiError::InvalidParam(format!(
+            "sort must be one of name, desc, owner, idle, section, optionally prefixed with '-' \
+             (got '{raw}')"
+        ))
+    })
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct ReposResponse {
     pub repos: Vec<RepoInfo>,
+    /// The effective sort order actually applied — the request's `?sort=` if
+    /// given, else the server's configured default. Lets a client mark the
+    /// active column without knowing `AXGIT_REPOSITORY_SORT`.
+    #[schema(example = "name")]
+    pub sort: String,
 }
 
 /// List repositories
 ///
 /// Served from the scan snapshot ([`crate::cache::ScanCache`]), not the
 /// response cache — the list has no single backing repository, so its `ETag`
-/// is a hash of the serialized body.
+/// is a hash of the serialized body. `sort` changes the body and therefore
+/// the `ETag`, so no extra cache-key work is needed for it.
 #[utoipa::path(
     get,
     path = "/api/v1/repos",
     tag = "repos",
+    params(ReposQuery),
     responses(
         (status = 200, description = "Repository list", body = ReposResponse,
             headers(
@@ -32,19 +65,25 @@ pub struct ReposResponse {
             ),
         ),
         (status = 304, description = "`If-None-Match` matched the current `ETag`"),
+        (status = 400, description = "`invalid_param` — unknown `sort`", body = ErrorResponse),
         (status = 500, description = "Repository root could not be scanned", body = ErrorResponse),
     ),
 )]
 pub async fn list_repos(
     State(state): State<AppState>,
+    Query(query): Query<ReposQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
+    let order = parse_sort(query.sort.as_deref(), state.config.repository_sort)?;
     let repos = state
         .scan_cache
         .get_or_scan(&state.config.repo_root)
         .await?;
+    let mut repos = repos.as_ref().clone();
+    sort_repos(&mut repos, order);
     let body = serde_json::to_vec(&ReposResponse {
-        repos: repos.as_ref().clone(),
+        repos,
+        sort: order.to_string(),
     })?;
     let etag = body_etag(&body);
     Ok(etag_response(

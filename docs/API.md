@@ -71,7 +71,7 @@ row under `/commits` below, and `docs/DECISIONS.md` #37). Default `limit=50`, ma
 
 ## Endpoints
 
-### `GET /api/v1/repos`
+### `GET /api/v1/repos?sort=`
 
 Repository list. Equivalent to cgit's index.
 
@@ -86,7 +86,8 @@ Repository list. Equivalent to cgit's index.
       "default_branch": "main",
       "last_modified": "2026-07-24T13:06:00+09:00"
     }
-  ]
+  ],
+  "sort": "name"
 }
 ```
 
@@ -94,6 +95,19 @@ Repository list. Equivalent to cgit's index.
   `[cgit]`.
 - `last_modified`: from the agefile (`info/web/last-modified`), else HEAD authordate.
 - `default_branch`/`last_modified`: `null` for an empty repository (no commits, no agefile).
+- `sort`: `name` (default), `desc`, `owner`, `idle`, or `section`, optionally prefixed with `-` to
+  reverse direction. Falls back to `AXGIT_REPOSITORY_SORT` (server default `name`) when the query
+  param is absent; any other value is `400 invalid_param`. The response's own `sort` field echoes
+  the order actually applied — the request's `?sort=` if given, else the configured default —
+  so a client that never sent `?sort=` still learns which order it got.
+  - Every key except `idle` sorts ascending by default; `idle` sorts **descending** (most recently
+    active first) by default, matching cgit's own `idle` sort. A leading `-` always flips a key's
+    own default direction — `-idle` is ascending (oldest first), not "always descending".
+  - A repository missing the sorted field (`null` `description`/`owner`/`section`, or `null`
+    `last_modified` under `idle`) always sorts last, regardless of direction.
+  - Ties (including two repositories that both lack the sorted field) break by `name` ascending.
+  - `idle` compares actual instants, not the formatted string — two agefiles recorded under
+    different UTC offsets still compare correctly.
 
 ### `GET /api/v1/repos/{repo}`
 

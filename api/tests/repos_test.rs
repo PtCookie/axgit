@@ -4,6 +4,9 @@ use common::router_for;
 
 use std::path::Path;
 
+use axgit::repo::sort::RepoOrder;
+use axgit::routes::build_router;
+use axgit::state::AppState;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use http_body_util::BodyExt;
@@ -121,6 +124,99 @@ async fn list_repos_returns_null_fields_for_empty_repo() {
             empty["last_modified"].clone()
         ),
         (Value::Null, Value::Null),
+    );
+}
+
+#[tokio::test]
+async fn list_repos_defaults_to_name_order_and_echoes_the_effective_sort() {
+    let root = setup_fixtures();
+
+    let json = list_repos(root.path()).await;
+
+    assert_eq!(json["sort"], "name");
+}
+
+#[tokio::test]
+async fn list_repos_sort_owner_places_a_missing_owner_last() {
+    let root = setup_fixtures();
+
+    let (status, json) =
+        common::get_json(router_for(root.path()), "/api/v1/repos?sort=owner").await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+
+    let names: Vec<&str> = json["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|repo| repo["name"].as_str().unwrap())
+        .collect();
+    // alpha has owner "PtCookie"; bravo/empty have none and fall back to the
+    // name-ascending tiebreak, last regardless of direction.
+    assert_eq!(names, ["alpha", "bravo", "empty"]);
+    assert_eq!(json["sort"], "owner");
+}
+
+#[tokio::test]
+async fn list_repos_sort_reversed_owner_still_places_a_missing_owner_last() {
+    let root = setup_fixtures();
+
+    let (status, json) =
+        common::get_json(router_for(root.path()), "/api/v1/repos?sort=-owner").await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+
+    let names: Vec<&str> = json["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|repo| repo["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["alpha", "bravo", "empty"]);
+    assert_eq!(json["sort"], "-owner");
+}
+
+#[tokio::test]
+async fn list_repos_sort_idle_defaults_to_descending_newest_first() {
+    let root = setup_fixtures();
+
+    let (status, json) = common::get_json(router_for(root.path()), "/api/v1/repos?sort=idle").await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+
+    let names: Vec<&str> = json["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|repo| repo["name"].as_str().unwrap())
+        .collect();
+    // alpha: 2026-07-24 (agefile); bravo: FIXED_DATE = 2026-07-01 (authordate
+    // fallback); empty: null, always last.
+    assert_eq!(names, ["alpha", "bravo", "empty"]);
+    assert_eq!(json["sort"], "idle");
+}
+
+#[tokio::test]
+async fn list_repos_honours_the_configured_server_default_sort() {
+    let root = setup_fixtures();
+
+    let mut config = common::test_config(root.path());
+    config.repository_sort = RepoOrder::parse("owner").unwrap();
+    let router = build_router(AppState::new(config));
+
+    let (status, json) = common::get_json(router, "/api/v1/repos").await;
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(json["sort"], "owner");
+}
+
+#[tokio::test]
+async fn list_repos_rejects_an_unknown_sort() {
+    let root = setup_fixtures();
+
+    let (status, json) =
+        common::get_json(router_for(root.path()), "/api/v1/repos?sort=bogus").await;
+
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_param")),
+        "unexpected response: {json}"
     );
 }
 

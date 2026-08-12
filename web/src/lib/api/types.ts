@@ -15,7 +15,8 @@ export interface paths {
      * List repositories
      * @description Served from the scan snapshot ([`crate::cache::ScanCache`]), not the
      *     response cache — the list has no single backing repository, so its `ETag`
-     *     is a hash of the serialized body.
+     *     is a hash of the serialized body. `sort` changes the body and therefore
+     *     the `ETag`, so no extra cache-key work is needed for it.
      */
     get: operations["list_repos"];
     put?: never;
@@ -1006,6 +1007,13 @@ export interface components {
     };
     ReposResponse: {
       repos: components["schemas"]["RepoInfo"][];
+      /**
+       * @description The effective sort order actually applied — the request's `?sort=` if
+       *     given, else the server's configured default. Lets a client mark the
+       *     active column without knowing `AXGIT_REPOSITORY_SORT`.
+       * @example name
+       */
+      sort: string;
     };
     /**
      * @description Two-revision diff of `GET /api/v1/repos/{repo}/diff` (docs/API.md). A
@@ -1203,7 +1211,16 @@ export type $defs = Record<string, never>;
 export interface operations {
   list_repos: {
     parameters: {
-      query?: never;
+      query?: {
+        /**
+         * @description `name` (default), `desc`, `owner`, `idle`, or `section`, optionally
+         *     prefixed with `-` to reverse direction (`idle` reverses to ascending
+         *     under `-idle`, i.e. oldest first). Falls back to
+         *     `AXGIT_REPOSITORY_SORT` (server default `name`) when absent.
+         * @example idle
+         */
+        sort?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -1229,6 +1246,15 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description `invalid_param` — unknown `sort` */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
       /** @description Repository root could not be scanned */
       500: {

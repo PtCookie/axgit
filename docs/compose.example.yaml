@@ -28,6 +28,7 @@ services:
       # AXGIT_CACHE_SCAN_TTL: "60"
       # AXGIT_CACHE_RESPONSE_TTL: "300"
       # AXGIT_CACHE_RESPONSE_MAX_BYTES: "33554432"
+      # AXGIT_REPOSITORY_SORT: name
     expose:
       - "8080"
     healthcheck:
