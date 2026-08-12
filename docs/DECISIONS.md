@@ -2536,3 +2536,27 @@ operator could change either independently — this fits directly alongside the 
   reachable distinction is visible end to end against the real filesystem scan, since the api's own
   tests build per-test fixtures in a tempdir instead (`api/tests/repos_test.rs`'s new
   `setup_hide_ignore_fixtures`, covering both flags plus refs/clone reachability for `ignore`).
+
+## #67 Per-repository `homepage`
+
+Closes the `homepage` half of the "`homepage` (cgit gives it a dedicated nav tab), and a configured
+`defbranch`" cgit-parity gap under "Repository index" — `defbranch` is a separate, behavioral
+commit (#68), since it changes ref resolution rather than adding a field.
+
+- **`RepoInfo`/`RepoSummary` both gain `homepage: Option<String>`**, read via `meta("homepage")` —
+  the exact same `[axgit]`-wins-over-`[cgit]` `config_value` lookup `section`/`owner`/`desc` already
+  use, no new precedence rule.
+- **Only `http://`/`https://` values survive**; anything else — most importantly a `javascript:`
+  URL — reads back as `null`, the same as if `homepage` were unset. This is the one config-derived
+  field so far that lands directly in an `href` rather than being rendered as inert text
+  (`section`/`owner`/`desc` are always text nodes), so a malicious value in `cgit.homepage` would be
+  a stored XSS if passed through unchecked. Filtering at the read (`meta::is_http_url`) means the
+  invariant holds for every consumer without each one having to re-validate.
+- **Rejected rather than erroring at scan time.** A misconfigured `homepage` (missing scheme, a
+  bare hostname, `mailto:`, …) degrades to `null` — cgit itself doesn't validate `homepage` either,
+  and failing the whole repository's listing over one bad config value would be a worse failure
+  mode than silently dropping one field.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`RepoInfo` and
+  `RepoSummary` both gain `homepage`). `scripts/make-fixtures.sh`'s `git-compose.git` gained
+  `cgit.homepage` so a local run reaches the field. The web page rendering it is a follow-up
+  commit (#69), same two-commit shape as #64/#65's sort work.

@@ -1181,12 +1181,28 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   `config_value` already uses for `section`/`owner`/`desc`. No API contract change — neither flag is
   a response field. `scripts/make-fixtures.sh` gained `hidden.git`.
 
+- **Per-repository `homepage`** (DECISIONS.md #67), the API half of the last "Repository index"
+  item (`homepage` + a configured `defbranch` — `defbranch` is a separate, behavioral follow-up,
+  #68). `RepoInfo`/`RepoSummary` both gain `homepage: Option<String>`, read with the same
+  `[axgit]`-wins-over-`[cgit]` precedence as `section`/`owner`/`desc`. Only `http://`/`https://`
+  values are exposed — anything else (in particular a `javascript:` URL, since this is the first
+  config-derived field that lands directly in an `href` rather than as text) reads back as `null`,
+  the same as if the key were unset, rather than erroring the whole repository's listing.
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated. The web page rendering it
+    is a follow-up commit (#69).
+
 ## Next up
 
-None queued — column sorting (#64/#65) and the `hide`/`ignore` flags (#66) are both closed. Pick
-the next piece from the two remaining "Repository index" items below (site-level readme/title/
-description, `homepage` + a configured `defbranch`), the two "Tree and blob" gaps (submodule links,
-single-child directory collapsing), the candidates below, or a fresh request.
+**Web-side homepage link** (DECISIONS.md #69, following up on #67's API): a `MetaLink` on
+`RepoSummary.tsx` and a third `IconLink` on `RepoList.tsx`'s per-row actions, both rendered only
+when `homepage` is non-null, `target="_blank"` + `rel="noopener noreferrer"`. Not a dedicated nav
+tab like cgit — `RepoNav.astro`'s tabs are static and every href is rewritten same-site by
+`fillRepoShell`, which doesn't fit an external, conditionally-present link.
+
+After that: the configured `defbranch` (behavioral, #68) and site-level readme/title/description
+are the only "Repository index" items left, plus the two "Tree and blob" gaps (submodule links,
+single-child directory collapsing). Pick the next piece from there, the candidates below, or a
+fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1227,8 +1243,7 @@ recorded separately below instead of listed as gaps.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
 - **Repository index**
   - Site-level readme / title / description (`root-readme`, `root-title`, `root-desc`).
-  - `homepage` (cgit gives it a dedicated nav tab), and a configured `defbranch` (axgit only derives
-    it from HEAD).
+  - A configured `defbranch` (axgit only derives it from HEAD) — `homepage` closed by #67/#69.
 
 ### cgit parity notes (merged or deliberately different — not planned)
 

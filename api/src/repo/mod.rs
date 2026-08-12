@@ -33,6 +33,12 @@ pub struct RepoInfo {
     /// From the repo config's `[axgit]` section, falling back to `[cgit]`.
     #[schema(required = true)]
     pub description: Option<String>,
+    /// From the repo config's `homepage` key, same `[axgit]`/`[cgit]`
+    /// precedence. `None` unless the configured value is a `http://` or
+    /// `https://` URL — it lands in an `href`, so any other scheme (in
+    /// particular `javascript:`) is dropped rather than served.
+    #[schema(required = true, example = "https://git.ptcookie.net")]
+    pub homepage: Option<String>,
     /// `None` for empty repositories (unborn HEAD).
     #[schema(required = true)]
     pub default_branch: Option<String>,
@@ -55,6 +61,8 @@ pub struct RepoSummary {
     pub owner: Option<String>,
     #[schema(required = true)]
     pub description: Option<String>,
+    #[schema(required = true, example = "https://git.ptcookie.net")]
+    pub homepage: Option<String>,
     #[schema(required = true)]
     pub default_branch: Option<String>,
     #[schema(required = true, example = "2026-07-24T13:06:00+09:00")]

@@ -83,6 +83,7 @@ Repository list. Equivalent to cgit's index.
       "section": "infra",
       "owner": "PtCookie",
       "description": "Compose project of Git server",
+      "homepage": null,
       "default_branch": "main",
       "last_modified": "2026-07-24T13:06:00+09:00"
     }
@@ -91,8 +92,11 @@ Repository list. Equivalent to cgit's index.
 }
 ```
 
-- `section`/`owner`/`description`: from the repo config's `[axgit]` section if present, else
-  `[cgit]`.
+- `section`/`owner`/`description`/`homepage`: from the repo config's `[axgit]` section if present,
+  else `[cgit]`.
+- `homepage`: `null` unless the configured value is a `http://` or `https://` URL — it's served
+  directly in an `<a href>`, so any other scheme (in particular `javascript:`) is dropped rather
+  than exposed.
 - `last_modified`: from the agefile (`info/web/last-modified`), else HEAD authordate.
 - `default_branch`/`last_modified`: `null` for an empty repository (no commits, no agefile).
 - `sort`: `name` (default), `desc`, `owner`, `idle`, or `section`, optionally prefixed with `-` to
@@ -120,6 +124,7 @@ branch/tag counts, and the clone URL.
   "section": "infra",
   "owner": "PtCookie",
   "description": "Compose project of Git server",
+  "homepage": null,
   "default_branch": "main",
   "last_modified": "2026-07-24T13:06:00+09:00",
   "head": "<sha>",

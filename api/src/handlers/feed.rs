@@ -307,6 +307,7 @@ mod tests {
             section: None,
             owner: None,
             description: None,
+            homepage: None,
             default_branch: None,
             last_modified: None,
         };
@@ -324,6 +325,7 @@ mod tests {
             section: None,
             owner: None,
             description: None,
+            homepage: None,
             default_branch: None,
             last_modified: None,
         };

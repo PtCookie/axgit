@@ -207,6 +207,40 @@ async fn list_repos_honours_the_configured_server_default_sort() {
 }
 
 #[tokio::test]
+async fn list_repos_reads_a_valid_homepage_url() {
+    let root = setup_fixtures();
+    common::set_meta(
+        &root.path().join("alpha.git"),
+        "cgit",
+        "homepage",
+        "https://example.com/alpha",
+    );
+
+    let json = list_repos(root.path()).await;
+
+    assert_eq!(json["repos"][0]["homepage"], "https://example.com/alpha");
+}
+
+#[tokio::test]
+async fn list_repos_drops_a_non_http_homepage_scheme() {
+    let root = setup_fixtures();
+    common::set_meta(
+        &root.path().join("alpha.git"),
+        "cgit",
+        "homepage",
+        "javascript:alert(1)",
+    );
+
+    let json = list_repos(root.path()).await;
+
+    assert_eq!(
+        json["repos"][0]["homepage"],
+        Value::Null,
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
 async fn list_repos_rejects_an_unknown_sort() {
     let root = setup_fixtures();
 

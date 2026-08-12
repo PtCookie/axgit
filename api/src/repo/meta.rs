@@ -45,6 +45,7 @@ pub fn read_repo_info(repo: &Repository, name: &str) -> RepoInfo {
         section: meta("section"),
         owner: meta("owner"),
         description: meta("desc"),
+        homepage: meta("homepage").filter(|url| is_http_url(url)),
         default_branch: default_branch(repo),
         last_modified: last_modified(repo),
     }
@@ -55,6 +56,15 @@ fn config_value(cfg: &git2::Config, key: &str) -> Option<String> {
     ["axgit", "cgit"]
         .iter()
         .find_map(|section| cfg.get_string(&format!("{section}.{key}")).ok())
+}
+
+/// `homepage` is operator config, but it lands directly in an `<a href>` —
+/// unlike `section`/`owner`/`desc`, which are always rendered as text, a
+/// `javascript:` value here would be a stored XSS. Only `http://`/`https://`
+/// pass; anything else reads as if `homepage` were unset (docs/DECISIONS.md
+/// #67), rather than a scan-time error over a single misconfigured repo.
+fn is_http_url(url: &str) -> bool {
+    url.starts_with("http://") || url.starts_with("https://")
 }
 
 /// Same `[axgit]`-wins-over-`[cgit]` precedence as [`config_value`], but for
@@ -148,6 +158,15 @@ pub(crate) fn format_rfc3339(zoned: &Zoned) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_http_url_should_accept_only_http_and_https() {
+        assert!(is_http_url("https://example.com"));
+        assert!(is_http_url("http://example.com"));
+        assert!(!is_http_url("javascript:alert(1)"));
+        assert!(!is_http_url("ftp://example.com"));
+        assert!(!is_http_url(""));
+    }
 
     fn bare_repo_with_flag(
         section: &str,

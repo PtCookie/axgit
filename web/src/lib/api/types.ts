@@ -971,6 +971,14 @@ export interface components {
       owner: string | null;
       /** @description From the repo config's `[axgit]` section, falling back to `[cgit]`. */
       description: string | null;
+      /**
+       * @description From the repo config's `homepage` key, same `[axgit]`/`[cgit]`
+       *     precedence. `None` unless the configured value is a `http://` or
+       *     `https://` URL — it lands in an `href`, so any other scheme (in
+       *     particular `javascript:`) is dropped rather than served.
+       * @example https://git.ptcookie.net
+       */
+      homepage: string | null;
       /** @description `None` for empty repositories (unborn HEAD). */
       default_branch: string | null;
       /**
@@ -991,6 +999,8 @@ export interface components {
       section: string | null;
       owner: string | null;
       description: string | null;
+      /** @example https://git.ptcookie.net */
+      homepage: string | null;
       default_branch: string | null;
       /** @example 2026-07-24T13:06:00+09:00 */
       last_modified: string | null;

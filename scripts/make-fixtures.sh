@@ -31,6 +31,8 @@ git init --quiet --bare --initial-branch=main "$BARE"
 git config --file "$BARE/config" cgit.section infra
 git config --file "$BARE/config" cgit.owner PtCookie
 git config --file "$BARE/config" cgit.desc "Compose project of Git server"
+# Exercises `RepoInfo.homepage`/`RepoSummary.homepage` (docs/DECISIONS.md #67).
+git config --file "$BARE/config" cgit.homepage "https://git.ptcookie.net/git-compose"
 
 W="$WORK/git-compose"
 git init --quiet --initial-branch=main "$W"

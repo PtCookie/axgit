@@ -145,6 +145,7 @@ pub async fn get_repo(
                 section: info.section,
                 owner: info.owner,
                 description: info.description,
+                homepage: info.homepage,
                 default_branch: info.default_branch,
                 last_modified: info.last_modified,
                 head,

@@ -96,6 +96,37 @@ async fn get_repo_returns_null_clone_url_without_base() {
 }
 
 #[tokio::test]
+async fn get_repo_reads_a_valid_homepage_url() {
+    let root = setup_fixtures();
+    let alpha = root.path().join("alpha.git");
+    common::set_meta(&alpha, "cgit", "homepage", "https://example.com/alpha");
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha").await;
+
+    assert_eq!(json["homepage"], "https://example.com/alpha");
+}
+
+#[tokio::test]
+async fn get_repo_drops_a_non_http_homepage_scheme() {
+    let root = setup_fixtures();
+    let alpha = root.path().join("alpha.git");
+    common::set_meta(&alpha, "cgit", "homepage", "javascript:alert(1)");
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha").await;
+
+    assert_eq!(json["homepage"], Value::Null, "unexpected response: {json}");
+}
+
+#[tokio::test]
+async fn get_repo_returns_null_homepage_when_unset() {
+    let root = setup_fixtures();
+
+    let json = get_ok(root.path(), "/api/v1/repos/alpha").await;
+
+    assert_eq!(json["homepage"], Value::Null, "unexpected response: {json}");
+}
+
+#[tokio::test]
 async fn get_repo_returns_404_for_missing_repo() {
     let root = setup_fixtures();
 

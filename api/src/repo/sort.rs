@@ -186,6 +186,7 @@ mod tests {
             section: None,
             owner: None,
             description: desc.map(str::to_owned),
+            homepage: None,
             default_branch: None,
             last_modified: last_modified.map(str::to_owned),
         }

@@ -3184,6 +3184,7 @@
           "section",
           "owner",
           "description",
+          "homepage",
           "default_branch",
           "last_modified"
         ],
@@ -3214,6 +3215,14 @@
             ],
             "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`."
           },
+          "homepage": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the repo config's `homepage` key, same `[axgit]`/`[cgit]`\nprecedence. `None` unless the configured value is a `http://` or\n`https://` URL — it lands in an `href`, so any other scheme (in\nparticular `javascript:`) is dropped rather than served.",
+            "example": "https://git.ptcookie.net"
+          },
           "default_branch": {
             "type": [
               "string",
@@ -3239,6 +3248,7 @@
           "section",
           "owner",
           "description",
+          "homepage",
           "default_branch",
           "last_modified",
           "head",
@@ -3268,6 +3278,13 @@
               "string",
               "null"
             ]
+          },
+          "homepage": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "https://git.ptcookie.net"
           },
           "default_branch": {
             "type": [
