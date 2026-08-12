@@ -20,5 +20,9 @@
       "Bash(git diff:*)",
       "Bash(git status)"
     ]
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true
   }
 }
