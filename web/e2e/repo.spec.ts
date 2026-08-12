@@ -151,7 +151,9 @@ test("shows the repository summary, README, and links to refs", async ({ page })
   await page.route("**/api/v1/repos/git-compose/refs", async (route) => {
     await route.fulfill({ json: REFS });
   });
-  await page.getByRole("link", { name: "Refs" }).click();
+  // `exact: true` disambiguates from the "All refs" Atom feed link, whose
+  // accessible name also contains "Refs".
+  await page.getByRole("link", { name: "Refs", exact: true }).click();
 
   await expect(page).toHaveURL("/git-compose/refs");
   // Now a link to the tag page (this commit) — `exact: true` disambiguates
@@ -345,7 +347,9 @@ test("tab navigation is client-side, not a full page reload", async ({ page }) =
     (window as unknown as { __navMarker?: number }).__navMarker = 1;
   });
 
-  await page.getByRole("link", { name: "Refs" }).click();
+  // `exact: true` disambiguates from the "All refs" Atom feed link, whose
+  // accessible name also contains "Refs".
+  await page.getByRole("link", { name: "Refs", exact: true }).click();
 
   await expect(page).toHaveURL("/git-compose/refs");
   // Now a link to the tag page (this commit) — `exact: true` disambiguates
