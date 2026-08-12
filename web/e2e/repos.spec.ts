@@ -55,6 +55,39 @@ test("follows a row's Tree quick link into the repository's tree page", async ({
   await expect(page).toHaveURL("/git-compose/tree");
 });
 
+test("clicking a column header re-sorts and writes ?sort= to the URL", async ({ page }) => {
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({ json: fixture });
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "git-compose", exact: true })).toBeVisible();
+
+  // Duplicate "Owner" headers exist, one per section table — any of them
+  // drives the same shared sort state, so `.first()` is enough.
+  await page.getByRole("button", { name: "Owner" }).first().click();
+
+  await expect(page).toHaveURL(/\?sort=owner$/);
+  await expect(page.getByRole("columnheader", { name: "Owner" }).first()).toHaveAttribute("aria-sort", "ascending");
+});
+
+test("deep-links a sorted list from ?sort=", async ({ page }) => {
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({ json: fixture });
+  });
+
+  await page.goto("/?sort=-idle");
+
+  await expect(page.getByRole("columnheader", { name: "Last activity" }).first()).toHaveAttribute(
+    "aria-sort",
+    "ascending",
+  );
+  // "-idle" flips idle's descending default to ascending (oldest first):
+  // dotfiles (2025) before git-compose/axgit (2026-07), scratch (null) last.
+  const names = await page.locator("table tbody a").allTextContents();
+  expect(names.filter((name) => name.trim() !== "")).toEqual(["dotfiles", "git-compose", "axgit", "scratch"]);
+});
+
 // robots.txt is a real static file (`web/public/robots.txt`), served ahead of
 // the page-shell fallback (`api/src/routes.rs`) — steers crawlers away from
 // the expensive, scan-budgeted endpoints (search/stats/blame/diff, DECISIONS

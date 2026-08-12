@@ -1,3 +1,5 @@
+import { CaretDownIcon } from "@phosphor-icons/react/dist/ssr/CaretDown";
+import { CaretUpIcon } from "@phosphor-icons/react/dist/ssr/CaretUp";
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ClockCounterClockwise";
 import { FolderOpenIcon } from "@phosphor-icons/react/dist/ssr/FolderOpen";
 import { useEffect, useState } from "react";
@@ -10,6 +12,7 @@ import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { filterRepos } from "@/lib/repo-filter";
 import { paramFromSearch } from "@/lib/repo-param";
 import { logHref, treeHref } from "@/lib/repo-href";
+import { defaultOrder, orderToParam, parseOrder, sortRepos, type RepoOrder, type RepoSortKey } from "@/lib/repo-sort";
 import IconLink from "@/components/IconLink";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,6 +22,21 @@ const UNSECTIONED_LABEL = "Other";
 /** Query-string param the filter box reads its initial value from and keeps
  *  in sync with (`?q=`, docs/DECISIONS.md #25). */
 const QUERY_PARAM = "q";
+/** Query-string param the sortable column headers read/write
+ *  (`?sort=`, docs/DECISIONS.md #65) — the client-side twin of the API's own
+ *  `?sort=` (docs/DECISIONS.md #64), applied here in memory rather than by
+ *  refetching, since the whole list is already in hand. */
+const SORT_PARAM = "sort";
+
+/** Sortable columns, in header order. `section` has no header button — it's
+ *  the group heading (`groupBySection`), not a column — but stays reachable
+ *  via `?sort=section` or `AXGIT_REPOSITORY_SORT`. */
+const SORT_COLUMNS: readonly { key: RepoSortKey; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "desc", label: "Description" },
+  { key: "owner", label: "Owner" },
+  { key: "idle", label: "Last activity" },
+];
 
 interface RepoGroup {
   section: string | null;
@@ -38,12 +56,48 @@ function groupBySection(repos: RepoInfo[]): RepoGroup[] {
   }
 
   // section: null ("Other") always sorts last. Other groups keep their first-appearance order
-  // (= the repos list's sort order).
+  // of whatever array `repos` was passed in (the API's order, or a client-side re-sort of it).
   groups.sort((a, b) => (a.section === null ? 1 : b.section === null ? -1 : 0));
   return groups;
 }
 
-type State = { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; repos: RepoInfo[] };
+type State =
+  { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; repos: RepoInfo[]; sort: string };
+
+/** A clickable `TableHead` for a sortable column: toggles direction when
+ *  already active, else switches to `sortKey`'s own default direction
+ *  (`defaultOrder`) — clicking a different column never inherits the
+ *  previous one's direction. */
+function SortableHead({
+  label,
+  sortKey,
+  order,
+  onSort,
+}: {
+  label: string;
+  sortKey: RepoSortKey;
+  order: RepoOrder;
+  onSort: (key: RepoSortKey) => void;
+}) {
+  const active = order.key === sortKey;
+  return (
+    <TableHead aria-sort={active ? (order.reverse ? "descending" : "ascending") : "none"}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="text-foreground hover:text-foreground inline-flex items-center gap-1 font-medium"
+      >
+        {label}
+        {active &&
+          (order.reverse ? (
+            <CaretDownIcon className="size-3" aria-hidden="true" />
+          ) : (
+            <CaretUpIcon className="size-3" aria-hidden="true" />
+          ))}
+      </button>
+    </TableHead>
+  );
+}
 
 /** Also rendered statically into the page shell as the island's
  *  `slot="fallback"`, so the prerendered HTML is not blank. The filter input
@@ -69,6 +123,13 @@ export default function RepoList() {
   // here instead of a dedicated `props` default since this is the one island
   // that isn't mounted on a `/{repo}/…` shell.
   const [query, setQuery] = useState(() => paramFromSearch(QUERY_PARAM, window.location.search) ?? "");
+  // `undefined` means "no client-side override" — the fetched list is
+  // already in whatever order the API applied (`state.sort`, its own
+  // `?sort=`/`AXGIT_REPOSITORY_SORT` default). Set only once the user clicks
+  // a column header, or seeded from a deep-linked `?sort=`.
+  const [sortParam, setSortParam] = useState<string | undefined>(() =>
+    paramFromSearch(SORT_PARAM, window.location.search),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +137,7 @@ export default function RepoList() {
     listRepos()
       .then((response) => {
         if (!cancelled) {
-          setState({ status: "data", repos: response.repos });
+          setState({ status: "data", repos: response.repos, sort: response.sort });
         }
       })
       .catch((error: unknown) => {
@@ -111,6 +172,20 @@ export default function RepoList() {
     }
   }, [query]);
 
+  // Mirrors `?sort=` the same way the effect above mirrors `?q=` — same
+  // `replaceState`-not-`pushState` rationale (docs/DECISIONS.md #25).
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (sortParam === undefined) {
+      url.searchParams.delete(SORT_PARAM);
+    } else {
+      url.searchParams.set(SORT_PARAM, sortParam);
+    }
+    if (url.href !== window.location.href) {
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }, [sortParam]);
+
   if (state.status === "loading") {
     return <RepoListSkeleton />;
   }
@@ -127,11 +202,24 @@ export default function RepoList() {
     return <p className="text-muted-foreground text-sm">No repositories found.</p>;
   }
 
-  const filtered = filterRepos(state.repos, query);
+  // A client-side override (a header click, or a deep-linked `?sort=`) wins;
+  // otherwise the fetched order — and `state.sort` — reflect the API's own
+  // `?sort=`/`AXGIT_REPOSITORY_SORT` default. An unparseable `sortParam`
+  // (an unrecognized deep link) falls back the same way as if it were unset.
+  const clientOrder = sortParam !== undefined ? parseOrder(sortParam) : undefined;
+  const order = clientOrder ?? parseOrder(state.sort) ?? defaultOrder("name");
+  const displayedRepos = clientOrder ? sortRepos(state.repos, clientOrder) : state.repos;
+
+  function handleSort(key: RepoSortKey) {
+    const next = order.key === key ? { key, reverse: !order.reverse } : defaultOrder(key);
+    setSortParam(orderToParam(next));
+  }
+
+  const filtered = filterRepos(displayedRepos, query);
   // `filterRepos` returns the same array reference when the query is
   // empty/whitespace-only — a cheap way to tell "no filter active" apart
   // from "filter active, matched everything" without recomputing.
-  const isFiltered = filtered !== state.repos;
+  const isFiltered = filtered !== displayedRepos;
 
   return (
     <div className="space-y-4">
@@ -157,10 +245,9 @@ export default function RepoList() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Owner</TableHead>
-                    <TableHead>Last activity</TableHead>
+                    {SORT_COLUMNS.map(({ key, label }) => (
+                      <SortableHead key={key} sortKey={key} label={label} order={order} onSort={handleSort} />
+                    ))}
                     <TableHead className="w-px">
                       <span className="sr-only">Links</span>
                     </TableHead>

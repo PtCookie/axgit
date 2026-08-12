@@ -2456,3 +2456,47 @@ the API; the web page's sortable headers are a follow-up (#65).
 - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /api/v1/repos` gained
   `?sort=` and a `sort` response field, plus `400 invalid_param`). The web page surfacing sortable
   headers is a follow-up commit (#65).
+
+## #65 Sortable repository-index column headers
+
+Web-side follow-up to #64: `RepoList.tsx`'s Name/Description/Owner/Last activity headers become
+clickable, closing the "Column sorting" gap end to end.
+
+- **Client-side re-sort, not a refetch.** `GET /api/v1/repos` already returns every repository in
+  one response (#25's same premise), so clicking a header re-sorts the array already in memory —
+  `web/src/lib/repo-sort.ts`, a line-for-line mirror of `repo/sort.rs`'s rules (nulls-last
+  regardless of direction, `idle`'s reversed default, `name`-ascending tiebreak, comparing parsed
+  instants rather than the formatted `last_modified` string). A client-side sort and a server-side
+  one of the same order never disagree.
+- **`?sort=` is optional client state layered on top of the server's own order**, not a value the
+  client must always carry. `RepoList` seeds `sortParam` from `?sort=` exactly once
+  (`paramFromSearch`, same idiom as `?q=`); while it's unset, the rendered order — and which header
+  shows `aria-sort` — is whatever the API actually returned (`ReposResponse.sort`, echoed back from
+  #64), not a client-recomputed guess of the server default. This is what makes a server operator's
+  `AXGIT_REPOSITORY_SORT` visible in the UI without the web build knowing it exists. An unparseable
+  `sortParam` (a stale or hand-edited deep link) falls back the same way as if it were absent, same
+  spirit as `filterRepos`'s empty-query no-op.
+- **Clicking a different column always lands on that column's own default direction**
+  (`defaultOrder`), never inheriting the previous column's direction — clicking "Owner" after
+  "-idle" gives ascending owner, not descending. Clicking the *active* column toggles direction.
+  `?sort=` is written via `history.replaceState`, not `pushState` — same #25 rationale (a history
+  entry per click would fight the back button, and `<ClientRouter />` only reads `location` on a
+  navigation, never observing the in-between state).
+- **`section` has no header button.** It's `groupBySection`'s heading, not a table column — a
+  clickable "Section" header would sort rows within each already-section-grouped table, which does
+  nothing visible. `?sort=section`/`AXGIT_REPOSITORY_SORT=section` still work (they reorder which
+  section appears first, and each section's own row order), just not from a header click.
+- **No `DropdownMenu`.** `ThemeMenu.tsx`'s own note explains why: importing base-ui's `Menu` pulls
+  in a ~137 KB floating-ui chunk, kept off every page except the one that already needs it. Plain
+  `<button>`s inside each `<TableHead>` avoid the import entirely.
+- **Found and fixed a real accessibility gap while wiring this up**: `components/ui/table.tsx`'s
+  `TableHead` rendered a bare `<th>` with no `scope`. Per HTML-AAM a bare `<th>` should still map to
+  the `columnheader` role, but Chromium's actual implementation doesn't do so reliably without an
+  explicit `scope` — verified empirically with a minimal repro (a plain `<table><thead><tr><th>`
+  outside this codebase's styling). Every `TableHead` in this app is a column header inside a
+  `<thead>` row, so `scope="col"` is now the component's default (still overridable via `props`).
+  This is what makes `getByRole("columnheader", …)` — used by this commit's own tests — resolve at
+  all; it was silently broken for every existing table (Stats, Diff, Refs) before this fix, not
+  just the new sortable one.
+- No API contract change — `web/src/lib/repo-sort.ts`, `RepoList.tsx`, and the `table.tsx` `scope`
+  fix only.

@@ -14,6 +14,17 @@ vi.mock("@/lib/api/repos", () => ({
 
 const mockedListRepos = vi.mocked(listRepos);
 
+/** Repository name links, in document order across every section's table —
+ *  `IconLink`s render in the same cell but carry no text content, so a plain
+ *  text filter isolates the name column without needing to scope per
+ *  section. Reads from `render()`'s own `container`, not the global
+ *  `document` — browser mode runs each test in its own frame. */
+function visibleRepoOrder(container: HTMLElement): string[] {
+  return [...container.querySelectorAll("table tbody a")]
+    .map((a) => a.textContent?.trim() ?? "")
+    .filter((text) => text !== "");
+}
+
 describe("RepoList", () => {
   beforeEach(() => {
     mockedListRepos.mockReset();
@@ -51,7 +62,7 @@ describe("RepoList", () => {
   });
 
   it("shows an empty-state message when there are no repositories", async () => {
-    mockedListRepos.mockResolvedValue({ repos: [] });
+    mockedListRepos.mockResolvedValue({ repos: [], sort: "name" });
     render(<RepoList />);
 
     await expect.element(page.getByText("No repositories found.")).toBeVisible();
@@ -97,5 +108,50 @@ describe("RepoList", () => {
     await expect.element(input).toHaveValue("axgit");
     await expect.element(page.getByRole("link", { name: "axgit", exact: true })).toBeVisible();
     await expect.element(page.getByRole("link", { name: "git-compose", exact: true })).not.toBeInTheDocument();
+  });
+
+  it("marks the active column via aria-sort, matching the API's own order", async () => {
+    mockedListRepos.mockResolvedValue(fixture);
+    await render(<RepoList />);
+
+    await expect
+      .element(page.getByRole("columnheader", { name: "Name" }).first())
+      .toHaveAttribute("aria-sort", "ascending");
+    await expect
+      .element(page.getByRole("columnheader", { name: "Owner" }).first())
+      .toHaveAttribute("aria-sort", "none");
+  });
+
+  it("clicking a column header re-sorts client-side and writes ?sort= to the URL", async () => {
+    mockedListRepos.mockResolvedValue(fixture);
+    const { container } = await render(<RepoList />);
+    await expect.element(page.getByText("git-compose")).toBeVisible();
+
+    expect(visibleRepoOrder(container)).toEqual(["git-compose", "axgit", "dotfiles", "scratch"]);
+
+    await userEvent.click(page.getByRole("button", { name: "Owner" }).first());
+
+    expect(new URLSearchParams(window.location.search).get("sort")).toBe("owner");
+    // Owner ascending: both "PtCookie" repos (tie broken by name: axgit
+    // before git-compose), then both `null`-owner repos (dotfiles, scratch),
+    // `null` always last regardless of direction.
+    expect(visibleRepoOrder(container)).toEqual(["axgit", "git-compose", "dotfiles", "scratch"]);
+    await expect
+      .element(page.getByRole("columnheader", { name: "Owner" }).first())
+      .toHaveAttribute("aria-sort", "ascending");
+  });
+
+  it("deep-links a sorted list from an existing ?sort=", async () => {
+    window.history.replaceState(null, "", "?sort=-idle");
+    mockedListRepos.mockResolvedValue(fixture);
+    const { container } = await render(<RepoList />);
+    await expect.element(page.getByText("git-compose")).toBeVisible();
+
+    // "-idle" flips idle's own descending default to ascending (oldest
+    // last_modified first); `null` (scratch) still sorts last.
+    expect(visibleRepoOrder(container)).toEqual(["dotfiles", "git-compose", "axgit", "scratch"]);
+    await expect
+      .element(page.getByRole("columnheader", { name: "Last activity" }).first())
+      .toHaveAttribute("aria-sort", "ascending");
   });
 });

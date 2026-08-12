@@ -32,5 +32,6 @@
             "default_branch": null,
             "last_modified": null
         }
-    ]
+    ],
+    "sort": "name"
 }

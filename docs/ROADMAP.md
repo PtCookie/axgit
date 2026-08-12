@@ -1156,20 +1156,27 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   produces a different `ETag` automatically.
   - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated.
 
+- **Sortable repository-index column headers** (DECISIONS.md #65), the web-side follow-up to #64
+  and the last piece of the "Column sorting" cgit-parity gap. `RepoList.tsx`'s Name/Description/
+  Owner/Last activity headers are now clickable, re-sorting the already-fetched list in memory (no
+  refetch) via a new `web/src/lib/repo-sort.ts` mirroring `repo/sort.rs`'s rules exactly. `?sort=`
+  is optional client state layered on the server's own order — while unset, both the rendered order
+  and the active `aria-sort` column reflect `ReposResponse.sort` (so `AXGIT_REPOSITORY_SORT` is
+  visible without the web build knowing about it), written via `history.replaceState` like `?q=`.
+  Clicking a new column always starts at that column's own default direction; `section` has no
+  header button (it's the group heading) but stays reachable via `?sort=section`/
+  `AXGIT_REPOSITORY_SORT`. No `DropdownMenu` (keeps `ThemeMenu.tsx`'s floating-ui chunk off `/`).
+  Along the way, fixed a real accessibility gap in the shared `components/ui/table.tsx`: `TableHead`
+  now sets `scope="col"` — Chromium wasn't exposing the `columnheader` role on a bare `<th>` without
+  it, silently breaking `getByRole("columnheader", …)` on every table in the app, not just this one.
+  No API contract change.
+
 ## Next up
 
-**Web-side sortable repository-index headers** (DECISIONS.md #65, following up on #64's API): a
-pure `web/src/lib/repo-sort.ts::sortRepos` mirroring the Rust rules, `RepoList.tsx` reading/writing
-`?sort=` alongside the existing `?q=` (`history.replaceState`, no refetch — sorting an
-already-fetched array happens in memory like `filterRepos`), and clickable `TableHead` buttons for
-Name/Description/Owner/Last activity with `aria-sort`. `section` has no header button (it's the
-group heading, not a column) but stays reachable via `?sort=section`/`AXGIT_REPOSITORY_SORT`. No
-`DropdownMenu` — see `ThemeMenu.tsx`'s note on keeping its ~137 KB floating-ui chunk off `/`.
-
-After that: the remaining three "Repository index" cgit-parity gaps (site-level readme/title/
-description, `hide`/`ignore` repo flags, `homepage` + a configured `defbranch`) and the two "Tree
-and blob" gaps (submodule links, single-child directory collapsing). Pick the next piece of work
-from there, from the candidates below, or from a fresh request.
+None queued — column sorting (#64/#65) is now closed end to end. Pick the next piece from the
+three remaining "Repository index" items below (site-level readme/title/description, `hide`/
+`ignore` repo flags, `homepage` + a configured `defbranch`), the two "Tree and blob" gaps (submodule
+links, single-child directory collapsing), the candidates below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 

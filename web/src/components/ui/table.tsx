@@ -45,6 +45,14 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   return (
     <th
       data-slot="table-head"
+      // Every `<TableHead>` in this codebase is a column header inside a
+      // `<thead>` row — without an explicit `scope`, Chromium's a11y tree
+      // maps a bare `<th>` to the generic "cell" role instead of
+      // "columnheader" (verified empirically; HTML-AAM says it shouldn't
+      // need this, but Chromium's implementation does), which silently
+      // breaks `getByRole("columnheader")` lookups. `scope="col"` is
+      // overridable via `props` for the rare row-header case.
+      scope="col"
       className={cn(
         "text-foreground h-12 px-3 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0",
         className,
