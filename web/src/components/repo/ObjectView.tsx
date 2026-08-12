@@ -136,8 +136,12 @@ export default function ObjectView({ repo, oid }: ObjectViewProps) {
                   </TableCell>
                   <TableCell className="font-medium">
                     {/* A gitlink entry's sha is a commit in another
-                        repository — nothing in this one to link to, same as
-                        `TreeView.tsx`'s submodule row. */}
+                        repository — nothing in this one to link to. Unlike
+                        `TreeView.tsx`'s submodule row, `module_link` is
+                        always `null` here too: this tree was reached by its
+                        own oid, with no path context to resolve a
+                        `module-link` template against (docs/DECISIONS.md
+                        #72). */}
                     {entry.type === "commit" ? (
                       <span title="submodule">{entry.name}</span>
                     ) : (

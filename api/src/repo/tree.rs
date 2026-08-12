@@ -6,6 +6,7 @@ use git2::{Commit, Repository};
 use serde::Serialize;
 use utoipa::ToSchema;
 
+use super::submodule;
 use crate::error::ApiError;
 
 const MODE_TREE: i32 = 0o040000;
@@ -52,6 +53,15 @@ pub struct TreeEntryInfo {
     /// entry's own directory, exactly as stored; clients resolve it.
     #[schema(required = true)]
     pub target: Option<String>,
+    /// Link for a submodule (gitlink) row, resolved from a configured
+    /// `module-link` template or a `.gitmodules` fallback
+    /// (`repo::submodule`, docs/DECISIONS.md #72). `None` for every other
+    /// kind, and `None` for a gitlink with no applicable template and no
+    /// usable `.gitmodules` URL. Always `None` under `GET /objects/{oid}`,
+    /// which reaches a tree by its own oid and so has no path context to
+    /// resolve a template against.
+    #[schema(required = true)]
+    pub module_link: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -76,7 +86,8 @@ fn kind_of(mode: i32) -> EntryKind {
 /// Builds one tree's entries, trees first then by name — shared by
 /// [`list_tree`] and `repo::object::read_object`'s tree case (a tree reached
 /// directly by its own oid has no commit/path context to build the rest of
-/// [`TreeListing`] from, just the entries).
+/// [`TreeListing`] from, just the entries, or to resolve `module_link`
+/// against — that caller's gitlinks always report `None`).
 pub(crate) fn entries_of(
     repo: &Repository,
     tree: &git2::Tree,
@@ -115,6 +126,7 @@ pub(crate) fn entries_of(
             sha: entry.id().to_string(),
             size,
             target,
+            module_link: None,
         });
     }
     entries.sort_by(|a, b| {
@@ -139,7 +151,8 @@ pub fn list_tree(repo: &Repository, commit: &Commit, path: &str) -> Result<TreeL
             .ok_or_else(|| ApiError::PathNotFound(path.to_owned()))?
     };
 
-    let entries = entries_of(repo, &tree)?;
+    let mut entries = entries_of(repo, &tree)?;
+    submodule::fill_module_links(repo, commit, path, &mut entries);
 
     Ok(TreeListing {
         sha: commit.id().to_string(),

@@ -63,8 +63,30 @@ fn config_value(cfg: &git2::Config, key: &str) -> Option<String> {
 /// `javascript:` value here would be a stored XSS. Only `http://`/`https://`
 /// pass; anything else reads as if `homepage` were unset (docs/DECISIONS.md
 /// #67), rather than a scan-time error over a single misconfigured repo.
-fn is_http_url(url: &str) -> bool {
+///
+/// The shared "does this belong in an `href`" primitive: `homepage` uses it
+/// as-is, and `repo::submodule`'s `.gitmodules` fallback reuses it verbatim
+/// (docs/DECISIONS.md #72) — a `.gitmodules` `url` is commonly a local
+/// filesystem path (`/srv/git/dep.git`) or an SSH remote, neither of which
+/// belongs in an href, so unlike a `module-link` *template* result
+/// (`submodule::is_link_href`, deliberately looser), a `.gitmodules` URL gets
+/// no root-relative allowance.
+pub(crate) fn is_http_url(url: &str) -> bool {
     url.starts_with("http://") || url.starts_with("https://")
+}
+
+/// The `module-link` template for a gitlink at `path`, most specific first:
+/// `axgit.<path>.module-link` → `cgit.<path>.module-link` →
+/// `axgit.module-link` → `cgit.module-link` (docs/DECISIONS.md #72). Both
+/// levels go through [`config_value`], so the `[axgit]`-wins-over-`[cgit]`
+/// rule (docs/DECISIONS.md #5) is inherited rather than restated — which
+/// means path specificity is checked *before* section precedence: a
+/// `[cgit "<path>"]` entry beats a repo-wide `[axgit]` one. The first level
+/// that yields a value stops the search, even if that value is empty or
+/// otherwise unusable — an empty per-path value is how an operator
+/// suppresses a repo-wide template for one path.
+pub(crate) fn module_link_template(cfg: &git2::Config, path: &str) -> Option<String> {
+    config_value(cfg, &format!("{path}.module-link")).or_else(|| config_value(cfg, "module-link"))
 }
 
 /// Same `[axgit]`-wins-over-`[cgit]` precedence as [`config_value`], but for
@@ -232,5 +254,90 @@ mod tests {
             .expect("failed to set axgit.hide");
         // [axgit] wins (docs/DECISIONS.md #5), so the repo is listed again.
         assert!(should_list(&repo));
+    }
+
+    fn bare_repo() -> (tempfile::TempDir, Repository) {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let repo = Repository::init_bare(dir.path()).expect("failed to init bare repo");
+        (dir, repo)
+    }
+
+    fn set_str(repo: &Repository, key: &str, value: &str) {
+        repo.config()
+            .and_then(|mut config| config.set_str(key, value))
+            .expect("failed to set config string");
+    }
+
+    fn snapshot(repo: &Repository) -> git2::Config {
+        repo.config()
+            .and_then(|mut config| config.snapshot())
+            .expect("failed to snapshot config")
+    }
+
+    #[test]
+    fn module_link_template_falls_back_through_all_four_keys() {
+        let (_dir, repo) = bare_repo();
+        // Nothing set at all.
+        assert_eq!(module_link_template(&snapshot(&repo), "vendor/dep"), None);
+
+        // Repo-wide cgit only.
+        set_str(&repo, "cgit.module-link", "cgit-wide");
+        assert_eq!(
+            module_link_template(&snapshot(&repo), "vendor/dep").as_deref(),
+            Some("cgit-wide")
+        );
+
+        // Repo-wide axgit beats repo-wide cgit.
+        set_str(&repo, "axgit.module-link", "axgit-wide");
+        assert_eq!(
+            module_link_template(&snapshot(&repo), "vendor/dep").as_deref(),
+            Some("axgit-wide")
+        );
+
+        // Per-path cgit beats repo-wide axgit — specificity before section
+        // precedence.
+        set_str(&repo, "cgit.vendor/dep.module-link", "cgit-path");
+        assert_eq!(
+            module_link_template(&snapshot(&repo), "vendor/dep").as_deref(),
+            Some("cgit-path")
+        );
+
+        // Per-path axgit beats everything.
+        set_str(&repo, "axgit.vendor/dep.module-link", "axgit-path");
+        assert_eq!(
+            module_link_template(&snapshot(&repo), "vendor/dep").as_deref(),
+            Some("axgit-path")
+        );
+
+        // A different path is untouched by the per-path keys above and
+        // still resolves to the repo-wide template.
+        assert_eq!(
+            module_link_template(&snapshot(&repo), "other/dep").as_deref(),
+            Some("axgit-wide")
+        );
+    }
+
+    #[test]
+    fn module_link_template_handles_a_dotted_path() {
+        let (_dir, repo) = bare_repo();
+        set_str(&repo, "axgit.vendor/lib.js.module-link", "dotted");
+        assert_eq!(
+            module_link_template(&snapshot(&repo), "vendor/lib.js").as_deref(),
+            Some("dotted")
+        );
+    }
+
+    #[test]
+    fn module_link_template_empty_per_path_value_suppresses_repo_wide() {
+        let (_dir, repo) = bare_repo();
+        set_str(&repo, "axgit.module-link", "axgit-wide");
+        set_str(&repo, "axgit.vendor/dep.module-link", "");
+        // The per-path key wins even though its value is empty — the caller
+        // (submodule::fill_module_links) treats that as explicit suppression
+        // rather than falling through to the repo-wide template.
+        assert_eq!(
+            module_link_template(&snapshot(&repo), "vendor/dep").as_deref(),
+            Some("")
+        );
     }
 }

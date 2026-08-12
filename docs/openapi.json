@@ -3742,7 +3742,8 @@
           "mode",
           "sha",
           "size",
-          "target"
+          "target",
+          "module_link"
         ],
         "properties": {
           "name": {
@@ -3775,6 +3776,13 @@
               "null"
             ],
             "description": "Symlink target path; symlinks only, `None` otherwise — also `None` for\na non-UTF-8 target or one past `SYMLINK_TARGET_LIMIT`. Relative to the\nentry's own directory, exactly as stored; clients resolve it."
+          },
+          "module_link": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Link for a submodule (gitlink) row, resolved from a configured\n`module-link` template or a `.gitmodules` fallback\n(`repo::submodule`, docs/DECISIONS.md #72). `None` for every other\nkind, and `None` for a gitlink with no applicable template and no\nusable `.gitmodules` URL. Always `None` under `GET /objects/{oid}`,\nwhich reaches a tree by its own oid and so has no path context to\nresolve a template against."
           }
         }
       },

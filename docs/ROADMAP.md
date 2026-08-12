@@ -1252,13 +1252,25 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   (what the e2e `webServer` runs) never executes the server-side injection itself, the same known
   gap #63 already left for its own `<link>`s. No API contract change.
 
+- **Submodule (`module-link`) links** (DECISIONS.md #72), closing the "Submodule (gitlink) links"
+  cgit-parity item under "Tree and blob". `TreeEntryInfo` gains `module_link: Option<String>`,
+  resolved per gitlink by a new `api/src/repo/submodule.rs`: a configured template
+  (`axgit.<path>.module-link` → `cgit.<path>.module-link` → `axgit.module-link` →
+  `cgit.module-link`, `%s`/`%s` substituted with the gitlink's full path and sha) first, an axgit
+  extension reading `.gitmodules`'s `url` as a fallback when no config key is set at all — cgit
+  itself never reads `.gitmodules`. Two distinct href guards (strict `http(s)`-only for
+  `.gitmodules`, a looser one for the config-template result that also accepts a root-relative `/…`
+  but rejects protocol-relative and relative shapes). `TreeView.tsx`'s `entryHref` links the row when
+  present, with `rel="noopener noreferrer"` + `data-astro-reload` (verified against
+  `<ClientRouter />`'s own source) so a same-site destination gets a full page load instead of being
+  spliced into the axgit shell. `GET /objects/{oid}`'s tree case always reports `null` — no path
+  context to resolve a template against.
+
 ## Next up
 
-None queued — **every cgit-parity item under "Repository index" is now closed** (#64-#71). Only
-two cgit-parity gaps remain overall, both under "Tree and blob": submodule (gitlink) links
-(`TreeView.tsx`'s `entryHref` returns `undefined` for `commit` entries, rendering unlinked text) and
-single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row). Pick one of
-those, a candidate below, or a fresh request.
+None queued — **every cgit-parity item under "Repository index" is now closed** (#64-#71), and
+submodule links close one more (#72). Only one cgit-parity gap remains: single-child directory
+collapsing, still under "Tree and blob". Pick that, a candidate below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1294,8 +1306,6 @@ the candidates above. Items that turned out to be merged, or built differently o
 recorded separately below instead of listed as gaps.
 
 - **Tree and blob**
-  - Submodule (gitlink) links (`module-link`, `repo.module-link.<path>`) — `TreeView.tsx`'s
-    `entryHref` returns `undefined` for `commit` entries, rendering unlinked text.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
 
 ### cgit parity notes (merged or deliberately different — not planned)

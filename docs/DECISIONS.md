@@ -2757,3 +2757,130 @@ Web-side follow-up to #70, and the close of the last open "Repository index" cgi
   `ReadmeMarkdown.tsx`/`ReadmeView.tsx` (refactored), `web/src/components/SiteIntro.tsx` (new),
   `web/src/lib/api/site.ts` (new), `web/src/lib/api/schemas.ts` (`SiteInfo`/`SiteReadme` exports),
   `web/src/layouts/Layout.astro`, and `web/src/pages/index.astro` only.
+
+## #72 Submodule (`module-link`) links
+
+Closes the "Submodule (gitlink) links" cgit-parity gap under "Tree and blob" (`module-link` /
+`repo.module-link.<path>`) — after this, single-child directory collapsing is the only cgit-parity
+item left open. `TreeEntryInfo` already carried everything needed except the link destination
+itself: a gitlink's `sha` (the submodule commit, in the *other* repository) and `name`.
+
+- **Two sources, config first, `.gitmodules` as a fallback — an axgit extension cgit itself doesn't
+  have.** cgit only ever reads `cgitrc`; axgit additionally reads `.gitmodules` from the resolved
+  commit when no config template applies, using the mapped `url` verbatim if it's `http://`/
+  `https://`. This exists because a config template requires an operator to go add one, one path at
+  a time, while `.gitmodules` is content the repository already carries — a submodule that's a
+  public GitHub/GitLab project gets a working link with zero configuration.
+- **Four config keys, but no new precedence machinery.** `axgit.<path>.module-link` →
+  `cgit.<path>.module-link` → `axgit.module-link` → `cgit.module-link`, where `<path>` is the
+  gitlink's full repo-relative path. This is exactly `meta::config_value`'s existing
+  `[axgit]`-wins-over-`[cgit]` lookup (#5), called once per level
+  (`meta::module_link_template(cfg, path)`), so path specificity is checked *before* section
+  precedence — a `[cgit "<path>"]` entry beats a repo-wide `[axgit]` one. `git config` itself
+  accepts a `/`- and `.`-bearing subsection like `axgit.vendor/lib.js.module-link` without issue
+  (verified against the real `git config` binary before committing to this key shape) — libgit2
+  splits a key on its *first* and *last* dot, so a dotted path round-trips correctly, and the
+  subsection is case-sensitive, matching how a tree path should compare.
+- **The first applicable source wins, even when its value turns out to be unusable — it never falls
+  through.** If any of the four config keys is set at all, that's the answer (`Some(link)`, possibly
+  `None` after validation), full stop; `.gitmodules` is only consulted when *no* config key is set.
+  This buys one thing for free: an operator sets `axgit.<path>.module-link` to the empty string to
+  explicitly suppress a repo-wide template (or a `.gitmodules` mapping) for one path, without that
+  degrading into "well, try the next source instead". A typo'd or since-broken template also stays
+  silently linkless rather than surprising the operator with a `.gitmodules` URL nobody asked for.
+- **Template grammar: two `%s` placeholders (path, then sha), `%%` for a literal `%`, everything else
+  involving `%` makes the whole template unusable.** A third `%s`, an unrecognized specifier
+  (`%d`, `%1$s`, …), or a trailing lone `%` all return `None` rather than substituting an empty
+  string or guessing — "no link" is diagnosable in the tree view (the row just isn't a link);
+  "silently wrong link" is not. There's no cgit behavior to match here either: unlike C's `printf`,
+  which would read whatever happens to be on the stack for a third argument, there is nothing
+  meaningful to read.
+- **Substituted values are inserted verbatim, not percent-encoded — matching cgit's own
+  `html_attrf`-style substitution closely enough that an existing cgitrc value can usually be pasted
+  in unchanged.** This is safe specifically because the *scheme* comes from the template, not from
+  the substituted path, and the href guard below runs on the **expanded result**, not the template
+  string — a gitlink literally named `javascript:alert(1)` under a bare `%s` template is still
+  rejected, because by the time the guard runs, `%s` has already become that string and gets
+  filtered like any other value.
+- **Two distinct href guards, not one.** `meta::is_http_url` (promoted from private to
+  `pub(crate)`, now documented as the shared "does this belong in an `href`" primitive) is kept as
+  the strict `http(s)`-only check for `.gitmodules`, since a `.gitmodules` `url` is routinely a local
+  filesystem path (`/srv/git/dep.git`) or an SSH remote (`git@host:owner/repo.git`) — neither
+  belongs in a same-site href. A separate, deliberately looser `submodule::is_link_href` covers the
+  config-template result: it additionally accepts a single leading `/` (root-relative), because
+  cgit's own documented `module-link` example is exactly that shape
+  (`/git/%s/commit/?id=%s`) — the natural form for an operator whose forge sits behind the same
+  reverse proxy as axgit.
+  - **A leading `/` immediately followed by another `/` or a `\` is rejected**, not just bare `//`:
+    both `//evil.com/x` and `/\evil.com/x` are folded into "protocol-relative" by browser URL
+    parsers (a backslash is normalized to a forward slash in the URL's "special authority slashes"
+    state), so either would navigate off-site despite starting with a single `/`.
+  - **A relative template is rejected outright** — cgit's *other* documented example
+    (`./?repo=%s&page=commit&id=%s`) is exactly this shape, and it's the one cgitrc value that
+    genuinely cannot be pasted into axgit unchanged: a relative href resolves against whatever tree
+    path the browser happens to be showing (`/{repo}/tree/a/b/c`), so the same config value would
+    point somewhere different depending on how deep into the tree the gitlink is nested — not
+    something one repo-wide (or even per-path) string can mean consistently.
+- **`.gitmodules` is hand-parsed, not read via git2/libgit2's own submodule API.** Verified before
+  writing the parser: git2 0.20.4's `Config` has no in-memory/buffer constructor (`open`/`add_file`
+  are path-based only), and libgit2's own `gitmodules_snapshot` (`submodule.c`) returns
+  `GIT_ENOTFOUND` whenever `git_repository_workdir(repo) == NULL` — which is unconditionally true for
+  every bare repository axgit ever opens. `Repository::submodules()` is therefore a dead end here,
+  and axgit reads the blob directly. The parser (`submodule::parse_gitmodules`) is pure and
+  line-oriented: `[submodule "name"]` stanzas are matched case-insensitively, `path`/`url` keys are
+  matched case-insensitively with last-within-a-stanza-wins (git's own semantics), and a `path` seen
+  in an earlier stanza wins over a later duplicate. Keyed on `path`, deliberately **not** the stanza
+  name — git allows the two to differ, and only `path` addresses anything in the tree. Capped at 64
+  KiB before loading (checked via an object-header stat, the same `SYMLINK_TARGET_LIMIT` pattern
+  `tree.rs` already uses for symlink targets) — comfortably past any real `.gitmodules`, and an
+  oversized file yields no links at all rather than a parse of truncated (and therefore wrong) input.
+  Deliberately unhandled, and documented as such in the module doc comment rather than silently
+  mishandled: line continuations, multi-line quoted values, `[include]`/`includeIf`, and relative
+  `url` values (`../dep.git`, meaningful only relative to the superproject's own remote, which a
+  bare repository doesn't have).
+- **`entries_of` (shared by `GET /tree` and `GET /objects/{oid}`'s tree case) is left untouched;
+  `list_tree` calls a new `submodule::fill_module_links` afterward instead.** The alternative —
+  threading a resolution context through `entries_of` — was rejected because the one optimization
+  that matters (skip config/`.gitmodules` entirely when a listing has no gitlink at all) can only be
+  expressed *after* the entries already exist, and because `GET /objects/{oid}` has no commit/path
+  context to resolve a template against in the first place; passing it `None` there would just be a
+  sentinel restating what the response's own `module_link: null` already says. `fill_module_links`
+  is infallible (`()`, not `Result`) — every failure degrades this one field, the same posture
+  `homepage` (#67) and `defbranch` (#68) already established — and lazily loads `.gitmodules` at
+  most once per listing, only when some gitlink's config lookup actually misses.
+- **Frontend: `entry.module_link ?? undefined` replaces the flat `undefined` `TreeView.tsx`'s
+  `entryHref` previously returned for every `commit`-typed row**, and the by-oid `ObjectView.tsx`
+  keeps its existing unlinked rendering unchanged — under this design `module_link` is always `null`
+  there, so no behavior needed to change, only its explaining comment.
+  - **`rel="noopener noreferrer"` and `data-astro-reload`, deliberately no `target="_blank"`** — and
+    deliberately *not* a reuse of #69's `homepage`-style `external` prop. `module-link`'s destination
+    may be same-site (the `/git/%s/…` shape) or genuinely off-site, and a per-row sniff would make
+    two visually identical submodule rows behave differently depending on what the operator happened
+    to configure; treating "continue browsing the source elsewhere" as a plain navigation rather than
+    a side trip (`homepage`'s framing) avoids that split. `rel="noopener noreferrer"` without
+    `target` is inert for `noopener` (no new browsing context is ever created) but still suppresses
+    the `Referer` header, which costs nothing and covers the off-site case. **`data-astro-reload` is
+    the load-bearing part**: verified directly against `<ClientRouter />`'s own source
+    (`astro/components/ClientRouter.astro`) that its click handler checks
+    `el.dataset.astroReload !== undefined` before intercepting a same-origin click for a client-side
+    swap — without it, a same-site `/git/…` destination behind the same reverse proxy would get its
+    HTML response spliced into the axgit shell instead of loading as its own page, since same-origin
+    is the only condition `<ClientRouter />` checks (it has no way to know the destination is a
+    different application). The existing `rawUrl`/archive/raw links in this codebase escape this
+    only because the API responses they point at aren't `text/html`.
+- **Caching splits along the same line the two sources do.** The config half is invisible to the
+  HEAD/agefile validator (docs/ARCHITECTURE.md#caching) — same caveat #67 (`homepage`) and #68
+  (`defbranch`) already documented for config-only changes — so a `module-link` edit with no
+  accompanying push inherits the `AXGIT_CACHE_RESPONSE_TTL` ceiling rather than invalidating
+  immediately. The `.gitmodules` half, by contrast, is repository content: it moves with HEAD like
+  any other file and invalidates the normal way.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`TreeEntryInfo.module_link`,
+  plus `GET /objects/{oid}`'s tree entry shape). New `api/src/repo/submodule.rs` (`fill_module_links`,
+  `expand_template`, `is_link_href`, `read_gitmodules`, `parse_gitmodules`, each with their own unit
+  tests), `meta.rs` gained `module_link_template` (plus its own precedence tests) and promoted
+  `is_http_url` to `pub(crate)`. New `api/tests/module_link_test.rs` exercises the full precedence
+  chain end to end through the router (config vs. `.gitmodules`, per-path vs. repo-wide, the nested-
+  path substitution case, the by-oid tree's `null`). `files_test.rs`'s existing tree assertions
+  gained `"module_link": null`, pinning "no config, no `.gitmodules` → no link" alongside the shape
+  check. `TreeView.test.tsx`/`ObjectView.test.tsx` fixtures updated to match, plus new `TreeView`
+  cases for a linked and a root-relative submodule row.

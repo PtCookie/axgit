@@ -36,6 +36,7 @@ const TREE: ObjectDetail = {
         sha: "2222222222222222222222222222222222222a",
         size: null,
         target: null,
+        module_link: null,
       },
       {
         name: "README.md",
@@ -44,6 +45,7 @@ const TREE: ObjectDetail = {
         sha: BLOB_SHA,
         size: 16,
         target: null,
+        module_link: null,
       },
       {
         name: "vendor",
@@ -52,6 +54,9 @@ const TREE: ObjectDetail = {
         sha: "3333333333333333333333333333333333333a",
         size: null,
         target: null,
+        // Always null under the by-oid tree — no path context to resolve a
+        // `module_link` template against (docs/DECISIONS.md #72).
+        module_link: null,
       },
     ],
   },

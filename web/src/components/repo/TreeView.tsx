@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
 import { getTree, rawUrl } from "@/lib/api/repos";
-import type { EntryKind, TreeListing } from "@/lib/api/schemas";
+import type { EntryKind, TreeEntryInfo, TreeListing } from "@/lib/api/schemas";
 import { formatMode } from "@/lib/format/mode";
 import { formatSize } from "@/lib/format/size";
 import { resolveRepoPath } from "@/lib/markdown-url";
@@ -45,16 +45,19 @@ export function TreeViewSkeleton() {
   );
 }
 
-function entryHref(kind: EntryKind, repo: string, path: string, ref: string | undefined): string | undefined {
-  switch (kind) {
+function entryHref(entry: TreeEntryInfo, repo: string, path: string, ref: string | undefined): string | undefined {
+  switch (entry.type) {
     case "tree":
       return treeHref(repo, path, ref);
     case "blob":
     case "symlink":
       return blobHref(repo, path, ref);
     case "commit":
-      // A submodule gitlink has no content in this repository to link to.
-      return undefined;
+      // A submodule gitlink has no content *in this repository* to link to,
+      // but the operator may have pointed it elsewhere via `module-link` or
+      // `.gitmodules` (docs/DECISIONS.md #72) — `undefined` when neither
+      // resolved to a usable URL.
+      return entry.module_link ?? undefined;
   }
 }
 
@@ -205,7 +208,7 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
           ) : (
             tree.entries.map((entry) => {
               const entryPath = resolvedPath ? `${resolvedPath}/${entry.name}` : entry.name;
-              const href = entryHref(entry.type, resolvedRepo, entryPath, resolvedRef);
+              const href = entryHref(entry, resolvedRepo, entryPath, resolvedRef);
               const label = entry.type === "tree" ? `${entry.name}/` : entry.name;
               return (
                 <TableRow key={entry.name}>
@@ -214,7 +217,12 @@ export default function TreeView({ repo, path, ref: refParam }: TreeViewProps) {
                   </TableCell>
                   <TableCell className="font-medium">
                     {href ? (
-                      <a className="hover:underline" href={href}>
+                      <a
+                        className="hover:underline"
+                        href={href}
+                        title={entry.type === "commit" ? KIND_LABEL.commit : undefined}
+                        {...(entry.type === "commit" ? { rel: "noopener noreferrer", "data-astro-reload": true } : {})}
+                      >
                         {label}
                       </a>
                     ) : (

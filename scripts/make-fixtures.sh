@@ -33,6 +33,15 @@ git config --file "$BARE/config" cgit.owner PtCookie
 git config --file "$BARE/config" cgit.desc "Compose project of Git server"
 # Exercises `RepoInfo.homepage`/`RepoSummary.homepage` (docs/DECISIONS.md #67).
 git config --file "$BARE/config" cgit.homepage "https://git.ptcookie.net/git-compose"
+# Exercises submodule `module_link` resolution (docs/DECISIONS.md #72): a
+# repo-wide template covers any gitlink not overridden more specifically,
+# and a per-path override wins over it for one path. A repo-wide template
+# always beats a `.gitmodules` fallback for every gitlink it covers (the
+# whole point of "the first applicable config level wins, and never falls
+# through"), so a *pure* `.gitmodules`-only demo — no config at all — lives
+# on `axgit.git` below instead, where it's unambiguous.
+git config --file "$BARE/config" cgit.module-link "https://git.ptcookie.net/%s/commit/?id=%s"
+git config --file "$BARE/config" "axgit.plugins/special.module-link" "https://git.ptcookie.net/mirrors/special"
 
 W="$WORK/git-compose"
 git init --quiet --initial-branch=main "$W"
@@ -76,6 +85,28 @@ GIT_COMMITTER_DATE="2026-07-22T19:05:00+09:00" git -C "$W" tag -a readme-blob -m
 # in a local run, the same way readme-blob reaches the blob case.
 ROOT_TREE="$(git -C "$W" rev-parse HEAD^{tree})"
 GIT_COMMITTER_DATE="2026-07-22T19:10:00+09:00" git -C "$W" tag -a tree-tag -m "Tag pointing at a tree" "$ROOT_TREE"
+# Two gitlinks exercising the config half of `module_link` resolution
+# (docs/DECISIONS.md #72), added after the tags above so v1.0.0/tree-tag
+# keep pointing at the untouched tree they were meant to tag:
+#   - tools/nested/plugin: picked up by the repo-wide `cgit.module-link`
+#     template above. Nested two levels deep on purpose — the substituted
+#     path in the resulting link is the *full* `tools/nested/plugin`, not
+#     just `plugin`.
+#   - plugins/special: would also match the repo-wide template, but the
+#     per-path `axgit.plugins/special.module-link` override above wins
+#     instead — a constant URL, no `%s` placeholder at all, which is a valid
+#     template on its own.
+# Empty directories at each gitlink path keep `git add -A` from staging (and
+# then immediately conflicting with) the gitlink's own removal.
+mkdir -p "$W/tools/nested/plugin" "$W/plugins/special"
+git -C "$W" add -A
+# Any 40-hex sha works for a gitlink; the object need not exist locally
+# (same note as `api/tests/files_test.rs`'s `GITLINK_SHA`).
+GITLINK_C="$(printf '%040d' 0 | tr '0' 'c')"
+GITLINK_D="$(printf '%040d' 0 | tr '0' 'd')"
+git -C "$W" update-index --add --cacheinfo "160000,$GITLINK_C,tools/nested/plugin"
+git -C "$W" update-index --add --cacheinfo "160000,$GITLINK_D,plugins/special"
+commit "$W" "2026-07-23T09:00:00+09:00" "feat: add submodules"
 git -C "$W" push --quiet "$BARE" main:main \
     refs/tags/v1.0.0 refs/tags/release/0.9 refs/tags/readme-blob refs/tags/tree-tag \
     refs/notes/commits:refs/notes/commits
@@ -116,6 +147,28 @@ git init --quiet --initial-branch=main "$W"
 echo "# axgit" > "$W/README.md"
 git -C "$W" add .
 commit "$W" "2026-07-28T14:00:00+09:00" "feat: initial commit"
+# A `.gitmodules`-only `module_link` demo (docs/DECISIONS.md #72): no
+# `module-link` config key exists anywhere in this repository, so this is
+# the one fixture that shows the fallback in isolation, unshadowed by a
+# repo-wide template.
+#   - vendor/upstream: `.gitmodules` gives it an http(s) `url` — linked.
+#   - vendor/internal: `.gitmodules` gives it a `git@…` remote, the common
+#     private-submodule shape — rejected, so it stays unlinked.
+cat > "$W/.gitmodules" <<'EOF'
+[submodule "upstream-lib"]
+	path = vendor/upstream
+	url = https://github.com/ptcookie/upstream-lib.git
+[submodule "internal-lib"]
+	path = vendor/internal
+	url = git@git.ptcookie.net:ptcookie/internal-lib.git
+EOF
+mkdir -p "$W/vendor/upstream" "$W/vendor/internal"
+git -C "$W" add -A
+GITLINK_E="$(printf '%040d' 0 | tr '0' 'e')"
+GITLINK_F="$(printf '%040d' 0 | tr '0' 'f')"
+git -C "$W" update-index --add --cacheinfo "160000,$GITLINK_E,vendor/upstream"
+git -C "$W" update-index --add --cacheinfo "160000,$GITLINK_F,vendor/internal"
+commit "$W" "2026-07-28T14:30:00+09:00" "feat: add submodules"
 git -C "$W" push --quiet "$BARE" main:main
 mkdir -p "$BARE/info/web"
 echo "2026-07-28 14:00:00 +0900" > "$BARE/info/web/last-modified"

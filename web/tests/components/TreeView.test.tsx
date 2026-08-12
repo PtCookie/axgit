@@ -27,6 +27,7 @@ const SYMLINK: TreeEntryInfo = {
   sha: "1111111111111111111111111111111111111c",
   size: 4,
   target: "docs/guide.md",
+  module_link: null,
 };
 
 const ROOT_TREE: TreeListing = {
@@ -40,6 +41,7 @@ const ROOT_TREE: TreeListing = {
       sha: "1111111111111111111111111111111111111a",
       size: null,
       target: null,
+      module_link: null,
     },
     {
       name: "README.md",
@@ -48,6 +50,7 @@ const ROOT_TREE: TreeListing = {
       sha: "1111111111111111111111111111111111111b",
       size: 16,
       target: null,
+      module_link: null,
     },
     SYMLINK,
     {
@@ -57,6 +60,7 @@ const ROOT_TREE: TreeListing = {
       sha: "1111111111111111111111111111111111111d",
       size: null,
       target: null,
+      module_link: null,
     },
   ],
 };
@@ -129,6 +133,35 @@ describe("TreeView", () => {
     expect(page.getByRole("link", { name: "vendor" }).elements().length).toBe(0);
     expect(page.getByRole("link", { name: "Log for vendor" }).elements().length).toBe(0);
     expect(page.getByRole("link", { name: "Stats for vendor" }).elements().length).toBe(0);
+  });
+
+  it("links a submodule entry to its module_link, with a full-load opt-out, but no row actions", async () => {
+    const vendor = {
+      ...ROOT_TREE.entries[3],
+      module_link: "https://example.com/dep",
+    };
+    mockedGetTree.mockResolvedValue({ ...ROOT_TREE, entries: [vendor] });
+    render(<TreeView repo="git-compose" path="" />);
+
+    const link = page.getByRole("link", { name: "vendor" });
+    await expect.element(link).toHaveAttribute("href", "https://example.com/dep");
+    await expect.element(link).toHaveAttribute("rel", "noopener noreferrer");
+    await expect.element(link).toHaveAttribute("data-astro-reload");
+    expect(page.getByRole("link", { name: "Log for vendor" }).elements().length).toBe(0);
+    expect(page.getByRole("link", { name: "Stats for vendor" }).elements().length).toBe(0);
+  });
+
+  it("renders a root-relative module_link verbatim", async () => {
+    const vendor = {
+      ...ROOT_TREE.entries[3],
+      module_link: "/git/dep.git/commit/?id=abc",
+    };
+    mockedGetTree.mockResolvedValue({ ...ROOT_TREE, entries: [vendor] });
+    render(<TreeView repo="git-compose" path="" />);
+
+    await expect
+      .element(page.getByRole("link", { name: "vendor" }))
+      .toHaveAttribute("href", "/git/dep.git/commit/?id=abc");
   });
 
   it("orders the columns as Mode, Name, Size and shows symbolic modes", async () => {

@@ -277,9 +277,10 @@ link to).
 - `type`: one of `commit`, `tree`, `blob`, `tag`. Only the matching payload key is non-null; the
   other two are always present as `null` (this document's general "every key always present" rule).
 - `tree`: `{ "entries": [...] }`, same entry shape `GET /tree` reports (`name`/`type`/`mode`/`sha`/
-  `size`/`target`) — trees first, then by name ascending. Each entry's own `sha` links onward to
-  another `GET /objects/{oid}` call; there's no commit or path behind an oid, so navigation here is
-  oid-to-oid, not path-based.
+  `size`/`target`/`module_link`) — trees first, then by name ascending. Each entry's own `sha` links
+  onward to another `GET /objects/{oid}` call; there's no commit or path behind an oid, so
+  navigation here is oid-to-oid, not path-based. `module_link` is **always `null`** here — resolving
+  it needs the gitlink's full repo-relative path, which an oid alone doesn't carry.
 - `blob`: `{ "size", "binary", "too_large", "content" }` — same fields and truncation rule as
   `GET /blob`'s response, minus `path`/`mode` (an oid alone has neither; mode lives on the tree
   entry that references it).
@@ -551,9 +552,10 @@ blob/raw follow the same rule. Omitting `{path...}` means the root tree.
   "sha": "<resolved full sha>",
   "path": "src",
   "entries": [
-    { "name": "lib", "type": "tree", "mode": "040000", "sha": "<oid>", "size": null, "target": null },
-    { "name": "main.rs", "type": "blob", "mode": "100644", "sha": "<oid>", "size": 13, "target": null },
-    { "name": "readme-link", "type": "symlink", "mode": "120000", "sha": "<oid>", "size": null, "target": "../README.md" }
+    { "name": "lib", "type": "tree", "mode": "040000", "sha": "<oid>", "size": null, "target": null, "module_link": null },
+    { "name": "main.rs", "type": "blob", "mode": "100644", "sha": "<oid>", "size": 13, "target": null, "module_link": null },
+    { "name": "readme-link", "type": "symlink", "mode": "120000", "sha": "<oid>", "size": null, "target": "../README.md", "module_link": null },
+    { "name": "vendor", "type": "commit", "mode": "160000", "sha": "<submodule commit oid>", "size": null, "target": null, "module_link": "https://git.example.com/vendor/commit/?id=<submodule commit oid>" }
   ]
 }
 ```
@@ -567,12 +569,44 @@ blob/raw follow the same rule. Omitting `{path...}` means the root tree.
   larger than 4096 bytes). Stored verbatim and **relative to the entry's own directory** — it is
   never resolved server-side, so a `../` prefix reaches the client intact; clients resolve it
   themselves. The blob endpoint exposes the same value as `content`.
+- `module_link`: a link for a `commit`-typed (gitlink/submodule) row, `null` for every other `type`
+  and `null` for a gitlink with nothing usable to link to (docs/DECISIONS.md #72, cgit's
+  `module-link`/`repo.module-link.<path>` parity). Resolved per gitlink, most specific source wins:
+  1. **A configured template**, most specific key first: `axgit.<path>.module-link` →
+     `cgit.<path>.module-link` → `axgit.module-link` → `cgit.module-link`, where `<path>` is the
+     gitlink's full repo-relative path (e.g. `vendor/dep`, not just `dep`). The first of these four
+     keys that is *set at all* wins and the search stops there — even if the value turns out to be
+     empty or unusable, this **never** falls through to `.gitmodules` below. An empty per-path value
+     is therefore how an operator suppresses a repo-wide template for one gitlink.
+     The template is literal text with two placeholders: the first `%s` is substituted with the
+     gitlink's full repo-relative path, the second `%s` with its recorded commit sha, and `%%` is a
+     literal `%`. A third `%s`, any other `%`-specifier, or a trailing lone `%` makes the whole
+     template unusable (`module_link` is `null`) rather than guessing. Substituted values are
+     inserted verbatim, not percent-encoded — matching cgit's own `module-link` semantics closely
+     enough that an existing cgitrc value can usually be pasted in as-is, with one exception: a
+     **relative** template (e.g. `./?repo=%s&page=commit&id=%s`) is always rejected, because it
+     would resolve against the tree path being viewed rather than meaning one fixed thing — cgit's
+     own two documented examples are one root-relative (accepted) and one relative (rejected) for
+     exactly this reason.
+  2. Otherwise, **`.gitmodules`** in the resolved commit's root tree — an axgit extension; cgit
+     itself never reads this file. Each `[submodule "name"]` stanza's `path` (not its section name)
+     is matched against the gitlink's full path, and its `url` is used **verbatim, unmodified** (it
+     is already a URL, not a template) when the url is `http://` or `https://`. Any other scheme —
+     in particular the common `git@host:owner/repo.git`/`ssh://` shapes — yields no link.
+  3. Otherwise `null`.
+
+  Whichever source produced a link, the result must also be `http://`, `https://`, or root-relative
+  (a single leading `/`, not followed by another `/` or a `\`, both of which browsers treat as
+  protocol-relative and would navigate off-site) — anything else, including `javascript:`/`data:`
+  schemes or a relative path, is dropped to `null` rather than served.
 - Sorting: trees first, then name ascending.
 - `404 path_not_found` if the path doesn't exist or isn't a directory. `.`/`..`/empty segments in
   the path are `400 invalid_param`.
 - If the request's `{ref}` matches the resolved full sha as a string, an immutable
   `Cache-Control` is attached (see the caching headers section — blob/raw/readme follow the same
-  rule).
+  rule). Note that this validator is driven by HEAD/agefile movement: a `module-link` config edit
+  with no accompanying push is invisible to it (same caveat as `homepage`/`defbranch`, docs/API.md's
+  caching section), while a `.gitmodules` edit is content and invalidates normally.
 
 ### `GET /api/v1/repos/{repo}/blob/{ref}/{path...}`
 

@@ -12,6 +12,7 @@ pub mod scan;
 pub mod search;
 pub mod sort;
 pub mod stats;
+pub mod submodule;
 pub mod tag;
 pub mod tree;
 

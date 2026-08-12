@@ -1238,6 +1238,16 @@ export interface components {
        *     entry's own directory, exactly as stored; clients resolve it.
        */
       target: string | null;
+      /**
+       * @description Link for a submodule (gitlink) row, resolved from a configured
+       *     `module-link` template or a `.gitmodules` fallback
+       *     (`repo::submodule`, docs/DECISIONS.md #72). `None` for every other
+       *     kind, and `None` for a gitlink with no applicable template and no
+       *     usable `.gitmodules` URL. Always `None` under `GET /objects/{oid}`,
+       *     which reaches a tree by its own oid and so has no path context to
+       *     resolve a template against.
+       */
+      module_link: string | null;
     };
     TreeListing: {
       /** @description Resolved commit sha the listing was taken from. */
