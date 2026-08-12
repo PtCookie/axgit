@@ -1171,12 +1171,22 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   it, silently breaking `getByRole("columnheader", …)` on every table in the app, not just this one.
   No API contract change.
 
+- **`hide`/`ignore` repository flags** (DECISIONS.md #66), closing that item under "Repository
+  index". `hide` drops a repository from `GET /api/v1/repos` (enforced in `scan.rs`, the sole
+  producer of the list snapshot) while leaving `GET /repos/{name}`, tree/blob/log, and clone
+  unchanged for it — reachable by direct path, just not listed. `ignore` additionally 404s every
+  per-repo route and Smart HTTP (enforced once, in `open::open_named`, the function every one of
+  them calls to resolve `{repo}` into a `Repository`) — not reachable at all. A new
+  `meta::config_flag` reads either flag with the same `[axgit]`-wins-over-`[cgit]` precedence
+  `config_value` already uses for `section`/`owner`/`desc`. No API contract change — neither flag is
+  a response field. `scripts/make-fixtures.sh` gained `hidden.git`.
+
 ## Next up
 
-None queued — column sorting (#64/#65) is now closed end to end. Pick the next piece from the
-three remaining "Repository index" items below (site-level readme/title/description, `hide`/
-`ignore` repo flags, `homepage` + a configured `defbranch`), the two "Tree and blob" gaps (submodule
-links, single-child directory collapsing), the candidates below, or a fresh request.
+None queued — column sorting (#64/#65) and the `hide`/`ignore` flags (#66) are both closed. Pick
+the next piece from the two remaining "Repository index" items below (site-level readme/title/
+description, `homepage` + a configured `defbranch`), the two "Tree and blob" gaps (submodule links,
+single-child directory collapsing), the candidates below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1217,8 +1227,6 @@ recorded separately below instead of listed as gaps.
   - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
 - **Repository index**
   - Site-level readme / title / description (`root-readme`, `root-title`, `root-desc`).
-  - `hide` / `ignore` repo flags — hidden-but-reachable-by-direct-path vs. not reachable at all;
-    fits naturally alongside the `[cgit]`/`[axgit]` config-section invariant.
   - `homepage` (cgit gives it a dedicated nav tab), and a configured `defbranch` (axgit only derives
     it from HEAD).
 

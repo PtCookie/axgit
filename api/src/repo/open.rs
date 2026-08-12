@@ -2,10 +2,17 @@ use std::path::Path;
 
 use git2::Repository;
 
+use super::meta;
 use crate::error::ApiError;
 
 /// Opens `{root}/{name}.git` as a bare repository. `name` is the `{repo}`
 /// URL parameter (no `.git` suffix), i.e. untrusted input.
+///
+/// Also enforces the `ignore` config flag (docs/DECISIONS.md #66): an
+/// ignored repository reports `repo_not_found` here, the single choke point
+/// every per-repo handler and Smart HTTP go through, so it's unreachable by
+/// any means — not just absent from the index (`hide`'s narrower effect,
+/// enforced only in `scan.rs`).
 pub fn open_named(root: &Path, name: &str) -> Result<Repository, ApiError> {
     // Reject separators and leading dots so the joined path cannot escape
     // the repo root (`..`, absolute-ish names, hidden directories).
@@ -14,8 +21,12 @@ pub fn open_named(root: &Path, name: &str) -> Result<Repository, ApiError> {
             "invalid repository name '{name}'"
         )));
     }
-    Repository::open_bare(root.join(format!("{name}.git")))
-        .map_err(|_| ApiError::RepoNotFound(name.to_owned()))
+    let repo = Repository::open_bare(root.join(format!("{name}.git")))
+        .map_err(|_| ApiError::RepoNotFound(name.to_owned()))?;
+    if meta::is_ignored(&repo) {
+        return Err(ApiError::RepoNotFound(name.to_owned()));
+    }
+    Ok(repo)
 }
 
 #[cfg(test)]

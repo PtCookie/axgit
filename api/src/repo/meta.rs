@@ -57,6 +57,40 @@ fn config_value(cfg: &git2::Config, key: &str) -> Option<String> {
         .find_map(|section| cfg.get_string(&format!("{section}.{key}")).ok())
 }
 
+/// Same `[axgit]`-wins-over-`[cgit]` precedence as [`config_value`], but for
+/// a boolean flag (docs/DECISIONS.md #66) — cgit's own `repo.hide`/
+/// `repo.ignore` are booleans in `cgitrc`, and `git2::Config::get_bool`
+/// accepts the same spellings git itself does (`true`/`false`, `yes`/`no`,
+/// `on`/`off`, `1`/`0`). Absent or unparseable defaults to `false`.
+fn config_flag(cfg: &git2::Config, key: &str) -> bool {
+    ["axgit", "cgit"]
+        .iter()
+        .find_map(|section| cfg.get_bool(&format!("{section}.{key}")).ok())
+        .unwrap_or(false)
+}
+
+/// Whether the repository belongs in `GET /api/v1/repos` — `false` when
+/// either `hide` or `ignore` is set (docs/DECISIONS.md #66,
+/// docs/ROADMAP.md "Repository index"). Direct access (`GET /repos/{name}`,
+/// clone) has its own, narrower check ([`is_ignored`]) — a *hidden*
+/// repository stays fully reachable by name, only dropped from the listing.
+pub fn should_list(repo: &Repository) -> bool {
+    let config = repo.config().and_then(|mut cfg| cfg.snapshot()).ok();
+    let flag = |key: &str| config.as_ref().is_some_and(|cfg| config_flag(cfg, key));
+    !flag("hide") && !flag("ignore")
+}
+
+/// Whether the repository is `ignore`d — not reachable at all, not even by
+/// direct path. Checked by [`super::open::open_named`] itself, so it blocks
+/// every per-repo handler and Smart HTTP alike, the same choke point that
+/// already rejects a malformed `{repo}` name.
+pub fn is_ignored(repo: &Repository) -> bool {
+    let config = repo.config().and_then(|mut cfg| cfg.snapshot()).ok();
+    config
+        .as_ref()
+        .is_some_and(|cfg| config_flag(cfg, "ignore"))
+}
+
 fn default_branch(repo: &Repository) -> Option<String> {
     repo.head().ok()?.shorthand().map(str::to_owned)
 }
@@ -109,4 +143,60 @@ pub(crate) fn git_time_to_zoned(when: git2::Time) -> Option<Zoned> {
 
 pub(crate) fn format_rfc3339(zoned: &Zoned) -> String {
     zoned.strftime(RFC3339_OUT).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bare_repo_with_flag(
+        section: &str,
+        key: &str,
+        value: bool,
+    ) -> (tempfile::TempDir, Repository) {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let repo = Repository::init_bare(dir.path()).expect("failed to init bare repo");
+        repo.config()
+            .and_then(|mut config| config.set_bool(&format!("{section}.{key}"), value))
+            .expect("failed to set config flag");
+        (dir, repo)
+    }
+
+    #[test]
+    fn should_list_is_true_by_default() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let repo = Repository::init_bare(dir.path()).expect("failed to init bare repo");
+        assert!(should_list(&repo));
+        assert!(!is_ignored(&repo));
+    }
+
+    #[test]
+    fn should_list_is_false_when_hide_is_set() {
+        let (_dir, repo) = bare_repo_with_flag("cgit", "hide", true);
+        assert!(!should_list(&repo));
+        // hide, unlike ignore, doesn't block direct access.
+        assert!(!is_ignored(&repo));
+    }
+
+    #[test]
+    fn should_list_and_is_ignored_agree_when_ignore_is_set() {
+        let (_dir, repo) = bare_repo_with_flag("cgit", "ignore", true);
+        assert!(!should_list(&repo));
+        assert!(is_ignored(&repo));
+    }
+
+    #[test]
+    fn axgit_ignore_wins_over_cgit_hide() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let repo = Repository::init_bare(dir.path()).expect("failed to init bare repo");
+        let mut config = repo.config().expect("failed to open config");
+        config
+            .set_bool("cgit.hide", true)
+            .expect("failed to set cgit.hide");
+        config
+            .set_bool("axgit.hide", false)
+            .expect("failed to set axgit.hide");
+        // [axgit] wins (docs/DECISIONS.md #5), so the repo is listed again.
+        assert!(should_list(&repo));
+    }
 }

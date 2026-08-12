@@ -2500,3 +2500,39 @@ clickable, closing the "Column sorting" gap end to end.
   just the new sortable one.
 - No API contract change — `web/src/lib/repo-sort.ts`, `RepoList.tsx`, and the `table.tsx` `scope`
   fix only.
+
+## #66 `hide`/`ignore` repository flags
+
+Closes the "`hide`/`ignore` repo flags" cgit-parity gap under "Repository index": cgit's
+`repo.hide`/`repo.ignore` distinguish a repository that's absent from the index but still
+fetchable by direct URL (`hide`) from one that's unreachable by any means (`ignore`). Every
+repository under `AXGIT_REPO_ROOT` was previously both listed and reachable, with no way an
+operator could change either independently — this fits directly alongside the existing
+`[cgit]`/`[axgit]` config-section invariant (#5), no new config surface.
+
+- **Two flags, two different choke points, on purpose.** `hide` is enforced only in `scan.rs` (via
+  a new `meta::should_list`), which is the sole producer of the list `ScanCache` holds — so a
+  hidden repository simply never enters the snapshot `GET /api/v1/repos` serializes, while
+  `GET /repos/{name}`, tree/blob/log/etc., and clone all keep working unchanged for it. `ignore` is
+  additionally enforced in `open::open_named` (a new `meta::is_ignored` check right after the open
+  succeeds) — the one function every per-repo handler and Smart HTTP call to turn a `{repo}` name
+  into a `Repository`, so an ignored repository 404s (`repo_not_found`) everywhere, not just off
+  the index. `should_list` treats `ignore` as also implying "not listed" (`!hide && !ignore`), so a
+  repository doesn't need both flags set to disappear from the list — only from direct access does
+  the distinction matter.
+- **A boolean config reader, `config_flag`, added alongside the existing string one
+  (`config_value`)** — same `[axgit]`-wins-over-`[cgit]` precedence (#5), same two-section
+  `find_map`, just `get_bool` instead of `get_string`. `git2::Config::get_bool` already accepts
+  every spelling cgit's own boolean options do (`true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`),
+  so no custom parsing was needed — unlike `handlers/mod.rs::parse_flag`, which exists specifically
+  because *query* params need a `400 invalid_param` on a bad value; a config flag has no such
+  channel and silently defaults to `false` instead, matching how a missing/unparseable
+  `section`/`owner`/`desc` already resolves to `null` rather than an error.
+- **No API contract change.** Neither flag is a response field — `hide`'s effect is "which
+  repositories does `GET /api/v1/repos` enumerate," and `ignore`'s is "does `open_named` succeed at
+  all," both index/reachability behaviour rather than new data. `RepoInfo`/`RepoSummary` are
+  unchanged.
+- `scripts/make-fixtures.sh` gained `hidden.git` (`cgit.hide`) — the one place the hide-but-
+  reachable distinction is visible end to end against the real filesystem scan, since the api's own
+  tests build per-test fixtures in a tempdir instead (`api/tests/repos_test.rs`'s new
+  `setup_hide_ignore_fixtures`, covering both flags plus refs/clone reachability for `ignore`).

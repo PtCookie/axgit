@@ -116,4 +116,21 @@ echo "2026-07-28 14:00:00 +0900" > "$BARE/info/web/last-modified"
 # --- empty.git: no commits, no metadata --------------------------------------
 git init --quiet --bare --initial-branch=main "$DEST/empty.git"
 
+# --- hidden.git: cgit.hide=true — absent from the index, still reachable by
+# direct path (docs/DECISIONS.md #66). A local run is the only place this
+# distinction is actually visible end to end: `GET /repos` and `GET
+# /repos/hidden` both hit the real filesystem scan, unlike the api's own
+# tests, which build their fixtures per test.
+BARE="$DEST/hidden.git"
+git init --quiet --bare --initial-branch=main "$BARE"
+git config --file "$BARE/config" cgit.desc "Not listed, but still fetchable"
+git config --file "$BARE/config" cgit.hide true
+
+W="$WORK/hidden"
+git init --quiet --initial-branch=main "$W"
+echo "# hidden" > "$W/README.md"
+git -C "$W" add .
+commit "$W" "2026-07-15T12:00:00+09:00" "chore: initial commit"
+git -C "$W" push --quiet "$BARE" main:main
+
 echo "fixtures ready: $DEST"

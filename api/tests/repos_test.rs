@@ -220,6 +220,96 @@ async fn list_repos_rejects_an_unknown_sort() {
     );
 }
 
+/// Fixture set for the `hide`/`ignore` flags (docs/DECISIONS.md #66):
+/// `visible.git` (no flags), `hidden.git` (`cgit.hide`), `ignored.git`
+/// (`cgit.ignore`). Kept separate from `setup_fixtures` so the positional
+/// name-order assertions above don't have to account for two more repos.
+fn setup_hide_ignore_fixtures() -> TempDir {
+    let root = tempfile::tempdir().expect("failed to create fixture root");
+
+    let visible = common::create_bare_repo(root.path(), "visible.git");
+    common::add_commit(&visible, "README.md", "# visible\n", "feat: initial commit");
+
+    let hidden = common::create_bare_repo(root.path(), "hidden.git");
+    common::set_meta(&hidden, "cgit", "hide", "true");
+    common::add_commit(&hidden, "README.md", "# hidden\n", "feat: initial commit");
+
+    let ignored = common::create_bare_repo(root.path(), "ignored.git");
+    common::set_meta(&ignored, "cgit", "ignore", "true");
+    common::add_commit(&ignored, "README.md", "# ignored\n", "feat: initial commit");
+
+    root
+}
+
+#[tokio::test]
+async fn list_repos_omits_hidden_and_ignored_repositories() {
+    let root = setup_hide_ignore_fixtures();
+
+    let json = list_repos(root.path()).await;
+
+    let names: Vec<&str> = json["repos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|repo| repo["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["visible"]);
+}
+
+#[tokio::test]
+async fn hidden_repository_is_still_reachable_by_direct_path() {
+    let root = setup_hide_ignore_fixtures();
+
+    let (status, json) = common::get_json(router_for(root.path()), "/api/v1/repos/hidden").await;
+
+    assert_eq!(status, StatusCode::OK, "unexpected response: {json}");
+    assert_eq!(json["name"], "hidden");
+}
+
+#[tokio::test]
+async fn ignored_repository_is_not_reachable_by_direct_path() {
+    let root = setup_hide_ignore_fixtures();
+
+    let (status, json) = common::get_json(router_for(root.path()), "/api/v1/repos/ignored").await;
+
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::NOT_FOUND, Some("repo_not_found")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn ignored_repository_refs_are_also_not_reachable() {
+    let root = setup_hide_ignore_fixtures();
+
+    let (status, json) =
+        common::get_json(router_for(root.path()), "/api/v1/repos/ignored/refs").await;
+
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::NOT_FOUND, Some("repo_not_found")),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
+async fn ignored_repository_clone_is_also_not_reachable() {
+    let root = setup_hide_ignore_fixtures();
+
+    let (status, json) = common::get_json(
+        router_for(root.path()),
+        "/ignored.git/info/refs?service=git-upload-pack",
+    )
+    .await;
+
+    assert_eq!(
+        (status, json["error"]["code"].as_str()),
+        (StatusCode::NOT_FOUND, Some("repo_not_found")),
+        "unexpected response: {json}"
+    );
+}
+
 #[tokio::test]
 async fn receive_pack_returns_403_read_only() {
     let root = setup_fixtures();

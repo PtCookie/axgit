@@ -32,7 +32,14 @@ pub fn scan_repos(root: &Path) -> anyhow::Result<Vec<RepoInfo>> {
             continue;
         };
         match Repository::open_bare(&path) {
-            Ok(repo) => repos.push(meta::read_repo_info(&repo, name)),
+            Ok(repo) => {
+                // `hide`/`ignore` (docs/DECISIONS.md #66) drop a repository
+                // from the listing; `ignore` additionally blocks direct
+                // access, enforced separately by `open::open_named`.
+                if meta::should_list(&repo) {
+                    repos.push(meta::read_repo_info(&repo, name));
+                }
+            }
             Err(err) => {
                 tracing::warn!(repo = %path.display(), error = %err, "skipping unreadable repository");
             }
