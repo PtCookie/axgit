@@ -40,8 +40,7 @@ like "what should I do next?", read this file first. When finishing a piece of w
 
 ```sh
 # Initial setup (from the workspace root)
-pnpm install                # all JS dependencies (root pnpm-workspace.yaml bundles web as a package)
-lefthook install            # register git hooks
+pnpm install                # all JS dependencies; lefthook's postinstall registers git hooks
 
 # Frontend (web/) — run from root with --filter web
 pnpm --filter web dev       # Astro dev server (API proxied via AXGIT_API_URL)
