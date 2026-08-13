@@ -2932,3 +2932,82 @@ not merely an unverified one, so this is a real fix rather than a formality.
   `web/src/components/repo/RefBadges.tsx` (comment only) are the only files touched. No API
   contract change, no new route, no test change — nothing renders a second series yet, so there is
   nothing to newly assert on.
+
+## #74 Single-binary build: `embed-web` Cargo feature
+
+Closes the embedding half of the roadmap's single-binary, non-container deploy candidate. Until
+now the only way to serve the frontend was `AXGIT_STATIC_DIR` pointing at a `web/dist` directory
+shipped alongside the binary — fine for the container (`COPY --from=web /app/web/dist /app/dist`),
+but a bare-metal/systemd install would have to ship and keep in sync two artifacts whose versions
+must match exactly. `git` exec (archive/upload-pack) stays a runtime dependency regardless of this
+feature — this closes only the frontend half.
+
+- **`rust-embed`, behind an opt-in `embed-web` feature (`api/Cargo.toml`)**, not `include_dir`:
+  `rust-embed`'s `EmbeddedFile::metadata()` gives a sha256 hash and a `mime_guess`-backed content
+  type for free per file, both of which the serving path needs anyway — `include_dir` would need
+  those computed by hand. The feature is opt-in (`embed-web = ["dep:rust-embed"]`) so the default
+  build carries no compile-time dependency on `web/dist` existing at all; the Dockerfile is
+  untouched and keeps using `AXGIT_STATIC_DIR`. `debug-embed` is enabled unconditionally so
+  `cargo test --features embed-web` exercises the same embedded-lookup code path release builds
+  use (without it, `rust-embed` reads from disk in debug, a different path); `mime-guess` reuses
+  the same `mime_guess` crate `repo/blob.rs` already depends on, so content types agree between the
+  embedded and `AXGIT_STATIC_DIR` serving modes; `deterministic-timestamps` drops the embedded
+  per-file mtimes (never read by this crate) so the compiled binary doesn't vary with checkout
+  time, matching the reproducibility stance the Dockerfile's pinned base images already take (#22).
+  `Cargo.lock` gains `rust-embed` even though the container build never enables the feature —
+  harmless, `cargo fetch --locked` just fetches an unused optional dependency.
+- **`api/src/assets.rs`'s `Assets` enum (`Dir(PathBuf)` / `Embedded`) is the single place that knows
+  where the build is read from**; `Assets::resolve` prefers a configured `AXGIT_STATIC_DIR` and
+  only falls back to the embedded copy when unset — an operator can still override a baked-in build
+  without rebuilding. `api/src/shell.rs::serve_shell`/`serve_shell_or_redirect` take `Assets`
+  instead of a bare `PathBuf`, reading through `Assets::read`, so the page-shell logic
+  (`shell_for`'s route-shape mapping, `<head>` injection, cgit-compat redirects) is byte-for-byte
+  shared between both modes — nothing in `shell.rs` besides the two function signatures changed.
+  `api/src/routes.rs` picks the outer fallback per mode: the directory arm is unchanged
+  (`ServeDir::new(dir).append_index_html_on_directories(false).fallback(shell)`); the embedded arm
+  is a single handler that tries `assets::serve_embedded_file` first and falls through to
+  `shell::serve_shell_or_redirect` on `None`, mirroring `ServeDir`'s own fallback ordering without
+  touching the filesystem.
+- **`serve_embedded_file` mirrors `ServeDir`'s behaviour deliberately, not incidentally**: no
+  `Cache-Control` (content-hashed `_astro/*` assets could safely go immutable, but that's a
+  mode-independent improvement, left as a ROADMAP candidate rather than bundled in here), a strong
+  `ETag` (sha256 of the file, reusing `handlers/mod.rs::if_none_match`/`not_modified` for the 304
+  path), and percent-decoding via `percent-encoding` (already in the dependency graph
+  transitively). No explicit `..`-rejection was needed: `rust-embed`'s generated key set never
+  contains a `..` segment, so `WebDist::get` already returns `None` for one, and the caller falls
+  through to the shell exactly like an unmatched `ServeDir` path does.
+- **`api/build.rs`, feature-gated on `CARGO_FEATURE_EMBED_WEB`**: `rust-embed`'s derive emits one
+  `include_bytes!` per file, so rustc tracks content changes to files it already knows about but
+  not files being added/removed — every `pnpm --filter web build` produces new content-hashed
+  `_astro/*` filenames. `cargo:rerun-if-changed=../web/dist` closes that gap. Guarded on the feature
+  rather than unconditional, since pointing `rerun-if-changed` at a path that may not exist (a
+  fresh checkout before the frontend has ever been built, or simply the default build) forces an
+  unconditional rebuild instead.
+- **The open question this roadmap candidate carried — whether libgit2 honours `GIT_CONFIG_GLOBAL`
+  for the bare-metal equivalent of the container's `[safe] directory = *` (#22) — is answered, not
+  deferred further**, even though the systemd unit itself is still future work. Read directly from
+  the vendored libgit2 1.9.6 source (`libgit2-sys-0.18.7+1.9.6/libgit2/src/libgit2/repository.c`):
+  `config_path_global()` only consults `GIT_CONFIG_GLOBAL` when the repository is opened with
+  `GIT_REPOSITORY_OPEN_FROM_ENV` — `repo/open.rs::open_named` uses `Repository::open_bare`, which
+  does not set that flag, so **`GIT_CONFIG_GLOBAL` is not honoured** here. `$HOME/.gitconfig`
+  (`sysdir.c`'s `find_global`) and `/etc/gitconfig` (`find_system`) *are* read regardless, and
+  `validate_ownership_config()` looks up `safe.directory` through exactly that config stack.
+  Conclusion for the deferred systemd unit: run the service as the user that **owns** the
+  repositories, so the ownership check passes outright and no `safe.directory` entry — global,
+  system, or otherwise — is needed at all.
+- **Tests**: `api/src/assets.rs` unit-tests `Assets::resolve`'s precedence and `Assets::Dir::read`.
+  `api/tests/embedded_assets_test.rs` (new, `#![cfg(feature = "embed-web")]`, runs against the real
+  `web/dist`) covers root/asset/shell serving, content types, the `..` case, the ETag round-trip,
+  an `AXGIT_STATIC_DIR` override, and site-meta injection reaching the embedded shell. One existing
+  test's premise inverted: `static_shell_test.rs`'s "no static dir → 404" assumed no frontend is
+  ever an option, which is no longer true once `embed-web` is on (no directory configured now falls
+  back to the embedded copy) — split into a `#[cfg(not(feature = "embed-web"))]` 404 variant and a
+  `#[cfg(feature = "embed-web")]` variant asserting the shell is served instead. Every other
+  non-API-path test in `api/tests/` already configures a static dir or hits a matched route, so
+  nothing else moves.
+- **Size cost, measured**: a release build with `--features embed-web` is ~24.0 MB vs. ~20.0 MB
+  without (`web/dist` itself is 4.0 MB across 132 files) — roughly a 1:1 add, expected since most of
+  `web/dist`'s weight is already-compressed JS/`woff2`.
+- Scope: this closes only the `embed-web` feature + serving path. Packaging (release tarball,
+  systemd unit) and a Jenkins release stage stay a ROADMAP candidate, now with the ownership
+  question above answered rather than open.

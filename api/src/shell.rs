@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Redirect, Response};
 
+use crate::assets::{self, Assets};
 use crate::cgit_compat;
 use crate::escape::xml_escape;
 
@@ -123,41 +124,41 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
     }
 }
 
-/// `ServeDir` fallback, cgit-compatibility redirects included: a `.git`-suffixed
-/// or cgit-query-shaped path (`docs/DECISIONS.md #35`) gets a permanent
-/// redirect to its axgit equivalent; everything else falls through to
-/// [`serve_shell`] unchanged.
+/// Static-serving fallback, cgit-compatibility redirects included: a
+/// `.git`-suffixed or cgit-query-shaped path (`docs/DECISIONS.md #35`) gets a
+/// permanent redirect to its axgit equivalent; everything else falls through
+/// to [`serve_shell`] unchanged.
 pub async fn serve_shell_or_redirect(
-    static_dir: PathBuf,
+    assets: Assets,
     clone_url_base: Option<String>,
     site: SiteHead,
     uri: Uri,
 ) -> Response {
     match cgit_compat::redirect_for(&uri) {
         Some(location) => Redirect::permanent(&location).into_response(),
-        None => serve_shell(static_dir, clone_url_base, site, uri).await,
+        None => serve_shell(assets, clone_url_base, site, uri).await,
     }
 }
 
-/// `ServeDir` fallback: a request with no matching file gets the page shell
-/// for its route shape, or the 404 shell — with a real 404 — if there is
-/// none. Every shell gets `site`'s `<meta>`s injected when configured
+/// Serving fallback: a request with no matching file gets the page shell for
+/// its route shape, or the 404 shell — with a real 404 — if there is none.
+/// Every shell gets `site`'s `<meta>`s injected when configured
 /// (docs/DECISIONS.md #70); a `__repo__` shell additionally gets
 /// per-repository `<link>`s (docs/DECISIONS.md #63) — the shell itself is
 /// prerendered once under the placeholder param and can't know the
 /// repository name (or, for `site`, that any config exists at all) at build
-/// time.
+/// time. Reads through [`Assets`] (docs/DECISIONS.md #74), so this behaves
+/// identically whether the build is on disk or baked into the binary.
 pub async fn serve_shell(
-    static_dir: PathBuf,
+    assets: Assets,
     clone_url_base: Option<String>,
     site: SiteHead,
     uri: Uri,
 ) -> Response {
     let (relative, status) = shell_for(uri.path());
-    let file = static_dir.join(&relative);
 
-    match tokio::fs::read(&file).await {
-        Ok(body) => {
+    match assets.read(&relative).await {
+        Some(body) => {
             let mut extra = site_head_meta(site.title.as_deref(), site.description.as_deref());
             if let Some(segment) = repo_segment_for(uri.path(), &relative) {
                 extra.push_str(&repo_head_links(segment, clone_url_base.as_deref()));
@@ -176,12 +177,8 @@ pub async fn serve_shell(
             )
                 .into_response()
         }
-        Err(error) => {
-            tracing::error!(
-                file = %file.display(),
-                %error,
-                "page shell missing from the static build",
-            );
+        None => {
+            assets::log_missing_shell(&assets, &relative);
             StatusCode::NOT_FOUND.into_response()
         }
     }

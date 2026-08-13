@@ -46,6 +46,20 @@ In the actual git-compose stack, this image replaces the `git-web` service — s
 [docs/compose.example.yaml](docs/compose.example.yaml) for an illustrative service definition
 (the real change is tracked in the separate git-compose.git repository).
 
+### Single-binary build
+
+For a bare-metal/systemd install instead of the container, `web/dist` can be baked directly into
+the `axgit` executable (docs/DECISIONS.md #74) — the resulting binary plus a `git` binary on
+`PATH` is a complete deployment, no `AXGIT_STATIC_DIR`/directory needed:
+
+```sh
+pnpm --filter web build
+cargo build --release --manifest-path api/Cargo.toml --features embed-web
+```
+
+`AXGIT_STATIC_DIR` still overrides the embedded copy at runtime when set. Packaging this build
+(release tarball, systemd unit) isn't built yet — see docs/ROADMAP.md.
+
 ### Configuration
 
 All settings are environment variables (also available as CLI flags — `axgit --help`):
@@ -53,7 +67,7 @@ All settings are environment variables (also available as CLI flags — `axgit -
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AXGIT_REPO_ROOT` | `/srv/git` | Directory containing bare repositories (`*.git`) |
-| `AXGIT_STATIC_DIR` | _(unset)_ | Astro static build (`web/dist`) to serve at `/`; set to `/app/dist` inside the image |
+| `AXGIT_STATIC_DIR` | _(unset)_ | Astro static build (`web/dist`) to serve at `/`; set to `/app/dist` inside the image. Overrides an `embed-web`-baked build when both are present |
 | `AXGIT_LISTEN` | `0.0.0.0:8080` | Socket address to listen on |
 | `AXGIT_CLONE_URL_BASE` | _(unset)_ | Base URL used when displaying clone URLs on the summary page |
 | `AXGIT_CACHE_SCAN_TTL` | `60` | Repository scan cache TTL, in seconds |

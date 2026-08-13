@@ -80,6 +80,21 @@ pub fn router_with_static_and_site(
     build_router(AppState::new(config))
 }
 
+/// Like [`router_for`] (no `AXGIT_STATIC_DIR`), plus `root_title`/
+/// `root_desc` — for asserting the `embed-web` feature's embedded shell also
+/// gets `axgit:site-*` `<meta>`s injected (docs/DECISIONS.md #70, #74), the
+/// same as the directory-backed shell already does.
+pub fn router_with_site(
+    repo_root: &Path,
+    root_title: Option<&str>,
+    root_desc: Option<&str>,
+) -> Router {
+    let mut config = test_config(repo_root);
+    config.root_title = root_title.map(str::to_owned);
+    config.root_desc = root_desc.map(str::to_owned);
+    build_router(AppState::new(config))
+}
+
 /// Runs git isolated from host configuration, with fixed author/dates.
 pub fn git(dir: &Path, args: &[&str]) {
     git_output(dir, args, &[]);

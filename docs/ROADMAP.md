@@ -1280,12 +1280,30 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   citing the old unvalidated-boilerplate reason was reworded to that rule. No API contract change,
   no new route, no test change.
 
+- **Single-binary build: `embed-web` Cargo feature** (DECISIONS.md #74), closing the embedding half
+  of the single-binary, non-container deploy candidate. `web/dist` is now baked into the `axgit`
+  binary at compile time via `rust-embed`, opt-in behind `cargo build --features embed-web` — the
+  default build and the Dockerfile are both unaffected. `api/src/assets.rs`'s `Assets` enum
+  (`Dir`/`Embedded`) is the one place that knows where the build is read from —
+  `AXGIT_STATIC_DIR` still overrides an embedded build when set — and `shell.rs` reads page shells
+  through it, so route-shape mapping and `<head>` injection are shared byte-for-byte between the
+  two modes; `routes.rs` picks the outer fallback per mode. New `api/build.rs` re-runs the embed on
+  every `web/dist` change (content-hashed filenames otherwise go untracked by rustc). Also answered
+  the roadmap's carried-over open question by reading the vendored libgit2 1.9.6 source directly:
+  `Repository::open_bare` does **not** honour `GIT_CONFIG_GLOBAL` (needs
+  `GIT_REPOSITORY_OPEN_FROM_ENV`, which `repo/open.rs::open_named` doesn't set), but `$HOME` and
+  `/etc/gitconfig` *are* read — so the deferred systemd unit should run as the repository-owning
+  user rather than needing any `safe.directory` config at all. `git` exec (archive/upload-pack)
+  stays a runtime dependency regardless. No API contract change.
+
 ## Next up
 
-None queued — **every cgit-parity item under "Repository index" is now closed** (#64-#71), and
-submodule links close one more (#72). No cgit-parity gaps remain (single-child directory collapsing
-was deliberately left unimplemented, see the "not planned" notes below). Pick a candidate below, or
-a fresh request.
+Package the single-binary deploy path: a release tarball + systemd unit for the `embed-web`
+binary, and a Jenkins release stage. See the candidate below for what's settled (the `embed-web`
+feature, the ownership question) vs. still open (target triple, tarball contents, the unit file
+itself). Otherwise, no cgit-parity gaps remain (single-child directory collapsing was deliberately
+left unimplemented, see the "not planned" notes below) — pick another candidate below, or a fresh
+request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1296,14 +1314,20 @@ a fresh request.
   shows up.
 - Commit log's `path` filter walk can be slow on paths that change rarely across a long history
   (noted when `commits.rs::log` was built) — no reports of this being a real problem yet.
-- Single-binary, non-container deploy path: embed `web/dist` into the `axgit` binary (e.g.
-  `rust-embed`) behind an opt-in `embed-web` Cargo feature, replacing the current
-  `AXGIT_STATIC_DIR`-points-at-a-directory story for that use case. Needs a two-step build
-  (`pnpm --filter web build` then `cargo build --features embed-web`), a packaged tarball +
-  systemd unit, and a Jenkinsfile release stage. `git` exec (archive/upload-pack) stays a runtime
-  dependency either way. Open question carried over: whether libgit2 respects `GIT_CONFIG_GLOBAL`
-  for the bare-metal equivalent of the container's `[safe] directory = *` workaround
-  (DECISIONS.md #22) — needs verifying before the systemd unit's user/group story is finalized.
+- Single-binary deploy *packaging*: the `embed-web` feature itself is done (DECISIONS.md #74) — a
+  two-step build (`pnpm --filter web build` then `cargo build --release --features embed-web`)
+  already produces a complete `axgit` executable with no `AXGIT_STATIC_DIR` needed. What's left is
+  turning that binary into an installable release: a packaged tarball, a systemd unit, and a
+  Jenkinsfile release stage. The unit's user/group story is already decided (#74) — run as the user
+  that owns the repositories, so libgit2's/git's dubious-ownership check passes outright and no
+  `safe.directory` config is needed. Still open: target triple (a musl build, matching the
+  Dockerfile's static-linking posture, needs a `rustup target add` + musl toolchain on the build
+  machine — see DECISIONS.md #22's rationale for why that's preferable to glibc), tarball contents,
+  and the unit file itself.
+- Immutable `Cache-Control` for the `embed-web` feature's content-hashed `_astro/*` assets
+  (DECISIONS.md #74 noted this as safe but deliberately out of scope for that change, since it's
+  really a mode-independent improvement — `AXGIT_STATIC_DIR`'s `ServeDir` path has the same
+  opportunity and currently sets no `Cache-Control` either).
 - Tree/blob/blame links for remote branches on the refs page (#52 built Log/Compare only) — needs
   `resolve.rs::ref_shorthands()` extended to `refs/remotes/*`, plus deciding how a local branch
   named e.g. `origin` should disambiguate against a remote branch `origin/main` under the existing

@@ -15,6 +15,23 @@
         "./web/dist"
       ],
       "port": 8080
+    },
+    {
+      "name": "axgit-embed",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": [
+        "run",
+        "--manifest-path",
+        "api/Cargo.toml",
+        "--features",
+        "embed-web",
+        "--",
+        "--repo-root",
+        "./fixtures/repos",
+        "--listen",
+        "127.0.0.1:8099"
+      ],
+      "port": 8099
     }
   ]
 }

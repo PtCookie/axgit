@@ -65,6 +65,11 @@ pnpm --filter web gen:types # then regenerate web types (openapi-typescript)
 # Local integrated run (api serves web/dist)
 cargo run --manifest-path api/Cargo.toml -- --repo-root ./fixtures/repos --static-dir ./web/dist
 
+# Single-binary build: bakes web/dist into the axgit binary (docs/DECISIONS.md #74),
+# no --static-dir needed at runtime (AXGIT_STATIC_DIR still overrides it when set)
+pnpm --filter web build
+cargo build --release --manifest-path api/Cargo.toml --features embed-web
+
 # Container build
 docker build --tag axgit:latest .
 ```

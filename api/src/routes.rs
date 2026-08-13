@@ -1,5 +1,7 @@
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
+#[cfg(feature = "embed-web")]
+use axum::http::HeaderMap;
 use axum::http::Uri;
 use axum::routing::{MethodRouter, any, get, post};
 use tower_http::services::ServeDir;
@@ -7,6 +9,9 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+#[cfg(feature = "embed-web")]
+use crate::assets;
+use crate::assets::Assets;
 use crate::error::{ApiError, ErrorResponse};
 use crate::handlers::{
     archive, commits, diff, feed, files, objects, repos, search, site, stats, tags,
@@ -83,36 +88,74 @@ pub fn build_router(state: AppState) -> Router {
         .merge(smart_http)
         .merge(SwaggerUi::new(SWAGGER_UI_PATH).url(OPENAPI_JSON_PATH, ApiDoc::openapi()));
 
-    if let Some(static_dir) = &state.config.static_dir {
-        // The Astro build has one HTML file per route *shape*, not per
-        // repository (docs/DECISIONS.md #17): serve real files first, then
-        // map whatever is left onto the matching prerendered page shell —
-        // or `404.html` with a real 404 status. `clone_url_base` rides along
-        // so a `__repo__` shell can get its `rel="vcs-git"` link injected
-        // (docs/DECISIONS.md #63); `site` similarly carries
-        // `root_title`/`root_desc` into every shell's injected `<meta>`s
-        // (docs/DECISIONS.md #70).
-        let dir = static_dir.clone();
+    // `Assets::resolve` prefers `AXGIT_STATIC_DIR` when set, else falls back
+    // to the binary's embedded copy of `web/dist` when built with
+    // `embed-web` (docs/DECISIONS.md #74) — `None` (neither configured nor
+    // embedded) serves no frontend at all, today's default-build behaviour.
+    if let Some(assets) = Assets::resolve(state.config.static_dir.as_deref()) {
+        // `clone_url_base` rides along so a `__repo__` shell can get its
+        // `rel="vcs-git"` link injected (docs/DECISIONS.md #63); `site`
+        // similarly carries `root_title`/`root_desc` into every shell's
+        // injected `<meta>`s (docs/DECISIONS.md #70).
         let clone_url_base = state.config.clone_url_base.clone();
         let site = shell::SiteHead {
             title: state.config.root_title.clone(),
             description: state.config.root_desc.clone(),
         };
-        let shell: MethodRouter<()> = get(move |uri: Uri| {
-            shell::serve_shell_or_redirect(dir.clone(), clone_url_base.clone(), site.clone(), uri)
-        });
-        // `append_index_html_on_directories` is off: with it on, `ServeDir`
-        // would serve `static_dir/index.html` for `/` itself directly, bypassing
-        // `fallback(shell)` (and so `site`'s injected `<meta>`s) entirely —
-        // the only request shape in this build that maps onto a real
-        // directory. Every other route shape (e.g. `/git-compose`) has no
-        // matching directory at all, so it already fell through to the
-        // shell regardless of this flag; this only changes `/` itself.
-        router = router.fallback_service(
-            ServeDir::new(static_dir)
-                .append_index_html_on_directories(false)
-                .fallback(shell),
-        );
+
+        router = match assets {
+            Assets::Dir(dir) => {
+                // The Astro build has one HTML file per route *shape*, not
+                // per repository (docs/DECISIONS.md #17): `ServeDir` serves
+                // real files first, then maps whatever is left onto the
+                // matching prerendered page shell — or `404.html` with a
+                // real 404 status.
+                let shell_assets = Assets::Dir(dir.clone());
+                let shell: MethodRouter<()> = get(move |uri: Uri| {
+                    shell::serve_shell_or_redirect(
+                        shell_assets.clone(),
+                        clone_url_base.clone(),
+                        site.clone(),
+                        uri,
+                    )
+                });
+                // `append_index_html_on_directories` is off: with it on,
+                // `ServeDir` would serve `dir/index.html` for `/` itself
+                // directly, bypassing `fallback(shell)` (and so `site`'s
+                // injected `<meta>`s) entirely — the only request shape in
+                // this build that maps onto a real directory. Every other
+                // route shape (e.g. `/git-compose`) has no matching
+                // directory at all, so it already fell through to the shell
+                // regardless of this flag; this only changes `/` itself.
+                router.fallback_service(
+                    ServeDir::new(dir)
+                        .append_index_html_on_directories(false)
+                        .fallback(shell),
+                )
+            }
+            // The embedded mode's own "serve a real file, else fall through
+            // to the shell" ordering, mirroring `ServeDir(...).fallback(shell)`
+            // above without depending on the filesystem.
+            #[cfg(feature = "embed-web")]
+            Assets::Embedded => {
+                let embedded: MethodRouter<()> =
+                    get(move |uri: Uri, headers: HeaderMap| async move {
+                        match assets::serve_embedded_file(&headers, uri.path()) {
+                            Some(response) => response,
+                            None => {
+                                shell::serve_shell_or_redirect(
+                                    Assets::Embedded,
+                                    clone_url_base.clone(),
+                                    site.clone(),
+                                    uri,
+                                )
+                                .await
+                            }
+                        }
+                    });
+                router.fallback_service(embedded)
+            }
+        };
     }
 
     router.layer(TraceLayer::new_for_http()).with_state(state)

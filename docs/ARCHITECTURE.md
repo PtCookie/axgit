@@ -177,3 +177,10 @@ render.
   all unset by default).
 - Logs go to stdout/stderr as JSON (`tracing` + `tracing-subscriber`) — collected by the stack's
   fluentd logging driver.
+- **Single-binary alternative** (DECISIONS.md #74): `cargo build --release --features embed-web`
+  (after `pnpm --filter web build`) bakes `web/dist` into the `axgit` executable via `rust-embed`,
+  so the binary alone — plus a `git` binary on `PATH`, still a runtime dependency either way — is a
+  complete deployment, no `AXGIT_STATIC_DIR`/directory needed. `AXGIT_STATIC_DIR` still overrides
+  the embedded copy when set. The Dockerfile is unaffected (the `embed-web` feature is never
+  enabled there); this path targets a bare-metal/systemd install instead. Packaging that install
+  (release tarball, systemd unit, CI release stage) is tracked separately in docs/ROADMAP.md.

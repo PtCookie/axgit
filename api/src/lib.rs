@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod cache;
 pub mod cgit_compat;
 pub mod config;
