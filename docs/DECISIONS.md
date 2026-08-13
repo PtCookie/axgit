@@ -2884,3 +2884,51 @@ itself: a gitlink's `sha` (the submodule commit, in the *other* repository) and 
   gained `"module_link": null`, pinning "no config, no `.gitmodules` → no link" alongside the shape
   check. `TreeView.test.tsx`/`ObjectView.test.tsx` fixtures updated to match, plus new `TreeView`
   cases for a linked and a root-relative submodule row.
+
+## #73 Validate `--chart-2..5`
+
+Closes the roadmap candidate #29 and #33/#34 each deferred: `--chart-2..5` had never been run
+through the `dataviz` skill's `validate_palette.js`, because nothing consumed them (the stats chart
+is single-series; the commit graph and ref badges both deliberately encode identity by shape/icon
+instead, exactly per the method's own "identity is never colour-alone" rule — not as a stand-in for
+missing colour). Converted to hex, the shadcn-generated values turned out to be a *broken* palette,
+not merely an unverified one, so this is a real fix rather than a formality.
+
+- **Measured, not assumed.** The four slots are Tailwind's teal ramp (`#00bba7`/`#009689`/
+  `#00786f`/`#005f5a`) — one hue (182–188°) at four lightness steps, byte-identical in light and
+  dark (they never switched with the theme at all). Run against `--background` (light `#ffffff`,
+  dark `#090b0c` — `StatsChart` paints directly on the page, not inside a `Card`), the validator
+  hard-fails both modes: chroma floor (`#00786f` 0.09, `#005f5a` 0.076, both below the 0.10 floor —
+  reading as gray), the normal-vision floor (worst adjacent ΔE 7.9, floor 15), and in dark mode the
+  lightness band too (`#00bba7` L 0.71 above the 0.48–0.67 band, `#005f5a` L 0.438 below it). Slot 1
+  was re-checked alone and still passes in both modes, confirming #29's fix held.
+- **Replacement: four hues from the skill's reference categorical palette
+  (`references/palette.md`), in a derived order, slot 1 unchanged.** All 1680 orderings of 4 hues
+  from the reference eight (excluding `green`, whose family slot 1 already occupies) were fed
+  through the validator for both modes against the real surfaces; 244 passed every hard gate. The
+  order kept is the one maximizing the worst adjacent CVD ΔE, needing no contrast relief in either
+  mode: slot 2 blue, slot 3 orange, slot 4 violet, slot 5 red. Light: `#2a78d6`/`#eb6834`/`#4a3aa7`/
+  `#e34948`; dark: `#3987e5`/`#d95926`/`#9085e9`/`#e66767` — every hex verbatim from the reference
+  file (check 6: documented palette only). Result: **ALL CHECKS PASS** both modes — light worst
+  adjacent CVD ΔE 19.8 (deutan) / normal-vision 20.9; dark worst adjacent CVD ΔE 18.8 (deutan) /
+  normal-vision 20.0; all 5 slots ≥ 3:1 against `--background` in both modes, and dark also clears
+  3:1 against `--card` (`#161b1d`, the tooltip/popover surface). Unlike the old values, light and
+  dark are stepped separately now.
+- **The hexes were converted back to `oklch()` with a round-trip check**, since `global.css` is
+  written in that form: each string was verified to convert back to its documented hex exactly
+  before landing (`--chart-2` light needed a third hue decimal — `255.53`, not `255.5` — to avoid a
+  one-bit drift to `#2978d6`).
+- **No new consumer.** `StatsChart` stays single-series; `CommitGraph` (#33) and `RefBadges` (#34)
+  keep their shape/icon encodings — both already cite the dataviz method's identity-is-never-
+  colour-alone rule directly rather than "the palette isn't ready yet", so this fix doesn't change
+  either decision, it just removes the stale justification `RefBadges.tsx`'s comment gave.
+- **Correcting #29's own prose while re-running its work**: it describes light mode's original
+  `--chart-1` (OKLCH L 0.855) as failing on "~1.4:1 contrast". The validator's contrast check is a
+  non-blocking `relief` WARN (visible labels or a table view satisfy it), not a hard FAIL — the
+  actual hard FAIL in light mode was the same one as dark, the lightness band (0.855 sits above the
+  light band's 0.77 ceiling). The fix #29 shipped was correct either way; only the stated reason for
+  light mode was imprecise. Recorded here rather than editing #29, which stays as written.
+- `web/src/styles/global.css` (`:root`/`.dark` chart blocks, comments rewritten) and
+  `web/src/components/repo/RefBadges.tsx` (comment only) are the only files touched. No API
+  contract change, no new route, no test change — nothing renders a second series yet, so there is
+  nothing to newly assert on.

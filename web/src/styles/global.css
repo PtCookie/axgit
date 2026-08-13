@@ -40,15 +40,23 @@
      * (oklch L 0.855) it read at ~1.4:1 against this surface, effectively
      * invisible as a bar fill. Reset to --primary's hue/chroma, which the
      * skill's validator already passes here (ALL CHECKS PASS) — one brand
-     * hue instead of introducing an unvalidated new one. chart-2..5 stay as
-     * shadcn generated them; nothing uses them yet (single-series stats
-     * chart only needs slot 1), so they're unvalidated and unfixed until a
-     * second series exists. */
+     * hue instead of introducing an unvalidated new one.
+     * chart-2..5 were shadcn's generated teal ramp — one hue at four
+     * lightness steps, identical in light and dark — which the validator
+     * hard-fails outright (chroma floor, normal-vision floor, and here in
+     * light mode's own band too) rather than merely leaving unverified
+     * (docs/DECISIONS.md #73). Replaced with four hues from the skill's
+     * reference categorical palette (references/palette.md), in an order
+     * derived by enumerating candidates and keeping the one that clears
+     * every check against this surface with the widest margin — not
+     * hand-picked. Slot 1 (the brand hue) anchors the order; light and dark
+     * are stepped separately below, unlike the old identical-in-both-modes
+     * values. */
     --chart-1: oklch(0.508 0.118 165.612);
-    --chart-2: oklch(0.704 0.14 182.503);
-    --chart-3: oklch(0.6 0.118 184.704);
-    --chart-4: oklch(0.511 0.096 186.391);
-    --chart-5: oklch(0.437 0.078 188.216);
+    --chart-2: oklch(0.575 0.163 255.53);
+    --chart-3: oklch(0.671 0.175 40.6);
+    --chart-4: oklch(0.433 0.167 283.6);
+    --chart-5: oklch(0.623 0.191 24.9);
     --radius: 0.625rem;
     --sidebar: oklch(0.987 0.002 197.1);
     --sidebar-foreground: oklch(0.148 0.004 228.8);
@@ -92,12 +100,15 @@
      * needs to land in the dataviz skill's dark-mode lightness band (OKLCH L
      * 0.48-0.67) instead, or it reads as glowing against this surface.
      * oklch(0.72 ...) — --primary's dark value — sits above that band; this
-     * step (L 0.60) is the one the validator passes (docs/DECISIONS.md #29). */
+     * step (L 0.60) is the one the validator passes (docs/DECISIONS.md #29).
+     * chart-2..5 are the same four reference hues as :root above, each
+     * re-stepped for this surface and the dark lightness band rather than
+     * reusing the light values verbatim (docs/DECISIONS.md #73). */
     --chart-1: oklch(0.6 0.118 165.612);
-    --chart-2: oklch(0.704 0.14 182.503);
-    --chart-3: oklch(0.6 0.118 184.704);
-    --chart-4: oklch(0.511 0.096 186.391);
-    --chart-5: oklch(0.437 0.078 188.216);
+    --chart-2: oklch(0.622 0.161 255.1);
+    --chart-3: oklch(0.622 0.173 40.1);
+    --chart-4: oklch(0.67 0.145 286.8);
+    --chart-5: oklch(0.669 0.159 22.3);
     --sidebar: oklch(0.218 0.008 223.9);
     --sidebar-foreground: oklch(0.987 0.002 197.1);
     --sidebar-primary: oklch(0.696 0.17 162.48);

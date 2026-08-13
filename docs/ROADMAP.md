@@ -1266,6 +1266,20 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   spliced into the axgit shell. `GET /objects/{oid}`'s tree case always reports `null` — no path
   context to resolve a template against.
 
+- **Validated `--chart-2..5`** (DECISIONS.md #73), closing the roadmap candidate #29/#33/#34 each
+  deferred. Measuring first (not assuming) showed the shadcn-generated values were an actually
+  broken palette, not merely an unverified one: converted to hex they're one teal hue at four
+  lightness steps, identical in light and dark, and the `dataviz` skill's validator hard-fails them
+  against the real `--background` surface on chroma floor, the normal-vision floor, and (dark mode)
+  the lightness band too. Replaced with four hues from the skill's reference categorical palette in
+  an order derived by enumerating all 1680 candidates and keeping the one clearing every check with
+  the widest margin — light/dark now stepped separately, each round-tripping exactly through
+  `oklch()`. Slot 1 (the brand hue) and every consumer are unchanged: `StatsChart` is still
+  single-series, and `CommitGraph`/`RefBadges` keep their shape/icon identity encodings (the
+  `dataviz` method's own rule, not a stand-in for a missing palette) — `RefBadges.tsx`'s comment
+  citing the old unvalidated-boilerplate reason was reworded to that rule. No API contract change,
+  no new route, no test change.
+
 ## Next up
 
 None queued — **every cgit-parity item under "Repository index" is now closed** (#64-#71), and
@@ -1282,9 +1296,6 @@ a fresh request.
   shows up.
 - Commit log's `path` filter walk can be slow on paths that change rarely across a long history
   (noted when `commits.rs::log` was built) — no reports of this being a real problem yet.
-- `--chart-2..5` in `global.css` are still unvalidated shadcn boilerplate (DECISIONS.md #29) —
-  revisit with the `dataviz` skill's validator if the stats page (or a future one) ever needs a
-  second chart series.
 - Single-binary, non-container deploy path: embed `web/dist` into the `axgit` binary (e.g.
   `rust-embed`) behind an opt-in `embed-web` Cargo feature, replacing the current
   `AXGIT_STATIC_DIR`-points-at-a-directory story for that use case. Needs a two-step build
