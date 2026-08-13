@@ -1269,8 +1269,9 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
 ## Next up
 
 None queued — **every cgit-parity item under "Repository index" is now closed** (#64-#71), and
-submodule links close one more (#72). Only one cgit-parity gap remains: single-child directory
-collapsing, still under "Tree and blob". Pick that, a candidate below, or a fresh request.
+submodule links close one more (#72). No cgit-parity gaps remain (single-child directory collapsing
+was deliberately left unimplemented, see the "not planned" notes below). Pick a candidate below, or
+a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1305,8 +1306,7 @@ against axgit's routes and pages. Not urgent, no particular order — pick from 
 the candidates above. Items that turned out to be merged, or built differently on purpose, are
 recorded separately below instead of listed as gaps.
 
-- **Tree and blob**
-  - Single-child directory collapsing (`write_tree_link` renders `a / b / c` on one row).
+(none remaining)
 
 ### cgit parity notes (merged or deliberately different — not planned)
 
@@ -1368,6 +1368,8 @@ them. Grouped by why the difference exists.
 - cgit's shipped `cgit.js` live relative-age refresh → static relative time is enough.
 - cgit URL compatibility only covers the shapes in #35 — `tree/{path}?id=`, `plain/`, `atom/`, and
   `snapshot/` are deliberately not mapped.
+- Single-child directory collapsing (cgit's `write_tree_link` renders `a / b / c` on one row) —
+  judged low value, not planned.
 
 **Not gaps (to avoid re-flagging)**
 
