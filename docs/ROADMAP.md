@@ -656,6 +656,31 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     pairing as `shellFor`/`shell_for`.
   - No API contract change — this is static-fallback behavior, not an `/api/v1` route.
 
+- **Single-binary deploy packaging: release tarball, systemd unit, Jenkins release stage**
+  (DECISIONS.md #75). Closed the last item in the single-binary deploy line of work — #74 built the
+  `embed-web` feature itself; this turns the resulting binary into something installable. Finalized
+  design:
+  - New `scripts/make-release.sh` (following `make-fixtures.sh`'s shape): builds the frontend, then
+    `cargo build --release --features embed-web --target x86_64-unknown-linux-musl` (native on the
+    CI agent, no Docker — matches #22's static-linking posture), and stages the binary with a
+    systemd unit, env-file template, and install docs (`packaging/`) into
+    `release/axgit-$VERSION-$TARGET.tar.gz` + `SHA256SUMS`. `TARGET` is overridable for local
+    verification on a non-Linux dev machine. `VERSION` comes from `api/Cargo.toml`; a Jenkins
+    `TAG_NAME` mismatch fails the build before compiling.
+  - **`packaging/axgit.service`** runs as the user that owns `AXGIT_REPO_ROOT` (#74's ownership
+    finding — the check passes outright, no `safe.directory` needed here either), reads config from
+    an optional `EnvironmentFile`, and is hardened with the standard systemd sandboxing directives
+    while leaving process-spawn/network open for the `git` exec path.
+    `packaging/axgit.env.example` mirrors README.md's configuration table; `packaging/INSTALL.md`
+    ships inside the tarball itself.
+  - `Jenkinsfile` gained a `Release` stage (`v*` tag builds only, after `Test`) that runs the script
+    and archives the tarball + checksums.
+  - Verified end-to-end on macOS against the host triple: tarball contents, checksum round-trip,
+    the tag-mismatch guard, and the extracted binary (no `AXGIT_STATIC_DIR`) serving the index
+    shell/API/a content-hashed asset. The musl leg itself is first exercised by the next `v*` tag
+    build.
+  - No API contract change, no `api/src` change — packaging only.
+
 - **Blame rename tracking** (DECISIONS.md #36), closing the `git blame --follow` candidate below.
   Turned out to already work: libgit2's blame runs its own rename-similarity diff internally, and
   a direct comparison against `git blame --porcelain` across three histories (plain rename,
@@ -1298,12 +1323,9 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
 
 ## Next up
 
-Package the single-binary deploy path: a release tarball + systemd unit for the `embed-web`
-binary, and a Jenkins release stage. See the candidate below for what's settled (the `embed-web`
-feature, the ownership question) vs. still open (target triple, tarball contents, the unit file
-itself). Otherwise, no cgit-parity gaps remain (single-child directory collapsing was deliberately
-left unimplemented, see the "not planned" notes below) — pick another candidate below, or a fresh
-request.
+No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,
+see the "not planned" notes below), and the single-binary deploy path — feature (#74) and packaging
+(#75) both — is done. Pick a candidate below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 
@@ -1314,16 +1336,12 @@ request.
   shows up.
 - Commit log's `path` filter walk can be slow on paths that change rarely across a long history
   (noted when `commits.rs::log` was built) — no reports of this being a real problem yet.
-- Single-binary deploy *packaging*: the `embed-web` feature itself is done (DECISIONS.md #74) — a
-  two-step build (`pnpm --filter web build` then `cargo build --release --features embed-web`)
-  already produces a complete `axgit` executable with no `AXGIT_STATIC_DIR` needed. What's left is
-  turning that binary into an installable release: a packaged tarball, a systemd unit, and a
-  Jenkinsfile release stage. The unit's user/group story is already decided (#74) — run as the user
-  that owns the repositories, so libgit2's/git's dubious-ownership check passes outright and no
-  `safe.directory` config is needed. Still open: target triple (a musl build, matching the
-  Dockerfile's static-linking posture, needs a `rustup target add` + musl toolchain on the build
-  machine — see DECISIONS.md #22's rationale for why that's preferable to glibc), tarball contents,
-  and the unit file itself.
+- Strip the release binary (`scripts/make-release.sh`, DECISIONS.md #75) — left unstripped so the
+  release profile matches the container build's exactly; #74's measured size figures would need
+  re-measuring against a stripped binary before this is worth doing.
+- An `aarch64-unknown-linux-musl` leg for `scripts/make-release.sh`/`Jenkinsfile`'s `Release` stage
+  (DECISIONS.md #75 shipped x86_64 only) — no confirmed arm64 deploy target yet; add as a second
+  `TARGET` build if one shows up.
 - Immutable `Cache-Control` for the `embed-web` feature's content-hashed `_astro/*` assets
   (DECISIONS.md #74 noted this as safe but deliberately out of scope for that change, since it's
   really a mode-independent improvement — `AXGIT_STATIC_DIR`'s `ServeDir` path has the same

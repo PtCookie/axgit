@@ -1,6 +1,9 @@
-// Test-only pipeline for now — image build (Dockerfile) is wired in separately later.
-// Assumes the agent already has Node.js and a Rust toolchain (rustc/cargo, rustfmt +
-// clippy components) installed; this file only pins the exact pnpm version via corepack.
+// Image build (Dockerfile) is wired in separately later. Assumes the agent already has
+// Node.js and a Rust toolchain (rustc/cargo, rustfmt + clippy components) installed; this
+// file only pins the exact pnpm version via corepack. The Release stage (v* tag builds
+// only, docs/DECISIONS.md #75) additionally needs musl-tools and the
+// x86_64-unknown-linux-musl rustup target for the single-binary release tarball
+// (scripts/make-release.sh).
 pipeline {
     agent any
 
@@ -62,6 +65,23 @@ pipeline {
                         }
                     }
                 }
+            }
+        }
+
+        // Single-binary release tarball (scripts/make-release.sh, docs/DECISIONS.md #75):
+        // only on a v* tag build, after Test has passed. Target is fixed to
+        // x86_64-unknown-linux-musl, matching the Dockerfile's static-linking posture
+        // (docs/DECISIONS.md #22) without depending on Docker in this pipeline.
+        stage('Release') {
+            when {
+                allOf {
+                    buildingTag()
+                    tag pattern: 'v.*', comparator: 'REGEXP'
+                }
+            }
+            steps {
+                sh './scripts/make-release.sh'
+                archiveArtifacts artifacts: 'release/*.tar.gz,release/SHA256SUMS', fingerprint: true
             }
         }
     }

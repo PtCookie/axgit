@@ -3011,3 +3011,62 @@ feature — this closes only the frontend half.
 - Scope: this closes only the `embed-web` feature + serving path. Packaging (release tarball,
   systemd unit) and a Jenkins release stage stay a ROADMAP candidate, now with the ownership
   question above answered rather than open.
+
+## #75 Single-binary deploy packaging: release tarball, systemd unit, Jenkins release stage
+
+Closes the packaging half of the single-binary deploy candidate — #74 produced a complete `axgit`
+executable, but nothing turned it into something installable: no tarball, no service definition,
+and `Jenkinsfile` had never built a release artifact of any kind.
+
+- **New `scripts/make-release.sh`**, following `make-fixtures.sh`'s shape
+  (`set -euo pipefail`, `ROOT` from `$0`). Builds the frontend, then
+  `cargo build --release --locked --features embed-web --target "$TARGET"`, and stages the
+  resulting binary with `packaging/axgit.service`, `axgit.env.example`, `INSTALL.md`, and `LICENSE`
+  into `release/axgit-$VERSION-$TARGET.tar.gz` + `release/SHA256SUMS`. `VERSION` is read from
+  `api/Cargo.toml` rather than duplicated; when Jenkins' `TAG_NAME` is set (a tag build) the script
+  asserts it matches `v$VERSION` and fails before building on a mismatch — a tag/manifest skew
+  should stop the release, not ship a mislabelled tarball.
+- **Target: `x86_64-unknown-linux-musl` only, built natively on the CI agent — not a Docker-stage
+  build.** Matches the Dockerfile's static-linking posture (#22) without adding a Docker dependency
+  to the Jenkins pipeline, which already assumes a bare Node/Rust toolchain. musl needs its own C
+  compiler for the vendored C dependencies (`libgit2-sys`, `liblzma-sys`, `zstd-sys`, `bzip2-sys`
+  all compile via the `cc` crate, same as the Dockerfile's alpine build) — the script requires
+  `musl-gcc` on `PATH` and sets `CC_x86_64_unknown_linux_musl` explicitly rather than letting `cc`
+  fall back to the host's glibc-targeting compiler, and checks the rustup target is installed
+  first, failing with the exact remediation commands rather than a raw linker error. `TARGET` is
+  overridable (`TARGET=aarch64-apple-darwin ./scripts/make-release.sh`) purely so the
+  staging/tar/checksum logic can be exercised on a non-Linux dev machine — Jenkins always uses the
+  musl default. arm64 is left off the release matrix; nothing in git-compose currently targets it,
+  and it can be added as its own `TARGET` build later without changing the script.
+  No stripping — the release profile matches the container build's, and stripping would invalidate
+  #74's measured size figures without being asked for; left as a ROADMAP candidate instead.
+- **`packaging/axgit.service`**: `Type=exec`, `EnvironmentFile=-/etc/axgit/axgit.env` (the `-`
+  makes it optional — axgit's own defaults apply without one, matching `config.rs`'s all-env-var
+  design). `User=`/`Group=` default to `git` with a comment pointing at #74's ownership finding —
+  the operator changes it to whichever account owns `AXGIT_REPO_ROOT`, at which point the
+  ownership check passes outright and no `safe.directory` entry is needed, on a bare-metal host any
+  more than in the container. Hardened with the standard systemd sandboxing directives
+  (`ProtectSystem=strict`, `PrivateTmp`, `RestrictNamespaces`, `SystemCallFilter=@system-service`,
+  …) while leaving process spawning and network access open — axgit forks/execs `git` for
+  archive/upload-pack (ARCHITECTURE.md's hybrid libgit2+exec policy), so those can't be sandboxed
+  away. **`ProtectHome=read-only`, deliberately not `yes`**: libgit2 still reads
+  `$HOME/.gitconfig` as part of the ownership-check config stack (#74), and a fully hidden home
+  would make that lookup silently see nothing.
+- **`packaging/axgit.env.example`** mirrors README.md's configuration table field-for-field (same
+  order, same one-line descriptions) so the two don't drift independently — both ultimately
+  describe `api/src/config.rs`'s `Config` struct.
+- **`packaging/INSTALL.md`** ships inside the tarball itself (not just in the repo), since it's an
+  operator-facing document needed at install time, on a host that may never have cloned this repo.
+- **Jenkins trigger: `v*` tag builds only, via `archiveArtifacts`.** No dedicated release
+  automation (pushing to a release host, notifying anyone) exists yet — this stage's job is
+  producing and retaining the artifact, matching the existing pipeline's "test-only, artifacts
+  archived" posture (`web/playwright-report/**` already works this way). `Jenkinsfile`'s `Release`
+  stage runs after `Test` (`buildingTag()` + a `v.*` tag pattern), so a broken build never produces
+  a tagged release artifact even if the tag itself was pushed.
+- Verified end-to-end on macOS against the host triple (`TARGET=aarch64-apple-darwin`): tarball
+  contents match exactly, `SHA256SUMS` round-trips, the `TAG_NAME` mismatch guard fails before
+  building, and the extracted binary — run with no `AXGIT_STATIC_DIR` — serves the index shell,
+  `/api/v1/repos`, and a content-hashed `_astro/*` asset, confirming the embedded frontend is what
+  answers. The musl leg itself is exercised for the first time by the next `v*` tag build; local
+  verification stops at the point only a Linux host can go further.
+- No API contract change, no `api/src` change — this is packaging only.

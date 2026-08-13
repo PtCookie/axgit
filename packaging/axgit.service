@@ -1,0 +1,58 @@
+[Unit]
+Description=Axgit — read-only web frontend for bare Git repositories
+Documentation=https://git.ptcookie.net/axgit.git
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/axgit
+Restart=on-failure
+RestartSec=2
+
+# Run as the user that OWNS the repository root (AXGIT_REPO_ROOT). This is
+# deliberate, not a placeholder: libgit2's/git's dubious-ownership check
+# passes outright when the process uid matches the repositories' owning uid,
+# so no [safe.directory] entry is needed anywhere (docs/DECISIONS.md #74/#75
+# — Repository::open_bare does not honour GIT_CONFIG_GLOBAL, but
+# $HOME/.gitconfig and /etc/gitconfig are read, and neither needs an entry
+# once ownership already matches). Change these to whatever user/group
+# actually owns AXGIT_REPO_ROOT on this host.
+User=git
+Group=git
+
+# The only configuration surface — every AXGIT_* variable from
+# api/src/config.rs (see axgit.env.example, and README.md's configuration
+# table). The leading '-' makes the file optional: axgit's own defaults
+# apply if it's absent.
+EnvironmentFile=-/etc/axgit/axgit.env
+
+# Sandboxing. The app never writes anywhere (CLAUDE.md's read-only
+# invariant) but does fork/exec `git` for archive/upload-pack
+# (docs/ARCHITECTURE.md's hybrid libgit2+exec policy), so process spawning
+# and network access are left open while filesystem/kernel surface is
+# locked down.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+# read-only, not "yes": libgit2 still reads $HOME/.gitconfig for the
+# ownership-check config stack (docs/DECISIONS.md #74).
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Uncomment to bind a privileged port (e.g. :80) directly instead of sitting
+# behind a reverse proxy (the default deployment shape, docs/DECISIONS.md
+# #10):
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

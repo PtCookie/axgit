@@ -57,8 +57,19 @@ pnpm --filter web build
 cargo build --release --manifest-path api/Cargo.toml --features embed-web
 ```
 
-`AXGIT_STATIC_DIR` still overrides the embedded copy at runtime when set. Packaging this build
-(release tarball, systemd unit) isn't built yet — see docs/ROADMAP.md.
+`AXGIT_STATIC_DIR` still overrides the embedded copy at runtime when set. To package this into an
+installable release tarball (binary + systemd unit + env-file template + install docs,
+docs/DECISIONS.md #75):
+
+```sh
+./scripts/make-release.sh
+```
+
+Defaults to `TARGET=x86_64-unknown-linux-musl` (override via the `TARGET` env var), matching the
+Dockerfile's static-linking posture; building for a musl target requires `musl-tools`
+(`musl-gcc`) and `rustup target add x86_64-unknown-linux-musl` first. Produces
+`release/axgit-<version>-<target>.tar.gz` and `release/SHA256SUMS` — see the tarball's own
+`INSTALL.md` (also at [packaging/INSTALL.md](packaging/INSTALL.md)) for the systemd install steps.
 
 ### Configuration
 

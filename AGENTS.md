@@ -178,6 +178,8 @@ axgit/
     tests/            # vitest (browser mode)
     e2e/              # Playwright
   docs/               # ARCHITECTURE.md, API.md, DECISIONS.md, ROADMAP.md, openapi.json
+  packaging/          # systemd unit, env-file template, install docs (single-binary release)
+  scripts/            # make-fixtures.sh, make-release.sh
   lefthook.yml
   Dockerfile          # web build → api build → runtime (single image)
 ```
