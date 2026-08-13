@@ -1,6 +1,5 @@
 {
     "name": "axgit",
-    "version": "0.0.1",
     "description": "Web interface for Git repositories",
     "keywords": [
         "Git",
