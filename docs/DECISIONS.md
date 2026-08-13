@@ -3156,3 +3156,14 @@ the filename itself already guarantees the content can never change.
   path carry the header.
 - No API contract change, no `api/src` route/handler-shape change — a response header addition
   only.
+
+## #78 Decided against stripping the release binary
+
+Closes the ROADMAP candidate #75 left open, by deciding not to pursue it rather than by
+implementing it. `scripts/make-release.sh` builds with the same `release` profile as the
+Dockerfile (no `strip = true`), so a panic backtrace on either deploy shape still names real
+functions. Stripping would shrink the binary (#74 measured ~24.0 MB unstripped; roughly 15–18 MB
+was the expected range) at the cost of that symbol information — for a self-hosted, single-tenant
+service where the operator debugging a panic *is* the person who'd read that backtrace, the
+debugging value outweighs the size saving. Not revisiting unless a concrete need shows up (e.g. the
+tarball size itself becoming a problem). No code change.

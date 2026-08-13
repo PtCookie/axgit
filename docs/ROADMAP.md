@@ -1356,9 +1356,6 @@ see the "not planned" notes below), and the single-binary deploy path — featur
   shows up.
 - Commit log's `path` filter walk can be slow on paths that change rarely across a long history
   (noted when `commits.rs::log` was built) — no reports of this being a real problem yet.
-- Strip the release binary (`scripts/make-release.sh`, DECISIONS.md #75) — left unstripped so the
-  release profile matches the container build's exactly; #74's measured size figures would need
-  re-measuring against a stripped binary before this is worth doing.
 - An `aarch64-unknown-linux-musl` leg for `scripts/make-release.sh`/`Jenkinsfile`'s `Release` stage
   (DECISIONS.md #75 shipped x86_64 only) — no confirmed arm64 deploy target yet; add as a second
   `TARGET` build if one shows up.
