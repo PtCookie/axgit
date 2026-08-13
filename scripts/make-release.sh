@@ -70,6 +70,43 @@ if [[ ! -x "$BINARY" ]]; then
   exit 1
 fi
 
+# Smoke check: the binary has never actually been run up to this point — a
+# musl `cc`/linker misconfiguration can still produce a file that exists,
+# passes -x, and immediately segfaults or fails to start. When the host can
+# run it (same OS + arch as $TARGET; a glibc/musl libc difference doesn't
+# matter for a statically-linked musl binary), invoke `--version` and check
+# it actually names this release, catching both a broken binary and a
+# tag/binary version mismatch before anything is packaged.
+target_os() {
+  case "$1" in
+  *-linux-*) echo linux ;;
+  *-apple-darwin) echo darwin ;;
+  *) echo unknown ;;
+  esac
+}
+target_arch() {
+  case "$1" in
+  x86_64-*) echo x86_64 ;;
+  aarch64-*) echo aarch64 ;;
+  arm64-*) echo aarch64 ;;
+  *) echo unknown ;;
+  esac
+}
+
+HOST_TRIPLE="$(rustc -vV | awk '/^host: /{ print $2 }')"
+if [[ "$(target_os "$HOST_TRIPLE")" == "$(target_os "$TARGET")" \
+  && "$(target_arch "$HOST_TRIPLE")" == "$(target_arch "$TARGET")" \
+  && "$(target_os "$TARGET")" != unknown ]]; then
+  echo "==> Smoke-checking the built binary (--version)"
+  ACTUAL_VERSION="$("$BINARY" --version)"
+  if [[ "$ACTUAL_VERSION" != "axgit $VERSION" ]]; then
+    echo "error: '$BINARY --version' printed '$ACTUAL_VERSION', expected 'axgit $VERSION'" >&2
+    exit 1
+  fi
+else
+  echo "==> Skipping smoke check: host ($HOST_TRIPLE) cannot run $TARGET binaries"
+fi
+
 PKG_NAME="axgit-$VERSION-$TARGET"
 STAGE_DIR="$RELEASE_DIR/$PKG_NAME"
 

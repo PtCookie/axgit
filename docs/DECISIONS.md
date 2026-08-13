@@ -3070,3 +3070,48 @@ and `Jenkinsfile` had never built a release artifact of any kind.
   answers. The musl leg itself is exercised for the first time by the next `v*` tag build; local
   verification stops at the point only a Linux host can go further.
 - No API contract change, no `api/src` change — this is packaging only.
+
+## #76 CI coverage and a binary smoke check for the single-binary release path
+
+Closes a gap #74/#75 left open: nothing between "code compiles" and "a `v*` tag ships a tarball"
+had ever actually exercised the `embed-web` feature or run the binary it produces. `Jenkinsfile`'s
+`Test` stage builds with default features only, so `api/src/assets.rs`'s `Embedded` arm,
+`routes.rs`'s embedded fallback, and `api/tests/embedded_assets_test.rs`
+(`#![cfg(feature = "embed-web")]`) plus `static_shell_test.rs`'s embed-gated variant were compiled
+out of every ordinary build — the `Release` stage's `cargo build --features embed-web` on the next
+pushed `v*` tag would have been the first build to ever touch that code. Compounding it,
+`scripts/make-release.sh` never ran the binary it just built: a musl `cc`/link misconfiguration
+producing a file that exists and is executable but immediately fails to start would have shipped
+undetected.
+
+- **New `Jenkinsfile` stage `Embedded build`**, sequential (not in the `Test` parallel block),
+  positioned after `Test` and before `Release`, running on every build rather than gated to tags —
+  a break should surface on the next ordinary commit, not on the next release attempt. It runs
+  `pnpm --filter web build` (also the only place CI runs the *production* Astro build at all —
+  Playwright's `webServer` in `web/playwright.config.ts` uses `pnpm dev`, not `astro build`, so
+  this is a second gap the same stage happens to close), then
+  `cargo clippy --features embed-web --all-targets -- -D warnings`, then `cargo test` scoped to
+  `--lib --test embedded_assets_test --test static_shell_test` rather than the full integration
+  suite: clippy `--all-targets` already proves every embed-gated file compiles under the feature,
+  and re-running every other integration test (unaffected by `embed-web`) a second time would only
+  spend the pipeline's 30-minute timeout on work the parallel `Test` stage already did. No musl
+  toolchain is needed here — this stage builds `embed-web` for the host target, not
+  `x86_64-unknown-linux-musl`; only `Release` cross/native-builds to musl.
+- **`scripts/make-release.sh` smoke check**, inserted right after the existing `[[ -x "$BINARY" ]]`
+  existence check: when the host can actually execute a `$TARGET` binary — same OS and CPU
+  architecture, checked via small `target_os`/`target_arch` triple-matching helpers (a musl vs.
+  glibc host libc difference doesn't matter for a statically-linked musl binary, so this correctly
+  says yes for an `x86_64-unknown-linux-gnu` Jenkins agent building the default
+  `x86_64-unknown-linux-musl` target, and for the `TARGET=aarch64-apple-darwin` local-verification
+  case) — it runs `"$BINARY" --version` and asserts the output is exactly `axgit $VERSION`
+  (confirmed against clap's actual `#[command(name = "axgit", version)]` output format,
+  `api/src/config.rs`). A mismatch or non-zero exit fails the script before anything is staged or
+  tarred. When the host can't run the target binary (the common case: any real Linux CI agent
+  building for musl, or cross-target local verification), the check is skipped with a one-line
+  explanation rather than failing the build — this can't become a hard requirement without buying
+  the pipeline a matching runner or an emulation layer neither of which exist yet.
+- Deliberately did **not** add a second Jenkins agent/emulation layer to make the smoke check run
+  unconditionally in CI — the musl leg's first real execution therefore still happens only when a
+  `v*` tag is built on a Linux agent (unchanged from #75's own caveat); this closes the "silently
+  never compiled" gap, not the "never run on the actual release target" one.
+- No API contract change, no `api/src` change.

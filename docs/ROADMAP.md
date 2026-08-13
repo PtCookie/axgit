@@ -681,6 +681,17 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     build.
   - No API contract change, no `api/src` change — packaging only.
 
+- **CI coverage and a binary smoke check for the single-binary release path** (DECISIONS.md #76).
+  Closed the gap #74/#75 left open: `embed-web` had never been compiled by CI outside of a `v*` tag
+  build, and `make-release.sh` never ran the binary it packaged. New sequential `Jenkinsfile` stage
+  `Embedded build` (every build, not just tags) runs the production `pnpm --filter web build`,
+  `cargo clippy --features embed-web --all-targets -- -D warnings`, and `cargo test` scoped to the
+  embed-specific targets — clippy already proves everything compiles, so the full integration suite
+  isn't re-run a second time. `make-release.sh` now smoke-checks the built binary's `--version`
+  output against `api/Cargo.toml`'s version whenever the host can actually execute a `$TARGET`
+  binary (same OS + arch), skipping with a one-line note otherwise (the common case: a Linux CI
+  agent building for musl, or cross-target local verification). No API contract change.
+
 - **Blame rename tracking** (DECISIONS.md #36), closing the `git blame --follow` candidate below.
   Turned out to already work: libgit2's blame runs its own rename-similarity diff internally, and
   a direct comparison against `git blame --porcelain` across three histories (plain rename,
