@@ -66,6 +66,58 @@ async fn an_svg_asset_should_be_served_with_the_svg_content_type() {
     assert_eq!(headers["content-type"], "image/svg+xml");
 }
 
+/// Finds a real `/_astro/*.js` reference from the index shell's own body,
+/// instead of hardcoding a content-hashed filename that changes on every
+/// `pnpm --filter web build` (docs/DECISIONS.md #77).
+async fn a_hashed_asset_path(router: axum::Router) -> String {
+    let (_, _, body) = get_bytes_with_headers(router, "/").await;
+    let body = String::from_utf8_lossy(&body);
+    body.split("/_astro/")
+        .nth(1)
+        .and_then(|rest| rest.split(['"', '\'']).next())
+        .map(|name| format!("/_astro/{name}"))
+        .expect("index shell should reference at least one /_astro/*.js asset")
+}
+
+#[tokio::test]
+async fn a_hashed_asset_should_get_an_immutable_cache_control() {
+    let repo_root = empty_repo_root();
+    let asset_path = a_hashed_asset_path(router_for(repo_root.path())).await;
+    let router = router_for(repo_root.path());
+
+    let (status, headers, _) = get_bytes_with_headers(router, &asset_path).await;
+
+    assert_eq!(status, StatusCode::OK, "asset path was {asset_path}");
+    assert_eq!(
+        headers["cache-control"],
+        "public, max-age=31536000, immutable"
+    );
+}
+
+#[tokio::test]
+async fn a_304_for_a_hashed_asset_should_keep_the_immutable_cache_control() {
+    let repo_root = empty_repo_root();
+    let asset_path = a_hashed_asset_path(router_for(repo_root.path())).await;
+
+    let (status, headers, _) =
+        get_bytes_with_headers(router_for(repo_root.path()), &asset_path).await;
+    assert_eq!(status, StatusCode::OK);
+    let etag = headers["etag"].to_str().unwrap().to_owned();
+
+    let (status, headers, _) = get_bytes_with_request_headers(
+        router_for(repo_root.path()),
+        &asset_path,
+        &[("if-none-match", &etag)],
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::NOT_MODIFIED);
+    assert_eq!(
+        headers["cache-control"],
+        "public, max-age=31536000, immutable"
+    );
+}
+
 #[tokio::test]
 async fn a_repo_route_shape_should_serve_the_matching_shell() {
     let repo_root = empty_repo_root();

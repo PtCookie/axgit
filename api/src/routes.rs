@@ -3,13 +3,13 @@ use axum::extract::DefaultBodyLimit;
 #[cfg(feature = "embed-web")]
 use axum::http::HeaderMap;
 use axum::http::Uri;
+use axum::middleware;
 use axum::routing::{MethodRouter, any, get, post};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-#[cfg(feature = "embed-web")]
 use crate::assets;
 use crate::assets::Assets;
 use crate::error::{ApiError, ErrorResponse};
@@ -158,7 +158,18 @@ pub fn build_router(state: AppState) -> Router {
         };
     }
 
-    router.layer(TraceLayer::new_for_http()).with_state(state)
+    // Mode-independent: content-hashed `_astro/*` assets get an immutable
+    // `Cache-Control` whether they came from `Assets::Dir`'s `ServeDir` or
+    // `Assets::Embedded`'s `serve_embedded_file` above — one layer here
+    // instead of duplicating the header logic in both serving paths
+    // (docs/DECISIONS.md #77). A no-op when neither mode is configured
+    // (no `_astro/*` request ever reaches a 200/304 to mark).
+    router
+        .layer(middleware::from_fn(
+            assets::immutable_cache_for_hashed_assets,
+        ))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }
 
 /// Push is SSH-only (CLAUDE.md invariant): every method on this path is 403.

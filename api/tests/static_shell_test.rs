@@ -409,6 +409,52 @@ async fn real_static_assets_should_be_served_instead_of_a_shell() {
     assert_eq!(String::from_utf8(body).unwrap(), ASSET_JS);
 }
 
+// docs/DECISIONS.md #77: `_astro/*` is where Astro puts every content-hashed
+// asset, so it's safe to mark immutable — checked against the three cases
+// that must disagree: a real hashed asset, a shell (not under the prefix at
+// all), and a `_astro/*` path with no matching file (falls through to the
+// 404 shell, which must never inherit the immutable header).
+#[tokio::test]
+async fn a_hashed_asset_should_get_an_immutable_cache_control() {
+    let (repo_root, static_dir) = setup_fixtures();
+    let router = router_with_static(repo_root.path(), static_dir.path());
+
+    let (status, headers, _) = get_bytes_with_headers(router, "/_astro/app.js").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers["cache-control"],
+        "public, max-age=31536000, immutable"
+    );
+}
+
+#[tokio::test]
+async fn the_index_shell_should_not_get_an_immutable_cache_control() {
+    let (repo_root, static_dir) = setup_fixtures();
+    let router = router_with_static(repo_root.path(), static_dir.path());
+
+    let (status, headers, _) = get_bytes_with_headers(router, "/").await;
+
+    assert_eq!(status, StatusCode::OK);
+    // Shells already carry their own validator-based `no-cache`
+    // (docs/API.md); the point here is that the immutable-assets layer
+    // didn't overwrite it.
+    assert_eq!(headers["cache-control"], "no-cache");
+}
+
+#[tokio::test]
+async fn a_missing_hashed_asset_should_404_without_an_immutable_cache_control() {
+    let (repo_root, static_dir) = setup_fixtures();
+    let router = router_with_static(repo_root.path(), static_dir.path());
+
+    let (status, headers, body) = get_bytes_with_headers(router, "/_astro/missing.js").await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(headers["cache-control"], "no-cache");
+    let body = String::from_utf8_lossy(&body);
+    assert!(body.contains(NOT_FOUND_MARKER), "body was {body:?}");
+}
+
 #[tokio::test]
 async fn unmatched_api_paths_should_return_json_not_found_not_a_shell() {
     let (repo_root, static_dir) = setup_fixtures();

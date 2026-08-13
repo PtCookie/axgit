@@ -8,13 +8,18 @@
 
 use std::path::{Path, PathBuf};
 
+use axum::extract::Request;
 #[cfg(feature = "embed-web")]
-use axum::http::{HeaderMap, header};
+use axum::http::HeaderMap;
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::middleware::Next;
 #[cfg(feature = "embed-web")]
-use axum::response::{IntoResponse, Response};
+use axum::response::IntoResponse;
+use axum::response::Response;
 #[cfg(feature = "embed-web")]
 use percent_encoding::percent_decode_str;
 
+use crate::handlers::IMMUTABLE_CACHE_CONTROL;
 #[cfg(feature = "embed-web")]
 use crate::handlers::{if_none_match, not_modified};
 
@@ -79,6 +84,35 @@ impl Assets {
     }
 }
 
+/// Prefix Astro's default `build.assets` config gives every content-hashed
+/// static asset (`_astro/App.C3GteLlS.js`, …) — nothing else under
+/// `web/dist` carries a hash in its filename (`404.html`, `favicon.svg`,
+/// `robots.txt`, page shells), so a plain prefix match is exact, not a
+/// heuristic.
+const HASHED_ASSET_PREFIX: &str = "/_astro/";
+
+fn is_hashed_asset_path(uri_path: &str) -> bool {
+    uri_path.starts_with(HASHED_ASSET_PREFIX)
+}
+
+/// Marks content-hashed `_astro/*` responses immutable, mode-independent
+/// (`Assets::Dir`'s `ServeDir` and [`serve_embedded_file`] both go through
+/// this one layer rather than each setting the header themselves). Applied
+/// only to a 200 or 304: a request for an asset that no longer exists in the
+/// current build (e.g. a stale link from a previous deploy) falls through to
+/// the 404 shell, which must never be cached as if it were immutable.
+pub(crate) async fn immutable_cache_for_hashed_assets(request: Request, next: Next) -> Response {
+    let is_hashed_asset = is_hashed_asset_path(request.uri().path());
+    let mut response = next.run(request).await;
+    if is_hashed_asset && matches!(response.status(), StatusCode::OK | StatusCode::NOT_MODIFIED) {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(IMMUTABLE_CACHE_CONTROL),
+        );
+    }
+    response
+}
+
 pub(crate) fn log_missing_shell(assets: &Assets, relative: &Path) {
     tracing::error!(
         file = %relative.display(),
@@ -94,10 +128,12 @@ pub(crate) fn log_missing_shell(assets: &Assets, relative: &Path) {
 /// `..`), so the caller falls through to the page shell exactly as
 /// `ServeDir::fallback(shell)` does for the directory mode.
 ///
-/// No `Cache-Control` is set, for parity with `ServeDir`'s own default
-/// (content-hashed `_astro/*` assets could safely be marked immutable, but
-/// that's a mode-independent improvement, tracked separately in
-/// docs/ROADMAP.md rather than bundled into this mode's serving path).
+/// No `Cache-Control` is set here directly — for a `_astro/*` path,
+/// [`immutable_cache_for_hashed_assets`] adds it afterward as a
+/// mode-independent layer shared with `Assets::Dir`'s `ServeDir` path
+/// (docs/DECISIONS.md #77); every other embedded file (page shells aren't
+/// served by this function, but e.g. `favicon.svg`/`robots.txt` are) is left
+/// without one, matching `ServeDir`'s own default.
 #[cfg(feature = "embed-web")]
 pub fn serve_embedded_file(headers: &HeaderMap, uri_path: &str) -> Option<Response> {
     let decoded = percent_decode_str(uri_path.trim_start_matches('/'))

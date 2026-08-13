@@ -692,6 +692,15 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   binary (same OS + arch), skipping with a one-line note otherwise (the common case: a Linux CI
   agent building for musl, or cross-target local verification). No API contract change.
 
+- **Immutable `Cache-Control` for content-hashed `_astro/*` assets** (DECISIONS.md #77), closing
+  the candidate #74/#75 both deliberately left open. One mode-independent `axum::middleware::from_fn`
+  layer (`assets::immutable_cache_for_hashed_assets`, wired at the outer `Router` level in
+  `routes.rs`) marks any `/_astro/*` response immutable on a 200 or 304 — covering both
+  `Assets::Dir`'s `ServeDir` path and `Assets::Embedded`'s `serve_embedded_file` without
+  duplicating the header logic in either. A missing hashed asset falling through to the 404 shell
+  is deliberately excluded (status-checked after the response is produced), so a stale link never
+  gets cached as if it were immutable. No API contract change.
+
 - **Blame rename tracking** (DECISIONS.md #36), closing the `git blame --follow` candidate below.
   Turned out to already work: libgit2's blame runs its own rename-similarity diff internally, and
   a direct comparison against `git blame --porcelain` across three histories (plain rename,
@@ -1353,10 +1362,6 @@ see the "not planned" notes below), and the single-binary deploy path — featur
 - An `aarch64-unknown-linux-musl` leg for `scripts/make-release.sh`/`Jenkinsfile`'s `Release` stage
   (DECISIONS.md #75 shipped x86_64 only) — no confirmed arm64 deploy target yet; add as a second
   `TARGET` build if one shows up.
-- Immutable `Cache-Control` for the `embed-web` feature's content-hashed `_astro/*` assets
-  (DECISIONS.md #74 noted this as safe but deliberately out of scope for that change, since it's
-  really a mode-independent improvement — `AXGIT_STATIC_DIR`'s `ServeDir` path has the same
-  opportunity and currently sets no `Cache-Control` either).
 - Tree/blob/blame links for remote branches on the refs page (#52 built Log/Compare only) — needs
   `resolve.rs::ref_shorthands()` extended to `refs/remotes/*`, plus deciding how a local branch
   named e.g. `origin` should disambiguate against a remote branch `origin/main` under the existing

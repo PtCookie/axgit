@@ -3115,3 +3115,44 @@ undetected.
   `v*` tag is built on a Linux agent (unchanged from #75's own caveat); this closes the "silently
   never compiled" gap, not the "never run on the actual release target" one.
 - No API contract change, no `api/src` change.
+
+## #77 Immutable `Cache-Control` for content-hashed `_astro/*` assets
+
+Closes the ROADMAP candidate #74 and #75 both deliberately left open: neither `Assets::Dir`'s
+`ServeDir` path nor `Assets::Embedded`'s `serve_embedded_file` (#74) ever set `Cache-Control` on a
+static asset, so every load re-validates every content-hashed file with the browser even though
+the filename itself already guarantees the content can never change.
+
+- **One mode-independent layer, not two duplicated header-setting sites.** Astro's default
+  `build.assets` config puts every content-hashed file (and nothing else — not `404.html`, not
+  `favicon.svg`/`robots.txt`, not a page shell) under `/_astro/`, so `assets.rs::HASHED_ASSET_PREFIX`
+  (`"/_astro/"`) plus a plain `starts_with` check is an exact test, not a heuristic guess at what's
+  hashed. `assets::immutable_cache_for_hashed_assets` is a `tower::Layer`-compatible
+  `axum::middleware::from_fn` handler wired in `routes.rs::build_router` at the outermost `Router`
+  layer (alongside `TraceLayer`), so it sees the final response regardless of which arm
+  (`Assets::Dir`'s `ServeDir::fallback(shell)` or `Assets::Embedded`'s
+  `serve_embedded_file`-then-shell handler) produced it — no cfg-gating needed on the layer itself,
+  only on the two arms that install it.
+- **Applied only on a 200 or 304**, deliberately checked against `response.status()` after
+  `next.run` rather than trusted from the request path alone: a `/_astro/*` request for a file that
+  no longer exists in the current build (a stale link left over from a previous deploy, or simply a
+  typo) falls through to the 404 shell like any other unmatched shape, and that 404 must never be
+  marked immutable — a client that briefly hit a bad link would otherwise cache the miss for a
+  year. Existing shells keep their own `no-cache` (`shell.rs`) untouched, since they're never under
+  `/_astro/` at all.
+- **Reused `handlers::IMMUTABLE_CACHE_CONTROL`** (`"public, max-age=31536000, immutable"`) rather
+  than a second constant — it's the same header already used for full-sha-addressed API responses
+  (docs/API.md), so the two are visibly the same freshness promise made for the same reason
+  (content-addressed by the URL itself).
+- **`serve_embedded_file`'s doc comment updated**, since the header it now gets is no longer set by
+  that function directly — it previously documented deliberately matching `ServeDir`'s no-header
+  default; that default itself is what changed here, for both modes at once.
+- **Tests**: `api/tests/static_shell_test.rs` (`Assets::Dir` mode, using the fixture's existing
+  `_astro/app.js`) covers a real hashed asset getting the header, the index shell *not* getting it
+  (still `no-cache`), and a missing `_astro/*` path 404ing through the shell without inheriting it.
+  `api/tests/embedded_assets_test.rs` (`Assets::Embedded` mode) parses a real `/_astro/*.js`
+  reference out of the served index shell's own body rather than hardcoding a content hash that
+  changes on every `pnpm --filter web build`, then checks both the 200 and the `If-None-Match` 304
+  path carry the header.
+- No API contract change, no `api/src` route/handler-shape change — a response header addition
+  only.
