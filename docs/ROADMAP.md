@@ -351,9 +351,10 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   - No new page/route, no `shellFor`/`shell_for` change. No API contract change — `schemas.ts`
     gained `ReadmeInfo`/`ReadmeFormat` aliases.
 
-- **Dockerfile / single-container build** (DECISIONS.md #22). Closed the last gap between the
-  current state and actually replacing cgit in a live git-compose deployment. Finalized design:
-  - 3-stage `Dockerfile`: `node:24.11-alpine3.22` builds `web/dist` (`pnpm install
+- **Containerfile / single-container build** (DECISIONS.md #22; renamed from `Dockerfile` to
+  `Containerfile` + symlink in #80 below). Closed the last gap between the current state and
+  actually replacing cgit in a live git-compose deployment. Finalized design:
+  - 3-stage `Containerfile`: `node:24.11-alpine3.22` builds `web/dist` (`pnpm install
     --frozen-lockfile` → `pnpm --filter web build`), `rust:1.97-alpine3.22` builds the `axgit`
     release binary (`musl-dev` added so `libgit2-sys` builds vendored libgit2 with `cc` — alpine
     has no system libgit2 for pkg-config to find), and `alpine:3.22` is the runtime (`git` +
@@ -1356,6 +1357,21 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   the runner), retiring #75/#76's "the musl leg is first exercised by a v* tag build" limitation.
   `Jenkinsfile`'s pipeline timeout raised 30 → 45 minutes for the now-doubled Release stage build
   time. No API contract change, no `api/src` change — packaging only.
+
+- **`Dockerfile` renamed to `Containerfile`, base images qualified with their registry**
+  (DECISIONS.md #80). Ported two conventions from the git-web (cgit) workspace this project
+  replaces: `Containerfile` is now the real file, `Dockerfile` a committed relative symlink to it
+  (`git ls-files -s` shows mode `120000`), and the three base-image `ARG`s got their registry
+  spelled out (`docker.io/library/node:24.11-alpine3.22`, etc.) since podman/buildah's short-name
+  resolution otherwise prompts interactively and fails in a non-TTY build. `docker build .` is
+  unaffected (follows the symlink); `buildah build --file Containerfile .` now also works. Checked
+  the rest of the old workspace's Containerfile against axgit's and found nothing else worth
+  porting — `git-daemon` (needed there only for nginx's FastCGI call into `git-http-backend`, which
+  axgit doesn't use), the `/srv/git` `VOLUME` declaration (would silently create an anonymous r/w
+  volume if the real mount is forgotten, working against the read-only deployment posture), and the
+  narrower `safe.directory = /srv/git/*` (would break a deployment that overrides
+  `AXGIT_REPO_ROOT`) were all deliberately left out. No API contract change, no `api/src`/`web/src`
+  change.
 
 ## Next up
 

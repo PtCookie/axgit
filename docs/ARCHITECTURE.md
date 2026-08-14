@@ -151,13 +151,16 @@ render.
 
 ## Build/deploy
 
-- Multi-stage `Dockerfile` (repo root): ① `pnpm --filter web build` in `node:24.11-alpine3.22` →
-  ② `cargo build --release` in `rust:1.97-alpine3.22` (`musl-dev` added; `libgit2-sys` builds
-  vendored libgit2 statically since alpine has no system libgit2 — the same `cc` toolchain also
-  builds the vendored `zstd`/`liblzma` C sources the archive encoders depend on, so no extra build
-  package is needed for those either) → ③ `alpine:3.22` runtime: git binary + api binary +
-  web/dist. Base image tags are pinned to a minor version (`ARG`s at the top of the file), not
-  floating — see docs/DECISIONS.md #22. Stage ① COPYs the root
+- Multi-stage `Containerfile` (repo root; `Dockerfile` is a committed symlink to it, so `docker
+  build` and `podman`/`buildah` both work unchanged — docs/DECISIONS.md #80): ① `pnpm --filter web
+  build` in `node:24.11-alpine3.22` → ② `cargo build --release` in `rust:1.97-alpine3.22`
+  (`musl-dev` added; `libgit2-sys` builds vendored libgit2 statically since alpine has no system
+  libgit2 — the same `cc` toolchain also builds the vendored `zstd`/`liblzma` C sources the archive
+  encoders depend on, so no extra build package is needed for those either) → ③ `alpine:3.22`
+  runtime: git binary + api binary + web/dist. Base image tags are pinned to a minor version
+  (`ARG`s at the top of the file, spelled out with their `docker.io/library/` registry so
+  podman/buildah's short-name resolution doesn't need an interactive prompt), not floating — see
+  docs/DECISIONS.md #22, #80. Stage ① COPYs the root
   `package.json`/`pnpm-workspace.yaml`/`pnpm-lock.yaml` + `web/package.json` first so `pnpm install
   --frozen-lockfile` lands in its own cached layer, before copying the rest of the source.
 - Runtime image packages needed: `git` (for exec), `ca-certificates`. cgit filter dependencies
@@ -181,7 +184,7 @@ render.
   (after `pnpm --filter web build`) bakes `web/dist` into the `axgit` executable via `rust-embed`,
   so the binary alone — plus a `git` binary on `PATH`, still a runtime dependency either way — is a
   complete deployment, no `AXGIT_STATIC_DIR`/directory needed. `AXGIT_STATIC_DIR` still overrides
-  the embedded copy when set. The Dockerfile is unaffected (the `embed-web` feature is never
+  the embedded copy when set. The Containerfile is unaffected (the `embed-web` feature is never
   enabled there); this path targets a bare-metal/systemd install instead.
 - **Single-binary packaging** (DECISIONS.md #75, #79): `scripts/make-release.sh` builds the
   `embed-web` binary for both `x86_64-unknown-linux-musl` (natively) and

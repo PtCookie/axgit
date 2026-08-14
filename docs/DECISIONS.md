@@ -429,7 +429,8 @@ implemented.
   them); pnpm is pinned exactly by the root `package.json`'s `packageManager` field, and Rust
   crates by `api/Cargo.lock` + `--locked`. Digest-pinning (`@sha256:...`) would be stricter still
   but is deferred — bumping the minor tags is expected to be a deliberate, separate commit either
-  way.
+  way. These `ARG` refs were later qualified with their registry (`docker.io/library/...`) and the
+  file itself renamed `Dockerfile` → `Containerfile` (`Dockerfile` kept as a symlink) — see #80.
 
 ## #23 3-way theme selector (System / Light / Dark)
 
@@ -3241,3 +3242,56 @@ dependencies turned out to have several non-obvious failure modes, checked direc
   of one, on top of the existing Test and Embedded build stages sharing the same pipeline-wide
   timeout.
 - No API contract change, no `api/src` change — packaging only.
+
+## #80 `Dockerfile` → `Containerfile` + symlink, base images qualified with their registry
+
+`/Users/cookie/Workspaces/Projects/git-web` — the workspace previously used to build the cgit-based
+`git-web` container image this project replaces — established two conventions this project's
+`Dockerfile` (#22) hadn't picked up. Both ported over, container behavior otherwise unchanged:
+
+- **`Containerfile` is now the real file; `Dockerfile` is a committed relative symlink to it**
+  (`ln -s Containerfile Dockerfile`, `git ls-files -s Dockerfile` shows mode `120000`). git-web's
+  own README documented `docker build` and `buildah build --file Containerfile` side by side, and
+  podman/buildah look for `Containerfile` before `Dockerfile` by default — this makes both first-class
+  without maintaining two copies. `docker build .` is unaffected (it follows the symlink
+  transparently); no other file needed to change for this half.
+- **Base-image `ARG`s spell out their registry** (`docker.io/library/node:24.11-alpine3.22`, etc.,
+  up from bare `node:24.11-alpine3.22`). Docker already resolves an unqualified name to
+  `docker.io/library/...`, so this changes nothing for `docker build`. podman/buildah instead
+  consult `registries.conf`'s `unqualified-search-registries` and, lacking an unambiguous match,
+  fall back to an interactive "which registry did you mean" prompt — which fails outright in any
+  non-TTY build (CI, a script, `docker build`'s own BuildKit-in-buildah compatibility mode).
+  Qualifying the reference removes the ambiguity entirely, matching git-web's Containerfile, which
+  used `docker.io/library/alpine:3.22`/`docker.io/library/nginx:alpine3.22` throughout.
+
+**Checked the rest of git-web's Containerfile against axgit's and found nothing else worth
+porting** — recorded here so a future session doesn't rediscover these as gaps:
+
+- `git-daemon` (apk package): git-web needed it because nginx calls
+  `/usr/libexec/git-core/git-http-backend` over FastCGI for Smart HTTP. axgit's `smart_http.rs`
+  execs `git upload-pack --stateless-rpc` directly and `archive.rs` execs `git archive` — both are
+  part of the base `git` package alpine already installs; `git-http-backend` is never invoked.
+- `VOLUME ["/srv/git"]`: git-web declared it so the image works even if a caller forgets to mount
+  a real volume. For axgit that failure mode is the wrong one to hide — an anonymous, writable
+  volume silently standing in for a forgotten `-v ...:/srv/git:ro` directly contradicts the
+  `read_only: true` + `:ro` deployment posture (`docs/compose.example.yaml`). Left out on purpose;
+  a missing mount should surface as "no repositories found" or a failed bind mount, not a quiet
+  writable fallback.
+- `/home/git/.gitconfig` + `HOME=/home/git`: needed by git-web's FastCGI `git-http-backend` call.
+  axgit's single `/etc/gitconfig` (#22) already covers both the `git` exec call sites and libgit2,
+  since both read the system-wide config; no per-user config or `HOME` is needed.
+- Narrowing `safe.directory` from `*` to `/srv/git/*` (git-web's own setting): rejected again here,
+  same reasoning as #22 — `AXGIT_REPO_ROOT` is a runtime-configurable env var, not a build-time
+  constant, so a narrower pattern would silently break any deployment that points it somewhere
+  else. `*` stays scoped to this single-purpose, read-only container.
+- TLS termination, the letsencrypt volumes, `EXPOSE 80 443`: git-web served TLS itself via nginx;
+  axgit has no nginx and TLS stays delegated to an external reverse proxy either way (#10),
+  unaffected by this change.
+
+**Left out of scope, not a container concern**: git-web's `nginx.conf`/`default.conf` also enforced
+edge policy that has no axgit equivalent post-migration — a 405 on any method outside
+GET/HEAD/POST, a 444 (connection close, no response) for AI-crawler/scraper/empty-`User-Agent`
+patterns, and the HTTP→HTTPS redirect + certbot TLS termination itself. None of this is nginx-owned
+config axgit can carry forward (axgit has no nginx layer), and reproducing it means it belongs in
+the git-compose stack's external reverse proxy, not this repository. Flagged here rather than
+silently dropped.

@@ -69,10 +69,16 @@ command and `pnpm --filter web gen:types` (both in `AGENTS.md`/`CLAUDE.md`). See
 ## Deployment
 
 Build the single-container image (multi-stage: web build → api build → alpine runtime;
-docs/DECISIONS.md #22):
+docs/DECISIONS.md #22). The build is defined in `Containerfile`; `Dockerfile` is a committed
+symlink to it, so `docker build` needs no extra flag while `podman`/`buildah` (which look for
+`Containerfile` first) also work unchanged:
 
 ```sh
 docker build --tag axgit:latest .
+```
+
+```sh
+buildah build --tag axgit:latest --file Containerfile .
 ```
 
 The build produces an image for the host's own architecture. If the deployment target differs

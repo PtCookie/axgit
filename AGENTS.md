@@ -11,9 +11,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   serves Smart HTTP clone (`git-upload-pack`), and also serves the Astro static build output.
 - **web/** — Astro + React + shadcn/ui frontend. Static build, fetches the API client-side.
 
-**Deployment is a single container**: a multi-stage Dockerfile builds web → builds api → produces
-one runtime image. It replaces the existing git-compose stack's `git-web` service with this image;
-nginx/fcgiwrap/CGI are not used.
+**Deployment is a single container**: a multi-stage Containerfile builds web → builds api →
+produces one runtime image (`Dockerfile` is a committed symlink to `Containerfile`, so `docker
+build` and `podman build`/`buildah build --file Containerfile` both work unchanged). It replaces
+the existing git-compose stack's `git-web` service with this image; nginx/fcgiwrap/CGI are not
+used.
 
 **Continuing across sessions**: `docs/ROADMAP.md` is the single source of truth for what's been
 completed so far and what to implement next. When starting a new session, or when asked something
@@ -180,5 +182,6 @@ axgit/
   packaging/          # systemd unit, env-file template, install docs (single-binary release)
   scripts/            # make-fixtures.sh, make-release.sh
   lefthook.yml
-  Dockerfile          # web build → api build → runtime (single image)
+  Containerfile       # web build → api build → runtime (single image)
+  Dockerfile          # symlink -> Containerfile (for docker build compatibility)
 ```

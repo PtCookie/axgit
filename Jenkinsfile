@@ -1,4 +1,4 @@
-// Image build (Dockerfile) is wired in separately later. Assumes the agent already has
+// Image build (Containerfile) is wired in separately later. Assumes the agent already has
 // Node.js and a Rust toolchain (rustc/cargo, rustfmt + clippy components) installed; this
 // file only pins the exact pnpm version via corepack. The Release stage (v* tag builds
 // only, docs/DECISIONS.md #75/#79) builds BOTH x86_64-unknown-linux-musl and
@@ -103,7 +103,7 @@ pipeline {
         // Single-binary release tarballs (scripts/make-release.sh, docs/DECISIONS.md
         // #75/#79): only on a v* tag build, after Test has passed. Builds both
         // x86_64-unknown-linux-musl and aarch64-unknown-linux-musl (the script's
-        // $TARGETS default), matching the Dockerfile's static-linking posture
+        // $TARGETS default), matching the Containerfile's static-linking posture
         // (docs/DECISIONS.md #22) without depending on Docker in this pipeline.
         stage('Release') {
             when {

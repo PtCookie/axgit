@@ -35,7 +35,7 @@ services:
     expose:
       - "8080"
     healthcheck:
-      # Also declared in the image itself (Dockerfile); repeated here only if the compose
+      # Also declared in the image itself (Containerfile); repeated here only if the compose
       # file's own health-based `depends_on` ordering is needed elsewhere in the stack.
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/v1/repos"]
       interval: 30s
