@@ -165,11 +165,20 @@ const { title = "Axgit" } = Astro.props;
         // configured (docs/DECISIONS.md #70) — every shell is prerendered
         // once, so like the repo name above, there's no build-time value to
         // bake in. Absent metas (unconfigured deployment) leave the shell's
-        // own hardcoded brand/description untouched.
+        // own hardcoded brand/description untouched. `axgit:logo`/
+        // `axgit:logo-link` (docs/DECISIONS.md #81/#82) travel the same way
+        // — unlike the favicon, which `serve_shell` rewrites server-side
+        // directly, since the logo is `<body>` chrome this function already
+        // owns and there's no pre-paint fetch race to avoid the way there is
+        // for a `<link rel="icon">`.
         window.__axgit.fillSiteChrome = function fillSiteChrome() {
           const titleMeta = document.querySelector('meta[name="axgit:site-title"]');
           const descMeta = document.querySelector('meta[name="axgit:site-desc"]');
+          const logoMeta = document.querySelector('meta[name="axgit:logo"]');
+          const logoLinkMeta = document.querySelector('meta[name="axgit:logo-link"]');
           const brand = document.querySelector("[data-site-title]");
+          const brandLink = document.querySelector("[data-site-brand]");
+          const logo = document.querySelector("[data-site-logo]");
 
           if (titleMeta && brand) {
             brand.textContent = titleMeta.content;
@@ -179,6 +188,24 @@ const { title = "Axgit" } = Astro.props;
             if (description) {
               description.setAttribute("content", descMeta.content);
             }
+          }
+          if (logoMeta && logo) {
+            // A misconfigured `AXGIT_LOGO` (missing file, unrecognized
+            // extension) still injects the `<meta>` — `shell.rs` has no way
+            // to confirm the file loads without re-reading it on every
+            // request, which would defeat the "swap the file, no restart"
+            // point of serving it with `Cache-Control: no-cache` in the
+            // first place (docs/DECISIONS.md #81). Caught here instead: a
+            // failed load re-hides the element rather than leaving a broken-
+            // image icon in the header.
+            logo.onerror = () => {
+              logo.hidden = true;
+            };
+            logo.src = logoMeta.content;
+            logo.hidden = false;
+          }
+          if (logoLinkMeta && brandLink) {
+            brandLink.setAttribute("href", logoLinkMeta.content);
           }
           // A repository page owns its own <title> (`fillRepoShell`'s
           // `name + suffix`, baked from a build-time suffix map that has no
@@ -205,7 +232,22 @@ const { title = "Axgit" } = Astro.props;
     }
     <header class="border-border border-b" transition:persist>
       <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-        <a href="/" data-site-title class="font-heading text-lg font-medium">Axgit</a>
+        {
+          /*
+            Logo and title are siblings, not a replacement — cgit's own
+            header shape, and it degrades correctly when only one of the two
+            is configured. `data-site-brand` carries the link (its `href`
+            defaults to `/`, swapped to `AXGIT_LOGO_LINK` by `fillSiteChrome`
+            below when set); `data-site-logo` starts `hidden` with no `src`
+            and is only unhidden once `axgit:logo` names one, so an
+            unconfigured deployment renders exactly this markup unchanged.
+            `alt=""` because the adjacent title text already names the site.
+          */
+        }
+        <a href="/" data-site-brand class="flex items-center gap-2">
+          <img data-site-logo alt="" hidden class="h-6 w-auto" />
+          <span data-site-title class="font-heading text-lg font-medium">Axgit</span>
+        </a>
         <ThemeToggle client:only="react">
           <div slot="fallback"><ThemeToggleFallback /></div>
         </ThemeToggle>

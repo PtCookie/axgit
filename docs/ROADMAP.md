@@ -1390,12 +1390,24 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     `packaging/axgit.env.example` gained the three env vars; `web/public/robots.txt` allows both
     new routes ahead of the blanket `/api/v1/` disallow.
 
+- **Site logo and favicon (web half)** (docs/DECISIONS.md #82). `Layout.astro`'s header brand grows
+  a sibling `<img data-site-logo>` next to the title span — unhidden and pointed at `axgit:logo`'s
+  content by `fillSiteChrome`, with an `onerror` handler re-hiding it if the configured file
+  doesn't actually load (`shell.rs` can't confirm that without re-reading the file on every
+  request, which would defeat the "swap the file, no restart" point of serving it with
+  `Cache-Control: no-cache`). The brand `<a>`'s `href` follows `axgit:logo-link` when present, else
+  stays `/`. No favicon logic on the web side at all — #81's server-side `<link>` rewrite already
+  handles it, and a redundant client-side path would only reintroduce the pre-paint flash that
+  server-side injection was chosen to avoid. An unconfigured deployment's header is unchanged.
+  - `web/e2e/site.spec.ts` extended for logo/logo-link (injecting the metas by hand and calling
+    `fillSiteChrome` directly, the same `astro dev`-doesn't-run-the-server-injection workaround
+    #71 established) plus a case for the onerror-hides-a-broken-logo path. No API contract change.
+
 ## Next up
 
-**Site logo and favicon (web half)** (DECISIONS.md #82, following up on #81's API), plus two small
-fixes found along the way: `RepoLayout.astro`'s `TITLE_SUFFIXES` composing with the configured site
-title instead of hardcoding `"— Axgit"` (#83), and replacing the scaffold-default
-`web/public/favicon.{svg,ico}` (#84).
+Two small fixes found while implementing #81/#82, queued next: `RepoLayout.astro`'s
+`TITLE_SUFFIXES` composing with the configured site title instead of hardcoding `"— Axgit"` (#83),
+then replacing the scaffold-default `web/public/favicon.{svg,ico}` (#84).
 
 ### Candidates (not urgent, no particular order)
 

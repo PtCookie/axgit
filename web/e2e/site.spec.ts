@@ -48,16 +48,32 @@ test("shows nothing extra on the index page when the site is unconfigured", asyn
 // binary. This test exercises `fillSiteChrome` directly instead: it injects
 // the metas by hand and calls the function, verifying the client-side half
 // of the feature in a real browser without needing the server half.
-test("fillSiteChrome applies injected site metas to the brand, description, and title", async ({ page }) => {
+test("fillSiteChrome applies injected site metas to the brand, description, title, logo, and logo link", async ({
+  page,
+}) => {
   await page.route("**/api/v1/repos", async (route) => {
     await route.fulfill({ json: { repos: [], sort: "name" } });
   });
   await page.route("**/api/v1/site", async (route) => {
     await route.fulfill({ json: UNCONFIGURED });
   });
+  // The image actually has to load for the `toBeVisible()` assertions below
+  // to hold — `fillSiteChrome`'s `onerror` handler (docs/DECISIONS.md #82)
+  // re-hides it on a failed load, and nothing serves this path in the
+  // `astro dev` e2e environment otherwise.
+  await page.route("**/api/v1/site/logo", async (route) => {
+    await route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>',
+    });
+  });
 
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Axgit", exact: true })).toBeVisible();
+  // Unconfigured: the logo image is present but hidden, and the brand link
+  // still points at `/` (docs/DECISIONS.md #82).
+  await expect(page.locator("[data-site-logo]")).toBeHidden();
+  await expect(page.locator("[data-site-brand]")).toHaveAttribute("href", "/");
 
   await page.evaluate(() => {
     const title = document.createElement("meta");
@@ -70,10 +86,55 @@ test("fillSiteChrome applies injected site metas to the brand, description, and 
     desc.setAttribute("content", "Self-hosted repositories");
     document.head.appendChild(desc);
 
+    const logo = document.createElement("meta");
+    logo.setAttribute("name", "axgit:logo");
+    logo.setAttribute("content", "/api/v1/site/logo");
+    document.head.appendChild(logo);
+
+    const logoLink = document.createElement("meta");
+    logoLink.setAttribute("name", "axgit:logo-link");
+    logoLink.setAttribute("content", "https://example.net");
+    document.head.appendChild(logoLink);
+
     (window as unknown as { __axgit: { fillSiteChrome: () => void } }).__axgit.fillSiteChrome();
   });
 
   await expect(page.getByRole("link", { name: "PtCookie Git", exact: true })).toBeVisible();
   await expect(page).toHaveTitle("PtCookie Git");
   await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", "Self-hosted repositories");
+  await expect(page.locator("[data-site-logo]")).toBeVisible();
+  await expect(page.locator("[data-site-logo]")).toHaveAttribute("src", "/api/v1/site/logo");
+  await expect(page.locator("[data-site-brand]")).toHaveAttribute("href", "https://example.net");
+});
+
+// docs/DECISIONS.md #82: `AXGIT_LOGO` being *configured* (the meta is
+// present) doesn't guarantee the file actually loads — shell.rs can't
+// re-verify that per shell response without defeating the point of serving
+// it with `Cache-Control: no-cache`. This exercises the client-side
+// recovery: a load failure re-hides the image instead of leaving a
+// broken-image icon in the header.
+test("a logo that fails to load is hidden again rather than shown broken", async ({ page }) => {
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({ json: { repos: [], sort: "name" } });
+  });
+  await page.route("**/api/v1/site", async (route) => {
+    await route.fulfill({ json: UNCONFIGURED });
+  });
+  await page.route("**/api/v1/site/logo", async (route) => {
+    await route.fulfill({ status: 404, json: { error: { code: "not_found", message: "not found" } } });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("[data-site-logo]")).toBeHidden();
+
+  await page.evaluate(() => {
+    const logo = document.createElement("meta");
+    logo.setAttribute("name", "axgit:logo");
+    logo.setAttribute("content", "/api/v1/site/logo");
+    document.head.appendChild(logo);
+
+    (window as unknown as { __axgit: { fillSiteChrome: () => void } }).__axgit.fillSiteChrome();
+  });
+
+  await expect(page.locator("[data-site-logo]")).toBeHidden();
 });

@@ -3376,3 +3376,45 @@ deployment to replace it or add a header mark short of forking the frontend buil
   gained cases for the injected logo metas and the default-icon-link swap, `shell.rs`'s own unit
   tests cover `site_head_meta`/`favicon_head_link`/`strip_default_icon_links` directly.
 
+## #82 Render the site logo and configured favicon
+
+Web-side follow-up to #81, same two-commit shape as #70/#71.
+
+- **Logo and title become siblings inside the header brand `<a>`, not a replacement.**
+  `[data-site-title]` moves from the anchor itself onto a new inner `<span>`; a new `<img
+  data-site-logo alt="" hidden>` sits beside it. `alt=""` because the adjacent title text already
+  names the site — a duplicate accessible name would be redundant, not informative. `fillSiteChrome`
+  unhides the image and sets its `src` only when `axgit:logo` is present, so an unconfigured
+  deployment's header is unchanged (still the same anchor structure `getByRole("link", { name:
+  "Axgit" })` in the e2e suite already resolves, since the accessible name still comes from the
+  span).
+- **No favicon logic on the web side at all.** #81's `shell.rs` already rewrote the `<link
+  rel="icon">` server-side before the page reaches the browser — there is nothing left for
+  client-side JS to do, and adding a redundant client-side path would only reintroduce the flash
+  #81 specifically avoided by choosing server-side injection.
+- **`fillSiteChrome` gains the logo/logo-link reads, not a second function.** Same reasoning #71
+  gave for keeping `fillRepoShell`/`fillSiteChrome` together in `Layout.astro`'s
+  `data-repo-shell-init` script: every shell needs the listener live before the first navigation,
+  and this is one more field on an already-idempotent, already-`astro:after-swap`-registered
+  function, not a new lifecycle to wire up.
+- e2e coverage follows #71's precedent exactly: `astro dev` never runs `shell.rs`'s server-side
+  injection, so `web/e2e/site.spec.ts` injects the `axgit:logo`/`axgit:logo-link` metas by hand and
+  calls `fillSiteChrome` directly, verifying the client half in a real browser without the
+  production binary.
+- **A configured-but-unloadable logo (`AXGIT_LOGO` naming a missing file or one that 404s) gets an
+  `onerror` handler that re-hides the `<img>`, rather than leaving a broken-image icon in the
+  header.** Caught during manual verification of #81/#82 together: the `<meta name="axgit:logo">`
+  is injected whenever `AXGIT_LOGO` is *configured*, independent of whether `branding.rs::read_asset`
+  will actually be able to serve it on the next request — `shell.rs` has no cheap way to confirm
+  that without re-reading the file on every shell response, which would undermine the "swap the
+  file, no restart needed" point of `Cache-Control: no-cache` (#81) in the first place. **The
+  favicon has no equivalent client-side recovery** — a misconfigured `AXGIT_FAVICON` still strips
+  the shell's own default `<link rel="icon">` pair (`shell.rs::strip_default_icon_links` only checks
+  "is a favicon configured," the same binary signal), so the deployment shows no icon at all until
+  the value is fixed, rather than falling back to axgit's own default. Left as-is rather than
+  building a `<link>`-level fallback (there is no `onerror`-driven "restore what was removed" without
+  the shell retaining the original markup it just stripped): this matches cgit's own behavior for a
+  broken `favicon` value, and the failure is self-inflicted operator config, logged server-side with
+  a `tracing::warn!` either way.
+- No API contract change — `web/src/layouts/Layout.astro` and `web/e2e/site.spec.ts` only.
+
