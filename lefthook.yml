@@ -32,4 +32,4 @@ pre-push:
     vitest:
       glob: "web/**/*"
       root: "web/"
-      run: pnpm test -- --run
+      run: pnpm test --run

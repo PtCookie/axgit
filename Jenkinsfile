@@ -65,7 +65,7 @@ pipeline {
                         }
                         stage('vitest') {
                             steps {
-                                sh 'pnpm --filter web test -- --run'
+                                sh 'pnpm --filter web test --run'
                             }
                         }
                         stage('playwright e2e') {
