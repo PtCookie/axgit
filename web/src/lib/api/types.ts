@@ -519,6 +519,49 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/site/favicon": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Site favicon
+     * @description Same rules as [`get_site_logo`], for `AXGIT_FAVICON`.
+     */
+    get: operations["get_site_favicon"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/site/logo": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Site logo
+     * @description 404 when `AXGIT_LOGO` is unset, or when it names an `http(s)://` URL —
+     *     there is nothing local to serve in that case, since the shell's injected
+     *     `<meta name="axgit:logo">` already points straight at it
+     *     (docs/DECISIONS.md #81).
+     */
+    get: operations["get_site_logo"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/{repo_git}/git-receive-pack": {
     parameters: {
       query?: never;
@@ -2706,6 +2749,90 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  get_site_favicon: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Favicon image bytes. `Content-Type` is one of `image/svg+xml`, `image/png`, `image/x-icon`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, matched from `AXGIT_FAVICON`'s extension. */
+      200: {
+        headers: {
+          /** @description `no-cache` */
+          "Cache-Control"?: string;
+          /** @description Hash of the file contents; opaque */
+          ETag?: string;
+          /** @description Always `nosniff` */
+          "X-Content-Type-Options"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "image/svg+xml": unknown;
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `not_found` — unconfigured, configured as a URL, unreadable, oversized, or an unrecognized extension */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_site_logo: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Logo image bytes. `Content-Type` is one of `image/svg+xml`, `image/png`, `image/x-icon`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, matched from `AXGIT_LOGO`'s extension. */
+      200: {
+        headers: {
+          /** @description `no-cache` */
+          "Cache-Control"?: string;
+          /** @description Hash of the file contents; opaque */
+          ETag?: string;
+          /** @description Always `nosniff` */
+          "X-Content-Type-Options"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "image/svg+xml": unknown;
+        };
+      };
+      /** @description `If-None-Match` matched the current `ETag` */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description `not_found` — unconfigured, configured as a URL, unreadable, oversized, or an unrecognized extension */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };

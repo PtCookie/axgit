@@ -32,6 +32,9 @@ services:
       # AXGIT_ROOT_TITLE: PtCookie Git
       # AXGIT_ROOT_DESC: Self-hosted repositories
       # AXGIT_ROOT_README: /srv/git/README.md
+      # AXGIT_LOGO: /srv/git/logo.svg
+      # AXGIT_LOGO_LINK: https://example.com
+      # AXGIT_FAVICON: /srv/git/favicon.svg
     expose:
       - "8080"
     healthcheck:

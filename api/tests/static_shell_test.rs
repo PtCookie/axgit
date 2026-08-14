@@ -17,8 +17,8 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 use common::{
-    get_bytes_with_headers, router_for, router_with_static, router_with_static_and_clone_base,
-    router_with_static_and_site,
+    get_bytes_with_headers, router_for, router_with_static, router_with_static_and_branding,
+    router_with_static_and_clone_base, router_with_static_and_site,
 };
 
 // Each fixture carries a real `<head></head>` so the injected `<link>`s
@@ -107,6 +107,28 @@ fn setup_fixtures() -> (TempDir, TempDir) {
     std::fs::create_dir_all(static_dir.path().join("_astro")).unwrap();
     std::fs::write(static_dir.path().join("_astro/app.js"), ASSET_JS).unwrap();
 
+    (repo_root, static_dir)
+}
+
+/// Same fixtures as [`setup_fixtures`], but `index.html` and the repo shell
+/// carry the default `<link rel="icon">` pair `Layout.astro` actually ships
+/// (`favicon.svg` + `favicon.ico`) — for asserting a configured favicon
+/// replaces them rather than merely adding a third (docs/DECISIONS.md #81).
+fn setup_fixtures_with_default_icons() -> (TempDir, TempDir) {
+    let (repo_root, static_dir) = setup_fixtures();
+    const DEFAULT_ICONS: &str = "<link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\"><link rel=\"icon\" href=\"/favicon.ico\">";
+    std::fs::write(
+        static_dir.path().join("index.html"),
+        format!("<!doctype html><html><head>{DEFAULT_ICONS}</head><body>INDEX</body></html>"),
+    )
+    .unwrap();
+    std::fs::write(
+        static_dir.path().join("__repo__/index.html"),
+        format!(
+            "<!doctype html><html><head>{DEFAULT_ICONS}</head><body>REPO SUMMARY</body></html>"
+        ),
+    )
+    .unwrap();
     (repo_root, static_dir)
 }
 
@@ -362,6 +384,94 @@ async fn every_shell_carries_the_configured_site_meta() {
             "uri {uri} missing the site-desc meta: {body:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn every_shell_carries_the_configured_logo_meta() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/", "/git-compose", "/git-compose/bogus"] {
+        let router = router_with_static_and_branding(
+            repo_root.path(),
+            static_dir.path(),
+            Some("https://example.net/logo.svg"),
+            Some("https://example.net"),
+            None,
+        );
+        let (_, _, body) = get_bytes_with_headers(router, uri).await;
+        let body = String::from_utf8(body).unwrap();
+
+        assert!(
+            body.contains("<meta name=\"axgit:logo\" content=\"https://example.net/logo.svg\">"),
+            "uri {uri} missing the logo meta: {body:?}"
+        );
+        assert!(
+            body.contains("<meta name=\"axgit:logo-link\" content=\"https://example.net\">"),
+            "uri {uri} missing the logo-link meta: {body:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_local_logo_meta_points_at_axgits_own_serving_route() {
+    let (repo_root, static_dir) = setup_fixtures();
+    let logo_dir = tempfile::tempdir().expect("failed to create logo dir");
+    let logo_path = logo_dir.path().join("logo.svg");
+    std::fs::write(&logo_path, "<svg></svg>").unwrap();
+    let router = router_with_static_and_branding(
+        repo_root.path(),
+        static_dir.path(),
+        Some(logo_path.to_str().unwrap()),
+        None,
+        None,
+    );
+
+    let (_, _, body) = get_bytes_with_headers(router, "/").await;
+    let body = String::from_utf8(body).unwrap();
+
+    assert!(body.contains("<meta name=\"axgit:logo\" content=\"/api/v1/site/logo\">"));
+}
+
+#[tokio::test]
+async fn a_configured_favicon_replaces_the_shells_own_default_icon_links() {
+    let (repo_root, static_dir) = setup_fixtures_with_default_icons();
+    let favicon_dir = tempfile::tempdir().expect("failed to create favicon dir");
+    let favicon_path = favicon_dir.path().join("favicon.png");
+    std::fs::write(&favicon_path, [0x89, b'P', b'N', b'G']).unwrap();
+
+    for uri in ["/", "/git-compose"] {
+        let router = router_with_static_and_branding(
+            repo_root.path(),
+            static_dir.path(),
+            None,
+            None,
+            Some(favicon_path.to_str().unwrap()),
+        );
+        let (_, _, body) = get_bytes_with_headers(router, uri).await;
+        let body = String::from_utf8(body).unwrap();
+
+        assert!(
+            !body.contains("/favicon.svg") && !body.contains("/favicon.ico"),
+            "uri {uri} still carries a default icon link: {body:?}"
+        );
+        assert!(
+            body.contains("<link rel=\"icon\" type=\"image/png\" href=\"/api/v1/site/favicon\">"),
+            "uri {uri} missing the configured favicon link: {body:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_unconfigured_favicon_leaves_the_shells_own_default_icon_links_untouched() {
+    let (repo_root, static_dir) = setup_fixtures_with_default_icons();
+    let router = router_with_static(repo_root.path(), static_dir.path());
+
+    let (_, _, body) = get_bytes_with_headers(router, "/").await;
+    let body = String::from_utf8(body).unwrap();
+
+    assert!(body.contains("href=\"/favicon.svg\""));
+    assert!(body.contains("href=\"/favicon.ico\""));
+    assert!(!body.contains("/api/v1/site/favicon"));
 }
 
 #[tokio::test]

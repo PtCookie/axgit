@@ -20,7 +20,7 @@ differences), plus a few things cgit doesn't have:
 
 - **Repository index** — section grouping, sortable columns (`?sort=`,
   `AXGIT_REPOSITORY_SORT`), a client-side name/description/owner filter (`?q=`), and an optional
-  site-wide title/description/readme.
+  site-wide title/description/readme/logo/favicon.
 - **Repository pages** — a summary page (rendered README + metadata sidebar) and a refs page
   (local/remote branches, tags with their own detail page, per-tag archive downloads, and
   "Compare" entry points).
@@ -147,6 +147,9 @@ All settings are environment variables (also available as CLI flags — `axgit -
 | `AXGIT_ROOT_TITLE` | _(unset)_ | Site-wide title, shown as the header brand and falling back to "Axgit" |
 | `AXGIT_ROOT_DESC` | _(unset)_ | Site-wide description, shown on the index page |
 | `AXGIT_ROOT_README` | _(unset)_ | Path to a markdown/reStructuredText/plain-text file rendered on the index page |
+| `AXGIT_LOGO` | _(unset)_ | Site logo, shown beside the header brand. An `http(s)://` URL (used verbatim) or a filesystem path axgit serves itself at `GET /api/v1/site/logo` |
+| `AXGIT_LOGO_LINK` | _(unset)_ | Where the logo links to; an `http(s)://` URL or a root-relative path, falling back to `/` |
+| `AXGIT_FAVICON` | _(unset)_ | Site favicon, replacing axgit's own default. Same URL-or-path rule as `AXGIT_LOGO`, served at `GET /api/v1/site/favicon` |
 
 ### Repository configuration
 

@@ -100,6 +100,33 @@ Site-wide metadata. Not tied to any one repository — cgit's `root-title`/`root
 - Cached the same way `GET /api/v1/repos` is: not tied to a single repository, so its `ETag` is a
   hash of the response body rather than a HEAD/agefile validator.
 
+### `GET /api/v1/site/logo`, `GET /api/v1/site/favicon`
+
+Site logo and favicon — cgit's `logo`/`logo-link`/`favicon`. `AXGIT_LOGO`, `AXGIT_LOGO_LINK`, and
+`AXGIT_FAVICON` each name either an `http(s)://` URL (used verbatim wherever the value would be
+rendered — the shell never fetches it itself) or a filesystem path axgit reads and serves itself at
+these two endpoints.
+
+- `404 not_found` when the corresponding variable is unset, names an `http(s)://` URL (nothing
+  local to serve — the page already links straight at it), the file is missing/unreadable, exceeds
+  1 MiB, or its extension isn't one of `svg`/`png`/`ico`/`jpg`/`jpeg`/`gif`/`webp`/`avif`. The
+  extension allowlist is a security boundary, not a convenience: an unrecognized one is refused
+  even if the file itself happens to be a valid image, since these bytes are served same-origin
+  with no further inspection.
+- `200`: the raw image bytes, `Content-Type` set from the extension allowlist above, plus
+  `X-Content-Type-Options: nosniff`.
+- Cached like `GET /api/v1/site`: `ETag` is a hash of the file contents, `Cache-Control: no-cache` —
+  an operator can replace the file without a restart, and a client revalidates on the next request.
+- `AXGIT_LOGO`/`AXGIT_FAVICON` are operator configuration, not user input, so neither is subject to
+  any path traversal restriction, matching `AXGIT_ROOT_README`.
+- `AXGIT_LOGO_LINK` (where the logo links to) must be an `http(s)://` URL or a root-relative path
+  (`/…`); anything else — including a protocol-relative `//…`, an open redirect to any origin — is
+  ignored rather than rejecting the whole logo. Unset falls back to `/`.
+- Not reflected in `GET /api/v1/site`'s JSON body: the logo/logo-link/favicon are injected directly
+  into the served page's `<head>` (a `<meta name="axgit:logo">`/`<meta name="axgit:logo-link">` pair
+  for the logo, read client-side to fill in the header brand; a real `<link rel="icon">` for the
+  favicon, replacing axgit's own default pair), not fetched by the frontend at runtime.
+
 ### `GET /api/v1/repos?sort=`
 
 Repository list. Equivalent to cgit's index.

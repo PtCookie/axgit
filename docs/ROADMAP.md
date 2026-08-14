@@ -1373,11 +1373,29 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   `AXGIT_REPO_ROOT`) were all deliberately left out. No API contract change, no `api/src`/`web/src`
   change.
 
+- **Site logo and favicon (API half)** (docs/DECISIONS.md #81), reversing part of the "no analogue
+  planned" call on cgit's `logo`/`favicon` recorded below — `css`/`js`/`head-include` etc. stay out
+  of scope, but the single-bounded-image case moved back in once axgit's single-container/
+  single-binary deployment (no sibling static server to point a bare URL at, unlike cgit's
+  CGI-behind-a-web-server shape) got a concrete answer: serve the file through axgit itself. New
+  `AXGIT_LOGO`/`AXGIT_LOGO_LINK`/`AXGIT_FAVICON` (`api/src/branding.rs`), each accepting an
+  `http(s)://` URL (used verbatim) or a filesystem path (read and served at
+  `GET /api/v1/site/logo`/`GET /api/v1/site/favicon` — closed extension allowlist, 1 MiB cap, same
+  "operator config, no traversal check" posture as `AXGIT_ROOT_README`). `shell.rs` injects
+  `axgit:logo`/`axgit:logo-link` `<meta>`s into every shell and rewrites `<link rel="icon">`
+  server-side (stripping the default pair) when a favicon is configured. The web rendering is a
+  follow-up commit (#82).
+  - `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (two new `site`-tagged
+    routes). `README.md`/`docs/ARCHITECTURE.md`/`docs/compose.example.yaml`/
+    `packaging/axgit.env.example` gained the three env vars; `web/public/robots.txt` allows both
+    new routes ahead of the blanket `/api/v1/` disallow.
+
 ## Next up
 
-No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,
-see the "not planned" notes below), and the single-binary deploy path — feature (#74) and packaging
-(#75) both — is done. Pick a candidate below, or a fresh request.
+**Site logo and favicon (web half)** (DECISIONS.md #82, following up on #81's API), plus two small
+fixes found along the way: `RepoLayout.astro`'s `TITLE_SUFFIXES` composing with the configured site
+title instead of hardcoding `"— Axgit"` (#83), and replacing the scaffold-default
+`web/public/favicon.{svg,ico}` (#84).
 
 ### Candidates (not urgent, no particular order)
 
@@ -1455,11 +1473,15 @@ them. Grouped by why the difference exists.
 - Push — permanently excluded by the read-only invariant (cgit has no push either;
   `git-receive-pack` is 403).
 - CGI/config-shape options with no analogue: `virtual-root`, `include`, macro expansion,
-  `embedded`/`noheader`/`header`/`footer`/`head-include`, `css`/`js`/`logo`,
+  `embedded`/`noheader`/`header`/`footer`/`head-include`, `css`/`js`,
   `scan-path`/`project-list`/`strict-export`/`scan-hidden-path`/`remove-suffix`/
   `section-from-path`, `mimetype.*`/`mimetype-file`, `enable-html-serving`, `case-sensitive-sort`,
   and the various `max-*` display caps. axgit's config surface is env vars plus each repo's
-  `[cgit]`/`[axgit]` section, and repos always live one level under the root.
+  `[cgit]`/`[axgit]` section, and repos always live one level under the root. `logo`/`logo-link`/
+  `favicon` used to be grouped here too — moved back into scope as `AXGIT_LOGO`/`AXGIT_LOGO_LINK`/
+  `AXGIT_FAVICON` (docs/DECISIONS.md #81) once the "no sibling static server to point a URL at"
+  problem got a concrete answer (serve the file through axgit itself); `css`/`js`
+  (arbitrary injection, not a single bounded asset) stay out.
 - cgit's shipped `cgit.js` live relative-age refresh → static relative time is enough.
 - cgit URL compatibility only covers the shapes in #35 — `tree/{path}?id=`, `plain/`, `atom/`, and
   `snapshot/` are deliberately not mapped.

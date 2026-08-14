@@ -3295,3 +3295,84 @@ patterns, and the HTTP→HTTPS redirect + certbot TLS termination itself. None o
 config axgit can carry forward (axgit has no nginx layer), and reproducing it means it belongs in
 the git-compose stack's external reverse proxy, not this repository. Flagged here rather than
 silently dropped.
+
+## #81 Site logo and favicon
+
+**Reverses part of the "Replaced / no analogue planned" note under cgit parity**
+(`docs/ROADMAP.md`): `logo`/`js`/`css` were grouped with `head-include`/`embedded`/`virtual-root`
+etc. as CGI-config-shape options with nothing to port, and `favicon` was never considered at all.
+That grouping conflated two different things — arbitrary head/body injection (still out of scope,
+still no analogue) and a single operator-supplied image (a narrow, well-bounded feature cgit itself
+also treats as config, not code). Revisited because the gap was concrete, not hypothetical: axgit's
+own `web/public/favicon.svg` is still the unmodified Astro scaffold logo, and there was no way for a
+deployment to replace it or add a header mark short of forking the frontend build.
+
+- **`AXGIT_LOGO`/`AXGIT_FAVICON` accept an `http(s)://` URL *or* a filesystem path, dispatched by
+  scheme prefix (`branding.rs::BrandingAsset::parse`), not just a URL the way cgit's `logo`/
+  `favicon` do.** cgit runs as a CGI process behind a general-purpose web server, so pointing `logo`
+  at an on-disk file just works — the same server serves it. axgit ships as a single container
+  (image or, per #74, single binary) with no sibling static-file server, so a bare URL-only option
+  would mean "self-host your logo somewhere else" for the common case of an operator who has an
+  image but no second place to put it. The path form reads the file and serves it back through
+  axgit itself, at `GET /api/v1/site/logo`/`GET /api/v1/site/favicon`, mirroring the choice #70's
+  `AXGIT_ROOT_README` already made for the same reason: operator config, read from disk at request
+  time, no traversal check (the value never comes from a request). The URL form still exists and is
+  used verbatim — an operator who *does* have somewhere else to host the image loses nothing.
+- **A closed extension allowlist decides both the servable `Content-Type` and whether the asset
+  loads at all** (`branding.rs::content_type_for_extension`: `svg`/`png`/`ico`/`jpg`/`jpeg`/`gif`/
+  `webp`/`avif`, each mapped to its own `image/*` type). This is a security boundary, not a
+  convenience — these bytes are served same-origin with `X-Content-Type-Options: nosniff` but
+  otherwise no further inspection, so an operator accidentally pointing `AXGIT_LOGO` at, say, an
+  `.html` file must never become stored XSS. Deliberately not `mime_guess` (already a dependency,
+  used for repository file content types in `handlers/files.rs`): that crate's table covers far more
+  than "safe to serve as a site image," and this list needs to stay small and auditable on its own
+  rather than inherit whatever `mime_guess` recognizes next. An unrecognized extension degrades to
+  `404 not_found`, the same "misconfigured deployment value, not a client's fault, nothing better to
+  answer with" stance #70's readme handling established for a missing/oversized/non-UTF-8 file.
+- **1 MiB cap** (`BRANDING_ASSET_LIMIT`), same "a misconfigured path pointing at a huge file can't
+  blow up response size" reasoning as #70's 512 KiB readme cap, sized up for an image rather than
+  text.
+- **`AXGIT_LOGO_LINK` is validated separately from the logo itself, and a bad value degrades to
+  unset rather than failing the whole logo** (`branding.rs::sanitize_logo_link`). Only an
+  `http(s)://` URL or a root-relative path (`/…`) is accepted — reusing `repo/meta.rs::is_http_url`,
+  the same guard `homepage` (#67) and `.gitmodules`/`module-link` (#72) already apply before a
+  config value lands in an `<a href>` — plus the root-relative allowance `module-link` templates
+  already make. A protocol-relative `//…` is explicitly rejected despite parsing as "starts with
+  `/`": it resolves to whatever origin the current scheme names, an open redirect to any host, not
+  a same-origin link the way a single-`/`-prefixed path is.
+- **The favicon gets a real server-side `<link rel="icon">`, injected into `shell.rs`'s existing
+  `<head>` splice; the logo instead travels as a `<meta name="axgit:logo">`/`<meta
+  name="axgit:logo-link">` pair, read client-side by `fillSiteChrome` (#82) the same way
+  `axgit:site-title`/`axgit:site-desc` already are.** Different mechanisms for a deliberate reason:
+  a browser fetches favicon `<link>`s while it's still parsing `<head>`, before any script has run,
+  so a client-side swap would always fetch axgit's own default first and flash it. The logo has no
+  such race — it's `<body>` chrome the header (`transition:persist`ed) only fills in once per
+  document, exactly the split #70/#71 already drew between server-side `<head>` injection and
+  client-side `<body>` filling for the same reasons.
+- **A configured favicon strips the shell's own default `<link rel="icon">` pair
+  (`shell.rs::strip_default_icon_links`) rather than only adding a third.** Leaving both in place
+  would leave the browser to pick one per its own tie-breaking rules — unspecified enough in
+  practice to mean "maybe the wrong one" — for a case that is not the site's own multi-icon
+  fallback chain, just axgit's baked-in default going stale next to an operator's real choice.
+  Byte-oriented (scans for `<link` tags containing `rel="icon"` and drops each whole tag), matching
+  `inject_before_head_close`'s established "small controlled document axgit itself produced"
+  stance (#12) — this file is never third-party HTML, so a full parser buys nothing.
+- **`favicon_type` (the `<link>`'s `type=` attribute) is resolved once in `routes.rs`, from
+  `BrandingAsset::content_type()` on the *parsed* asset, not guessed from the served `href` in
+  `shell.rs`.** The file form's href is always the fixed, extensionless `/api/v1/site/favicon`
+  route — nothing to guess a MIME from by the time `shell.rs` sees it — so the extension has to be
+  read off the actual configured path (or, for the URL form, the URL itself, query/fragment
+  stripped first) before `href()` throws it away. Caught by a failing integration test during
+  development: an earlier version guessed from `href` alone and silently omitted `type=` for every
+  locally-served favicon.
+- `docs/API.md`/`docs/openapi.json`/`web/src/lib/api/types.ts` updated (`GET /api/v1/site/logo`,
+  `GET /api/v1/site/favicon`, both under the existing `site` tag).
+  `README.md`/`docs/ARCHITECTURE.md`/`docs/compose.example.yaml`/`packaging/axgit.env.example`
+  gained `AXGIT_LOGO`/`AXGIT_LOGO_LINK`/`AXGIT_FAVICON`. `web/public/robots.txt` gained an `Allow`
+  for both new routes ahead of the blanket `Disallow: /api/v1/` — a site's own logo/favicon should
+  stay crawlable. New `api/src/branding.rs` (parsing, extension allowlist, size cap, file read,
+  logo-link validation) and `api/tests/branding_test.rs` (both endpoints: unset, URL-configured,
+  file-configured, missing, oversized, wrong extension, ETag round-trip); `static_shell_test.rs`
+  gained cases for the injected logo metas and the default-icon-link swap, `shell.rs`'s own unit
+  tests cover `site_head_meta`/`favicon_head_link`/`strip_default_icon_links` directly.
+

@@ -12,6 +12,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::assets;
 use crate::assets::Assets;
+use crate::branding::{BrandingAsset, sanitize_logo_link};
 use crate::error::{ApiError, ErrorResponse};
 use crate::handlers::{
     archive, commits, diff, feed, files, objects, repos, search, site, stats, tags,
@@ -65,6 +66,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/repos/{repo}/search", get(search::get_search))
         .route("/repos/{repo}/stats", get(stats::get_stats))
         .route("/site", get(site::get_site))
+        .route("/site/logo", get(site::get_site_logo))
+        .route("/site/favicon", get(site::get_site_favicon))
         // `nest`ed routers inherit the outer `fallback_service` (the SPA shell
         // below), so an unmatched `/api/v1/...` path must get its own JSON
         // 404 rather than falling through to `index.html`.
@@ -98,9 +101,31 @@ pub fn build_router(state: AppState) -> Router {
         // similarly carries `root_title`/`root_desc` into every shell's
         // injected `<meta>`s (docs/DECISIONS.md #70).
         let clone_url_base = state.config.clone_url_base.clone();
+        // `logo`/`favicon` resolve to the `href` the shell should emit — the
+        // configured URL verbatim, or axgit's own serving route when it's a
+        // local file (docs/DECISIONS.md #81); `logo_link` is validated
+        // separately since an unsafe value there degrades to unset rather
+        // than failing the whole logo. `favicon_type` is resolved from the
+        // *parsed* asset (its real extension or URL), not from `favicon`
+        // itself — the local-file href has none to guess from.
+        let favicon_asset = state.config.favicon.as_deref().map(BrandingAsset::parse);
         let site = shell::SiteHead {
             title: state.config.root_title.clone(),
             description: state.config.root_desc.clone(),
+            logo: state
+                .config
+                .logo
+                .as_deref()
+                .map(|raw| BrandingAsset::parse(raw).href("/api/v1/site/logo")),
+            logo_link: state
+                .config
+                .logo_link
+                .as_deref()
+                .and_then(sanitize_logo_link),
+            favicon: favicon_asset
+                .as_ref()
+                .map(|asset| asset.href("/api/v1/site/favicon")),
+            favicon_type: favicon_asset.as_ref().and_then(BrandingAsset::content_type),
         };
 
         router = match assets {

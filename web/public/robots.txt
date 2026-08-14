@@ -1,5 +1,9 @@
 User-agent: *
 Disallow: /api/v1/
+# More specific than the blanket disallow above, so it wins (both endpoints
+# just serve the operator's own logo/favicon image, docs/DECISIONS.md #81).
+Allow: /api/v1/site/logo
+Allow: /api/v1/site/favicon
 Disallow: /swagger-ui
 Disallow: /*/blame/
 Disallow: /*/search

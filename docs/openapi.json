@@ -2056,6 +2056,108 @@
         }
       }
     },
+    "/api/v1/site/favicon": {
+      "get": {
+        "tags": [
+          "site"
+        ],
+        "summary": "Site favicon",
+        "description": "Same rules as [`get_site_logo`], for `AXGIT_FAVICON`.",
+        "operationId": "get_site_favicon",
+        "responses": {
+          "200": {
+            "description": "Favicon image bytes. `Content-Type` is one of `image/svg+xml`, `image/png`, `image/x-icon`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, matched from `AXGIT_FAVICON`'s extension.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Hash of the file contents; opaque"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `nosniff`"
+              }
+            },
+            "content": {
+              "image/svg+xml": {}
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`not_found` — unconfigured, configured as a URL, unreadable, oversized, or an unrecognized extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/site/logo": {
+      "get": {
+        "tags": [
+          "site"
+        ],
+        "summary": "Site logo",
+        "description": "404 when `AXGIT_LOGO` is unset, or when it names an `http(s)://` URL —\nthere is nothing local to serve in that case, since the shell's injected\n`<meta name=\"axgit:logo\">` already points straight at it\n(docs/DECISIONS.md #81).",
+        "operationId": "get_site_logo",
+        "responses": {
+          "200": {
+            "description": "Logo image bytes. `Content-Type` is one of `image/svg+xml`, `image/png`, `image/x-icon`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, matched from `AXGIT_LOGO`'s extension.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`no-cache`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Hash of the file contents; opaque"
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Always `nosniff`"
+              }
+            },
+            "content": {
+              "image/svg+xml": {}
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` matched the current `ETag`"
+          },
+          "404": {
+            "description": "`not_found` — unconfigured, configured as a URL, unreadable, oversized, or an unrecognized extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/{repo_git}/git-receive-pack": {
       "post": {
         "tags": [

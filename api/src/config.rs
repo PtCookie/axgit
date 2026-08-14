@@ -67,6 +67,27 @@ pub struct Config {
     /// to any traversal check.
     #[arg(long, env = "AXGIT_ROOT_README")]
     pub root_readme: Option<PathBuf>,
+
+    /// Site logo, shown beside the header brand — cgit's `logo`. Either an
+    /// `http(s)://` URL (used verbatim) or a filesystem path axgit reads and
+    /// serves itself at `GET /api/v1/site/logo` (`branding.rs`,
+    /// docs/DECISIONS.md #81) — the path form is what works under the
+    /// `embed-web` single-binary deploy, which has no static directory to
+    /// drop an image into.
+    #[arg(long, env = "AXGIT_LOGO")]
+    pub logo: Option<String>,
+
+    /// Where the logo links to, when set — cgit's `logo-link`. Must be an
+    /// `http(s)://` URL or a root-relative path; anything else is ignored
+    /// (`branding.rs::sanitize_logo_link`). Unset falls back to `/`.
+    #[arg(long, env = "AXGIT_LOGO_LINK")]
+    pub logo_link: Option<String>,
+
+    /// Site favicon, replacing axgit's own default — cgit's `favicon`. Same
+    /// URL-or-path rule as `logo`, served at `GET /api/v1/site/favicon` when
+    /// given a path.
+    #[arg(long, env = "AXGIT_FAVICON")]
+    pub favicon: Option<String>,
 }
 
 fn parse_repository_sort(raw: &str) -> Result<RepoOrder, String> {

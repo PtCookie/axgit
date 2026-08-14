@@ -33,10 +33,33 @@ pub const REPO_SHELL_PARAM: &str = "__repo__";
 /// draws for the repository name, kept here rather than overwriting the
 /// real `<title>`/`<meta name="description">` server-side, which would only
 /// flash before that same script corrects it.
+/// Extends the same site-wide injection with cgit's `logo`/`logo-link`/
+/// `favicon` (docs/DECISIONS.md #81). `logo`/`favicon` are already-resolved
+/// `href`s — either the operator's own URL or axgit's serving route for the
+/// file form (`routes.rs`, `branding.rs::BrandingAsset::href`) — this module
+/// never needs to know which. The logo travels as a `<meta>`, read by
+/// `fillSiteChrome` the same way `axgit:site-title`/`axgit:site-desc` are:
+/// it's header chrome, and the header is `transition:persist`ed so it's
+/// filled once per document rather than needing a fresh injection on every
+/// swap. The favicon instead gets a real `<link rel="icon">` injected
+/// server-side (and the shell's own default links stripped) — unlike the
+/// logo, a browser fetches favicon `<link>`s while parsing `<head>`, before
+/// any script has a chance to run, so a client-side swap would always fetch
+/// the default first.
 #[derive(Clone, Default)]
 pub struct SiteHead {
     pub title: Option<String>,
     pub description: Option<String>,
+    pub logo: Option<String>,
+    pub logo_link: Option<String>,
+    pub favicon: Option<String>,
+    /// The favicon's `<link rel="icon" type="…">` MIME, resolved separately
+    /// from `favicon` (the href) — the file form's href is the fixed,
+    /// extensionless `/api/v1/site/favicon` route, with nothing to guess a
+    /// MIME from at this layer (`branding.rs::BrandingAsset::content_type`
+    /// resolves it once, from the configured path or URL, before `href`
+    /// throws that extension away).
+    pub favicon_type: Option<&'static str>,
 }
 
 /// Resolves a request path to its shell file (relative to the static build
@@ -159,10 +182,27 @@ pub async fn serve_shell(
 
     match assets.read(&relative).await {
         Some(body) => {
-            let mut extra = site_head_meta(site.title.as_deref(), site.description.as_deref());
+            let mut extra = site_head_meta(
+                site.title.as_deref(),
+                site.description.as_deref(),
+                site.logo.as_deref(),
+                site.logo_link.as_deref(),
+            );
             if let Some(segment) = repo_segment_for(uri.path(), &relative) {
                 extra.push_str(&repo_head_links(segment, clone_url_base.as_deref()));
             }
+            // Only a configured favicon touches the shell's own default
+            // `<link rel="icon">`s — unconfigured deployments keep them
+            // untouched, matching every other `site` field's "nothing
+            // injected, nothing removed" default.
+            let body = match site.favicon.as_deref() {
+                Some(href) => {
+                    let body = strip_default_icon_links(&body);
+                    extra.push_str(&favicon_head_link(href, site.favicon_type));
+                    body
+                }
+                None => body,
+            };
             let body = inject_before_head_close(body, &extra);
             (
                 status,
@@ -228,10 +268,17 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-/// Builds the `axgit:site-title`/`axgit:site-desc` `<meta>`s
-/// (docs/DECISIONS.md #70) — each omitted when its config value is unset,
-/// so an unconfigured deployment injects nothing at all.
-fn site_head_meta(title: Option<&str>, description: Option<&str>) -> String {
+/// Builds the `axgit:site-title`/`axgit:site-desc`/`axgit:logo`/
+/// `axgit:logo-link` `<meta>`s (docs/DECISIONS.md #70, #81) — each omitted
+/// when its config value is unset, so an unconfigured deployment injects
+/// nothing at all. The favicon has no `<meta>` counterpart here: see
+/// [`favicon_head_link`].
+fn site_head_meta(
+    title: Option<&str>,
+    description: Option<&str>,
+    logo: Option<&str>,
+    logo_link: Option<&str>,
+) -> String {
     let mut meta = String::new();
     if let Some(title) = title {
         meta.push_str(&format!(
@@ -245,7 +292,66 @@ fn site_head_meta(title: Option<&str>, description: Option<&str>) -> String {
             xml_escape(description)
         ));
     }
+    if let Some(logo) = logo {
+        meta.push_str(&format!(
+            "<meta name=\"axgit:logo\" content=\"{}\">",
+            xml_escape(logo)
+        ));
+    }
+    if let Some(logo_link) = logo_link {
+        meta.push_str(&format!(
+            "<meta name=\"axgit:logo-link\" content=\"{}\">",
+            xml_escape(logo_link)
+        ));
+    }
     meta
+}
+
+/// The `<link rel="icon">` for a configured favicon. `mime` is resolved
+/// ahead of time by the caller (`branding.rs::BrandingAsset::content_type`)
+/// rather than guessed from `href` here — the file form's href is always the
+/// fixed, extensionless `/api/v1/site/favicon` route, so there is no
+/// extension left in it to guess from by the time it reaches this function.
+/// `type=` is omitted when `mime` is `None`, letting the browser sniff, same
+/// as a bare `<link rel="icon" href="…">` with no type ever does.
+fn favicon_head_link(href: &str, mime: Option<&str>) -> String {
+    let href = xml_escape(href);
+    match mime {
+        Some(mime) => format!("<link rel=\"icon\" type=\"{mime}\" href=\"{href}\">"),
+        None => format!("<link rel=\"icon\" href=\"{href}\">"),
+    }
+}
+
+/// Strips every default `<link rel="icon" …>` the shell itself ships with
+/// (`Layout.astro`'s `/favicon.svg` + `/favicon.ico` pair) — applied only
+/// when a favicon is actually configured, so the two never both end up in
+/// the same document. Byte-oriented, matching [`inject_before_head_close`]'s
+/// "small controlled document" reasoning (docs/DECISIONS.md #12): this scans
+/// for `<link` tags containing `rel="icon"` and drops each one whole.
+fn strip_default_icon_links(body: &[u8]) -> Vec<u8> {
+    const TAG_START: &[u8] = b"<link";
+    const REL_ICON: &[u8] = b"rel=\"icon\"";
+
+    let mut out = Vec::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(start) = find_subslice(rest, TAG_START) {
+        out.extend_from_slice(&rest[..start]);
+        let tag = &rest[start..];
+        let Some(end) = tag.iter().position(|&b| b == b'>') else {
+            // No closing `>` — not a well-formed tag; stop rewriting and
+            // keep the remainder verbatim rather than risk mangling it.
+            out.extend_from_slice(tag);
+            rest = &[];
+            break;
+        };
+        let (whole_tag, after) = tag.split_at(end + 1);
+        if find_subslice(whole_tag, REL_ICON).is_none() {
+            out.extend_from_slice(whole_tag);
+        }
+        rest = after;
+    }
+    out.extend_from_slice(rest);
+    out
 }
 
 /// Builds the `<link>` markup itself. Titles are fixed strings rather than
@@ -589,29 +695,88 @@ mod tests {
     }
 
     #[test]
-    fn site_head_meta_should_omit_both_when_unset() {
-        assert_eq!(site_head_meta(None, None), "");
+    fn site_head_meta_should_omit_all_four_when_unset() {
+        assert_eq!(site_head_meta(None, None, None, None), "");
     }
 
     #[test]
     fn site_head_meta_should_include_only_the_configured_fields() {
-        let title_only = site_head_meta(Some("PtCookie Git"), None);
+        let title_only = site_head_meta(Some("PtCookie Git"), None, None, None);
         assert!(title_only.contains("<meta name=\"axgit:site-title\" content=\"PtCookie Git\">"));
         assert!(!title_only.contains("site-desc"));
+        assert!(!title_only.contains("axgit:logo"));
 
-        let desc_only = site_head_meta(None, Some("Self-hosted repositories"));
+        let desc_only = site_head_meta(None, Some("Self-hosted repositories"), None, None);
         assert!(!desc_only.contains("site-title"));
         assert!(
             desc_only
                 .contains("<meta name=\"axgit:site-desc\" content=\"Self-hosted repositories\">")
         );
+
+        let logo_only = site_head_meta(None, None, Some("/api/v1/site/logo"), None);
+        assert!(logo_only.contains("<meta name=\"axgit:logo\" content=\"/api/v1/site/logo\">"));
+        assert!(!logo_only.contains("logo-link"));
+
+        let logo_link_only = site_head_meta(None, None, None, Some("https://example.net"));
+        assert!(!logo_link_only.contains("axgit:logo\""));
+        assert!(
+            logo_link_only
+                .contains("<meta name=\"axgit:logo-link\" content=\"https://example.net\">")
+        );
     }
 
     #[test]
-    fn site_head_meta_should_escape_both_fields() {
-        let meta = site_head_meta(Some(r#"a"b"#), Some(r#"c"d"#));
+    fn site_head_meta_should_escape_all_fields() {
+        let meta = site_head_meta(
+            Some(r#"a"b"#),
+            Some(r#"c"d"#),
+            Some(r#"e"f"#),
+            Some(r#"g"h"#),
+        );
         assert!(!meta.contains(r#""a"b""#));
         assert!(meta.contains("a&quot;b"));
         assert!(meta.contains("c&quot;d"));
+        assert!(meta.contains("e&quot;f"));
+        assert!(meta.contains("g&quot;h"));
+    }
+
+    #[test]
+    fn favicon_head_link_should_include_the_given_type() {
+        let link = favicon_head_link("/api/v1/site/favicon", Some("image/svg+xml"));
+        assert_eq!(
+            link,
+            "<link rel=\"icon\" type=\"image/svg+xml\" href=\"/api/v1/site/favicon\">"
+        );
+    }
+
+    #[test]
+    fn favicon_head_link_should_omit_type_when_none() {
+        let link = favicon_head_link("https://example.net/icon", None);
+        assert_eq!(
+            link,
+            "<link rel=\"icon\" href=\"https://example.net/icon\">"
+        );
+    }
+
+    #[test]
+    fn favicon_head_link_should_escape_the_href() {
+        let link = favicon_head_link(r#"/x"y.svg"#, None);
+        assert!(!link.contains(r#"href="/x"y.svg""#));
+        assert!(link.contains("x&quot;y.svg"));
+    }
+
+    #[test]
+    fn strip_default_icon_links_should_remove_only_icon_links() {
+        let body = b"<head><link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\"><link rel=\"icon\" href=\"/favicon.ico\"><link rel=\"stylesheet\" href=\"/a.css\"></head>".to_vec();
+        let stripped = strip_default_icon_links(&body);
+        let stripped = String::from_utf8(stripped).unwrap();
+        assert!(!stripped.contains("rel=\"icon\""));
+        assert!(stripped.contains("<link rel=\"stylesheet\" href=\"/a.css\">"));
+    }
+
+    #[test]
+    fn strip_default_icon_links_should_be_a_no_op_without_any_icon_link() {
+        let body = b"<head><link rel=\"stylesheet\" href=\"/a.css\"></head>".to_vec();
+        assert_eq!(strip_default_icon_links(&body), body);
     }
 }

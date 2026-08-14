@@ -32,6 +32,29 @@
         "127.0.0.1:8099"
       ],
       "port": 8099
+    },
+    {
+      "name": "axgit-branding-demo",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": [
+        "run",
+        "--manifest-path",
+        "api/Cargo.toml",
+        "--",
+        "--repo-root",
+        "./fixtures/repos",
+        "--static-dir",
+        "./web/dist",
+        "--logo",
+        "./web/public/favicon.svg",
+        "--favicon",
+        "./web/public/favicon.svg",
+        "--root-title",
+        "PtCookie Git",
+        "--listen",
+        "127.0.0.1:8081"
+      ],
+      "port": 8081
     }
   ]
 }

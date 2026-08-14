@@ -36,6 +36,9 @@ pub fn test_config(repo_root: &Path) -> Config {
         root_title: None,
         root_desc: None,
         root_readme: None,
+        logo: None,
+        logo_link: None,
+        favicon: None,
     }
 }
 
@@ -92,6 +95,26 @@ pub fn router_with_site(
     let mut config = test_config(repo_root);
     config.root_title = root_title.map(str::to_owned);
     config.root_desc = root_desc.map(str::to_owned);
+    build_router(AppState::new(config))
+}
+
+/// Like [`router_with_static`], plus `logo`/`logo_link`/`favicon` (still in
+/// their raw `AXGIT_LOGO`/`AXGIT_LOGO_LINK`/`AXGIT_FAVICON` form — a URL or a
+/// filesystem path) — for asserting the page shell's injected
+/// `axgit:logo`/`axgit:logo-link` `<meta>`s and `<link rel="icon">`
+/// (docs/DECISIONS.md #81).
+pub fn router_with_static_and_branding(
+    repo_root: &Path,
+    static_dir: &Path,
+    logo: Option<&str>,
+    logo_link: Option<&str>,
+    favicon: Option<&str>,
+) -> Router {
+    let mut config = test_config(repo_root);
+    config.static_dir = Some(static_dir.to_owned());
+    config.logo = logo.map(str::to_owned);
+    config.logo_link = logo_link.map(str::to_owned);
+    config.favicon = favicon.map(str::to_owned);
     build_router(AppState::new(config))
 }
 

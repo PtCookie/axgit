@@ -177,7 +177,9 @@ render.
   TTL, default 300s), `AXGIT_CACHE_RESPONSE_MAX_BYTES` (response cache capacity, default 32 MiB),
   `AXGIT_REPOSITORY_SORT` (repository index default sort order, default `name`),
   `AXGIT_ROOT_TITLE`/`AXGIT_ROOT_DESC`/`AXGIT_ROOT_README` (site-wide title/description/readme,
-  all unset by default).
+  all unset by default), `AXGIT_LOGO`/`AXGIT_LOGO_LINK`/`AXGIT_FAVICON` (site logo and favicon,
+  each an `http(s)://` URL or a filesystem path axgit serves itself, docs/DECISIONS.md #81, all
+  unset by default).
 - Logs go to stdout/stderr as JSON (`tracing` + `tracing-subscriber`) — collected by the stack's
   fluentd logging driver.
 - **Single-binary alternative** (DECISIONS.md #74): `cargo build --release --features embed-web`
