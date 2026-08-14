@@ -3167,3 +3167,77 @@ was the expected range) at the cost of that symbol information — for a self-ho
 service where the operator debugging a panic *is* the person who'd read that backtrace, the
 debugging value outweighs the size saving. Not revisiting unless a concrete need shows up (e.g. the
 tarball size itself becoming a problem). No code change.
+
+## #79 aarch64-unknown-linux-musl release leg
+
+Closes the ROADMAP candidate #75 left open (arm64 excluded from the release matrix, revisit "if a
+confirmed deploy target shows up"). `scripts/make-release.sh` now builds both
+`x86_64-unknown-linux-musl` (native) and `aarch64-unknown-linux-musl` (cross) by default, producing
+two tarballs and one `SHA256SUMS` covering both. Cross-compiling a musl target from `cc`-crate C
+dependencies turned out to have several non-obvious failure modes, checked directly against `cc`
+1.4.0's and `pkg-config` 0.3.33's source rather than assumed:
+
+- **`bzip2-sys` no longer exists in the dependency graph** (`api/Cargo.lock`) — `bzip2 0.6`
+  switched to the pure-Rust `libbz2-rs-sys` (`build = false`). The actual C dependency set is
+  `libgit2-sys`, `libz-sys` (pulled in transitively by libgit2-sys, not by `flate2`, which uses
+  `zlib-rs`), `liblzma-sys`, and `zstd-sys`. #75's text and the script's own comment both named
+  `bzip2-sys` and omitted `libz-sys`; corrected in both places. No `cmake`/`bindgen` in the lock, so
+  neither is a CI-agent prerequisite.
+- **cc-rs's env-var lookup order is `CC_<triple-dashes>` > `CC_<triple_underscores>` > `TARGET_CC`
+  > `CC`** (`target_envs`, cc 1.4.0). A script that exports `CC_<triple_underscores>` therefore
+  shadows any `TARGET_CC` an operator might set — so the override mechanism is honouring a
+  pre-set `CC_<triple_underscores>` in the environment, not adding a second variable. The dashed
+  form is moot: `export "CC_aarch64-unknown-linux-musl=..."` isn't a valid bash identifier.
+- **cc-rs's built-in cross prefix table only knows one aarch64 name**: `prefix_for_target` hardcodes
+  `"aarch64-unknown-linux-musl" => Some("aarch64-linux-musl")` with no existence check, while the
+  x86_64 musl case actually probes PATH (`find_working_gnu_prefix(["x86_64-linux-musl", "musl"])`).
+  Practical effect: musl.cc/Homebrew `musl-cross` naming (`aarch64-linux-musl-gcc`) works with zero
+  env vars; `messense/macos-cross-toolchains` naming (`aarch64-unknown-linux-musl-gcc`) does not and
+  needs the explicit `CC_aarch64_unknown_linux_musl` export the script now does. The script probes
+  both conventions, cross-only names first since the native (`musl-gcc`) case doesn't apply.
+- **`CARGO_TARGET_<TRIPLE>_LINKER` is required for the cross leg, not optional.** Confirmed via
+  `rustc --print target-spec-json --target aarch64-unknown-linux-musl`: no `linker` key,
+  `linker-flavor: "gnu-cc"`. rustc drives the final link through PATH's `cc` regardless of
+  self-contained musl crt/libc.a, and a host `cc` cannot link foreign-arch objects. Left unset on
+  the native leg to keep the already-proven x86_64-on-x86_64 behaviour untouched. `AR_<triple>` is
+  exported best-effort the same way (redundant under musl.cc naming, load-bearing under messense
+  naming, and essential from a macOS host whose cctools `ar` can't index ELF); `RANLIB` is
+  deliberately not set — cc 1.4.0 exposes a ranlib accessor but never calls it internally.
+- **The single biggest hazard: never set `PKG_CONFIG_ALLOW_CROSS`, `PKG_CONFIG`, or
+  `PKG_CONFIG_SYSROOT_DIR`.** `git2` doesn't enable libgit2-sys's `vendored` feature, so
+  `libgit2-sys`'s `build.rs` always tries a system libgit2 via pkg-config first. The *only* reason
+  today's build ends up vendored (statically built) at all is that `pkg-config` 0.3.33's
+  `target_supported()` refuses to run when `host != target` unless one of those three variables
+  overrides it. Setting any of them on a cross build flips libgit2-sys and libz-sys onto the host's
+  glibc `.pc` files, producing a binary that looks statically linked but silently isn't. Documented
+  as a prohibition next to the toolchain export in the script, not just here.
+- **Two-pass structure**: the script now resolves and validates every target's toolchain (rustup
+  target installed, C compiler found) before building any of them, so a missing aarch64 cross
+  compiler fails immediately instead of after the x86_64 leg has already spent build time. Also
+  wipes `release/` up front and writes `SHA256SUMS` once, from the explicit list of tarballs it
+  produced — not a glob — so a stale file left over from an earlier invocation can never be
+  checksummed alongside the current release.
+- **Smoke check gained a runner ladder**, since qemu doesn't apply only to Jenkins:
+  `CARGO_TARGET_<TRIPLE>_RUNNER` override (cargo's own per-target convention, not a bespoke
+  variable) → native execution → `qemu-<arch>-static`/`qemu-<arch>` on `PATH` (no `-L <sysroot>`
+  needed — the binary is statically linked musl, precisely the case naive qemu-user usage usually
+  needs one for) → a registered, enabled `binfmt_misc` handler for the arch → skip. The skip path
+  was deliberately kept as a hard "give up and say so" rather than "try executing it anyway and
+  catch the failure" — a genuinely broken binary also fails to execute, so a blanket try/fallback
+  would turn the exact hard failure #76 built this check to catch into a silent pass. Honest
+  caveat: **on a stock x86_64 Jenkins agent with no `qemu-user-static` installed, the
+  aarch64 binary is still built and shipped, just unexecuted** — the skip message was upgraded to
+  `warning:` and names the package, but installing it is a recommended, not enforced, agent
+  prerequisite (`Jenkinsfile`'s header comment says so explicitly).
+- Both musl legs turned out to be fully buildable *and* runnable on the macOS/aarch64 dev machine
+  used for this work — the messense cross toolchain for the aarch64 leg (exercising the
+  explicit-env-var path above, not the one cc-rs already knows), and Docker's native (non-emulated)
+  arm64 execution standing in for the smoke check via `CARGO_TARGET_..._RUNNER`. This retires the
+  "the musl leg is first exercised by a v* tag build" limitation #75/#76 recorded — both legs are
+  now locally verifiable before a release is tagged, at least for the C-toolchain and
+  static-linking half of what a real Linux run would prove.
+- `Jenkinsfile`'s pipeline `timeout` raised 30 → 45 minutes: a tag build's `Release` stage now pays
+  two full `--release` builds (each including a fresh vendored libgit2/xz/zstd/zlib C build) instead
+  of one, on top of the existing Test and Embedded build stages sharing the same pipeline-wide
+  timeout.
+- No API contract change, no `api/src` change — packaging only.

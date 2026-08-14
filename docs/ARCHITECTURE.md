@@ -183,9 +183,10 @@ render.
   complete deployment, no `AXGIT_STATIC_DIR`/directory needed. `AXGIT_STATIC_DIR` still overrides
   the embedded copy when set. The Dockerfile is unaffected (the `embed-web` feature is never
   enabled there); this path targets a bare-metal/systemd install instead.
-- **Single-binary packaging** (DECISIONS.md #75): `scripts/make-release.sh` builds the
-  `embed-web` binary for `x86_64-unknown-linux-musl` (natively, no Docker) and stages it with a
-  systemd unit, env-file template, and install docs (`packaging/`) into a release tarball +
-  checksums. `Jenkinsfile`'s `Release` stage runs it on `v*` tag builds and archives the output;
-  the service runs as the repository-owning user, per #74's ownership finding, so no
-  `safe.directory` config is needed there either.
+- **Single-binary packaging** (DECISIONS.md #75, #79): `scripts/make-release.sh` builds the
+  `embed-web` binary for both `x86_64-unknown-linux-musl` (natively) and
+  `aarch64-unknown-linux-musl` (cross, via a target-specific musl gcc — no Docker either way) and
+  stages each with a systemd unit, env-file template, and install docs (`packaging/`) into its own
+  release tarball, plus one checksums file covering both. `Jenkinsfile`'s `Release` stage runs it
+  on `v*` tag builds and archives the output; the service runs as the repository-owning user, per
+  #74's ownership finding, so no `safe.directory` config is needed there either.

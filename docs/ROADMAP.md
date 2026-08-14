@@ -1341,6 +1341,22 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   user rather than needing any `safe.directory` config at all. `git` exec (archive/upload-pack)
   stays a runtime dependency regardless. No API contract change.
 
+- **`aarch64-unknown-linux-musl` release leg** (DECISIONS.md #79). Closed the candidate #75 left
+  open. `scripts/make-release.sh` now builds both `x86_64-unknown-linux-musl` (native) and
+  `aarch64-unknown-linux-musl` (cross) by default — one tarball each, one `SHA256SUMS` covering
+  both. The cross build's C-toolchain env-var wiring (`CC_<triple>`/`CARGO_TARGET_<TRIPLE>_LINKER`/
+  `AR_<triple>`) and the `PKG_CONFIG_ALLOW_CROSS` prohibition that keeps libgit2-sys vendored on a
+  cross build were both verified against `cc`/`pkg-config`'s actual source rather than assumed; #79
+  also corrected #75's stale `bzip2-sys` reference (that dependency is pure Rust now) and its
+  missing `libz-sys` mention. Smoke-check gained a runner ladder (explicit
+  `CARGO_TARGET_<TRIPLE>_RUNNER` → native → qemu-user → binfmt_misc → skip-with-warning), and the
+  script restructured to a two-pass validate-then-build shape so a missing cross compiler fails
+  before any build time is spent. Both musl legs turned out to be locally buildable and runnable
+  from a macOS/aarch64 dev machine (a messense cross toolchain + Docker's native arm64 execution as
+  the runner), retiring #75/#76's "the musl leg is first exercised by a v* tag build" limitation.
+  `Jenkinsfile`'s pipeline timeout raised 30 → 45 minutes for the now-doubled Release stage build
+  time. No API contract change, no `api/src` change — packaging only.
+
 ## Next up
 
 No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,
@@ -1356,9 +1372,6 @@ see the "not planned" notes below), and the single-binary deploy path — featur
   shows up.
 - Commit log's `path` filter walk can be slow on paths that change rarely across a long history
   (noted when `commits.rs::log` was built) — no reports of this being a real problem yet.
-- An `aarch64-unknown-linux-musl` leg for `scripts/make-release.sh`/`Jenkinsfile`'s `Release` stage
-  (DECISIONS.md #75 shipped x86_64 only) — no confirmed arm64 deploy target yet; add as a second
-  `TARGET` build if one shows up.
 - Tree/blob/blame links for remote branches on the refs page (#52 built Log/Compare only) — needs
   `resolve.rs::ref_shorthands()` extended to `refs/remotes/*`, plus deciding how a local branch
   named e.g. `origin` should disambiguate against a remote branch `origin/main` under the existing

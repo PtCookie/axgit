@@ -8,6 +8,11 @@ clone/fetch (docs/ARCHITECTURE.md's hybrid libgit2+exec policy).
 This is an alternative to the container image (see the repo root README.md) for a bare-metal or
 VM install managed by systemd.
 
+Releases ship one tarball per CPU architecture (docs/DECISIONS.md #79); the tarball's filename is
+the only place that's recorded, so before installing, make sure you downloaded the one matching
+the target machine — check with `uname -m` (`x86_64` or `aarch64`; on Linux, `aarch64` is arm64)
+and match it against the `axgit-<version>-<target>.tar.gz` name's target triple.
+
 ## 1. Install the binary
 
 ```sh

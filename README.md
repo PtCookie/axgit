@@ -65,10 +65,15 @@ docs/DECISIONS.md #75):
 ./scripts/make-release.sh
 ```
 
-Defaults to `TARGET=x86_64-unknown-linux-musl` (override via the `TARGET` env var), matching the
-Dockerfile's static-linking posture; building for a musl target requires `musl-tools`
-(`musl-gcc`) and `rustup target add x86_64-unknown-linux-musl` first. Produces
-`release/axgit-<version>-<target>.tar.gz` and `release/SHA256SUMS` — see the tarball's own
+Defaults to `TARGETS="x86_64-unknown-linux-musl aarch64-unknown-linux-musl"` (space-separated;
+override via the `TARGETS` env var, or set `TARGET` for a single-target alias, e.g.
+`TARGET=aarch64-apple-darwin` for local verification on macOS). Each `*-musl` target needs
+`rustup target add <target>` plus a matching C compiler on `PATH`: `musl-tools` (`musl-gcc`) for a
+native x86_64 build, and for the aarch64 leg either musl.cc/Homebrew's `musl-cross`
+(`aarch64-linux-musl-gcc`) or `messense/macos-cross-toolchains` (`aarch64-unknown-linux-musl-gcc`)
+— both cross conventions are also usable on macOS, so both musl legs can be built and verified on
+a Mac dev machine (docs/DECISIONS.md #79). Produces one `release/axgit-<version>-<target>.tar.gz`
+per target and a single `release/SHA256SUMS` covering all of them — see the tarball's own
 `INSTALL.md` (also at [packaging/INSTALL.md](packaging/INSTALL.md)) for the systemd install steps.
 
 ### Configuration

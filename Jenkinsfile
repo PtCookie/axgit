@@ -1,17 +1,26 @@
 // Image build (Dockerfile) is wired in separately later. Assumes the agent already has
 // Node.js and a Rust toolchain (rustc/cargo, rustfmt + clippy components) installed; this
 // file only pins the exact pnpm version via corepack. The Release stage (v* tag builds
-// only, docs/DECISIONS.md #75) additionally needs musl-tools and the
-// x86_64-unknown-linux-musl rustup target for the single-binary release tarball
-// (scripts/make-release.sh). The Embedded build stage (every build, docs/DECISIONS.md #76)
-// builds `embed-web` for the host target only, so it needs no musl toolchain.
+// only, docs/DECISIONS.md #75/#79) builds BOTH x86_64-unknown-linux-musl and
+// aarch64-unknown-linux-musl (scripts/make-release.sh) and additionally needs, on the
+// agent: both rustup targets; musl-tools (musl-gcc, for the native x86_64 leg); an
+// aarch64 cross musl gcc for the aarch64 leg (musl.cc's aarch64-linux-musl-gcc or
+// messense/macos-cross-toolchains' aarch64-unknown-linux-musl-gcc); and, recommended,
+// the qemu-user-static package so the aarch64 binary's smoke check actually executes
+// instead of shipping unverified. The Embedded build stage (every build,
+// docs/DECISIONS.md #76) builds `embed-web` for the host target only, so it needs none
+// of the above.
 pipeline {
     agent any
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '20'))
         timestamps()
-        timeout(time: 30, unit: 'MINUTES')
+        // Raised from 30 to 45 minutes for docs/DECISIONS.md #79: a v* tag build now pays
+        // two full `--release` builds in the Release stage (x86_64 + aarch64, each a
+        // fresh vendored libgit2/xz/zstd/zlib C build) on top of the parallel Test stage
+        // and the Embedded build stage, all sharing this one pipeline-wide timeout.
+        timeout(time: 45, unit: 'MINUTES')
     }
 
     stages {
@@ -91,9 +100,10 @@ pipeline {
             }
         }
 
-        // Single-binary release tarball (scripts/make-release.sh, docs/DECISIONS.md #75):
-        // only on a v* tag build, after Test has passed. Target is fixed to
-        // x86_64-unknown-linux-musl, matching the Dockerfile's static-linking posture
+        // Single-binary release tarballs (scripts/make-release.sh, docs/DECISIONS.md
+        // #75/#79): only on a v* tag build, after Test has passed. Builds both
+        // x86_64-unknown-linux-musl and aarch64-unknown-linux-musl (the script's
+        // $TARGETS default), matching the Dockerfile's static-linking posture
         // (docs/DECISIONS.md #22) without depending on Docker in this pipeline.
         stage('Release') {
             when {
