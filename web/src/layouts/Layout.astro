@@ -150,7 +150,16 @@ const { title = "Axgit" } = Astro.props;
             // rather than aborting the script and leaving dead links.
           }
 
-          document.title = name + suffix;
+          // `suffix` (RepoLayout.astro's `TITLE_SUFFIXES`) no longer bakes
+          // in a trailing site name (docs/DECISIONS.md #83) — read the same
+          // `axgit:site-title` meta `fillSiteChrome` uses, falling back to
+          // the same "Axgit" default `api/src/site.rs::effective_title`
+          // applies server-side, so an unconfigured deployment's repository
+          // page titles are unchanged.
+          const siteTitleMeta = document.querySelector('meta[name="axgit:site-title"]');
+          const siteTitle = siteTitleMeta ? siteTitleMeta.content : "Axgit";
+
+          document.title = name + suffix + siteTitle;
           heading.textContent = name;
           for (const link of document.querySelectorAll("[data-repo-href]")) {
             const sub = link.dataset.repoHref;

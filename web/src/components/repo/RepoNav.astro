@@ -2,7 +2,9 @@
 interface Props {
   active: "summary" | "refs" | "log" | "tree" | "search" | "stats" | "diff";
   /** Appended after the repository name to build `document.title`, e.g.
-   *  " log — Axgit". Carried on `data-title-suffix` rather than read from
+   *  " log — " — `fillRepoShell` (`Layout.astro`) appends the configured
+   *  site title after this (docs/DECISIONS.md #83), so it no longer bakes
+   *  one in itself. Carried on `data-title-suffix` rather than read from
    *  `document.currentScript`, since `window.__axgit.fillRepoShell`
    *  (`Layout.astro`) also runs from an `astro:after-swap` listener, where
    *  `document.currentScript` is `null`. */

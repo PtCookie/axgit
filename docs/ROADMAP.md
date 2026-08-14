@@ -1403,11 +1403,20 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     `fillSiteChrome` directly, the same `astro dev`-doesn't-run-the-server-injection workaround
     #71 established) plus a case for the onerror-hides-a-broken-logo path. No API contract change.
 
+- **Compose repository titles from the configured site title** (docs/DECISIONS.md #83), closing
+  the limitation #71 recorded on purpose rather than fixed: `RepoLayout.astro`'s `TITLE_SUFFIXES`
+  baked `"— Axgit"` into every value at build time, so a deployment with `AXGIT_ROOT_TITLE` set
+  still got `"— Axgit"` in every repository page's `<title>`. `TITLE_SUFFIXES` now drops the
+  trailing name and `fillRepoShell` appends the live `axgit:site-title` meta content (falling back
+  to `"Axgit"`, the same default `fillSiteChrome` and `api/src/site.rs::effective_title` both use).
+  The static `title` props baked per-page stay as build-time placeholders, unconditionally
+  overwritten by `fillRepoShell` before first paint, same as they've always been for the repository
+  name itself. No API contract change.
+
 ## Next up
 
-Two small fixes found while implementing #81/#82, queued next: `RepoLayout.astro`'s
-`TITLE_SUFFIXES` composing with the configured site title instead of hardcoding `"— Axgit"` (#83),
-then replacing the scaffold-default `web/public/favicon.{svg,ico}` (#84).
+Replace the scaffold-default `web/public/favicon.{svg,ico}` (docs/DECISIONS.md #84) — the last
+piece of the logo/favicon feature (#81-#83).
 
 ### Candidates (not urgent, no particular order)
 

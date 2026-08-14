@@ -3418,3 +3418,24 @@ Web-side follow-up to #81, same two-commit shape as #70/#71.
   a `tracing::warn!` either way.
 - No API contract change — `web/src/layouts/Layout.astro` and `web/e2e/site.spec.ts` only.
 
+## #83 Compose repository titles from the configured site title
+
+Closes the limitation #71 recorded on purpose rather than fixed: `RepoLayout.astro`'s
+`TITLE_SUFFIXES` baked `"— Axgit"` into every value at Astro build time, so a deployment with
+`AXGIT_ROOT_TITLE` set still got `git-compose log — Axgit` in the browser tab. Revisited now
+alongside #81/#82 since both land in `Layout.astro`'s shell-filling scripts anyway.
+
+- **`TITLE_SUFFIXES` drops the trailing site name** (`" — Axgit"` → `" — "`, `" log — Axgit"` →
+  `" log — "`, …), and `fillRepoShell` appends the live site title — the `axgit:site-title` `<meta>`
+  content when present, else the same `"Axgit"` literal the suffixes used to bake in — closing over
+  the exact same value `fillSiteChrome` already uses for non-repository pages. A repository page's
+  title composition stays entirely `fillRepoShell`'s job (unchanged split from #71: repo pages don't
+  go through `fillSiteChrome`'s `document.title` branch at all), just no longer blind to
+  `AXGIT_ROOT_TITLE`.
+- The static `title` props baked per-page (`"Log — Axgit"`, …) are unaffected and still correct as
+  build-time placeholders — `fillRepoShell` runs from an `is:inline` script before first paint and
+  overwrites them unconditionally, on both the first load and every client-side navigation, the
+  same as it always has for the repository name itself.
+- `web/src/components/repo/RepoNav.astro`'s `titleSuffix` doc comment updated to describe the new
+  shape; no API contract change.
+

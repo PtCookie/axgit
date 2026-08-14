@@ -14,19 +14,23 @@ interface Props {
 
 const { active, title } = Astro.props;
 
+// The trailing site name is appended at runtime by `Layout.astro`'s
+// `fillRepoShell` (docs/DECISIONS.md #83), not baked in here — a
+// build-time literal couldn't reflect `AXGIT_ROOT_TITLE`, which the
+// `axgit:site-title` <meta> only carries once the server has injected it.
 const TITLE_SUFFIXES: Record<Active, string> = {
-  summary: " — Axgit",
-  refs: " refs — Axgit",
-  log: " log — Axgit",
-  commit: " commit — Axgit",
-  tree: " tree — Axgit",
-  blob: " blob — Axgit",
-  blame: " blame — Axgit",
-  search: " search — Axgit",
-  stats: " stats — Axgit",
-  diff: " diff — Axgit",
-  tag: " tag — Axgit",
-  object: " object — Axgit",
+  summary: " — ",
+  refs: " refs — ",
+  log: " log — ",
+  commit: " commit — ",
+  tree: " tree — ",
+  blob: " blob — ",
+  blame: " blame — ",
+  search: " search — ",
+  stats: " stats — ",
+  diff: " diff — ",
+  tag: " tag — ",
+  object: " object — ",
 };
 const titleSuffix = TITLE_SUFFIXES[active];
 
