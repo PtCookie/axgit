@@ -180,6 +180,12 @@ const { title = "Axgit" } = Astro.props;
         // directly, since the logo is `<body>` chrome this function already
         // owns and there's no pre-paint fetch race to avoid the way there is
         // for a `<link rel="icon">`.
+        // Same default the markup's `[data-site-logo]` starts at and the
+        // shell's own `<link rel="icon">` falls back to when `AXGIT_FAVICON`
+        // is unset (DECISIONS.md #84/#85) — kept as one literal here so the
+        // failed-load fallback below stays in sync with it.
+        const DEFAULT_SITE_LOGO = "/favicon.svg";
+
         window.__axgit.fillSiteChrome = function fillSiteChrome() {
           const titleMeta = document.querySelector('meta[name="axgit:site-title"]');
           const descMeta = document.querySelector('meta[name="axgit:site-desc"]');
@@ -205,13 +211,15 @@ const { title = "Axgit" } = Astro.props;
             // request, which would defeat the "swap the file, no restart"
             // point of serving it with `Cache-Control: no-cache` in the
             // first place (docs/DECISIONS.md #81). Caught here instead: a
-            // failed load re-hides the element rather than leaving a broken-
-            // image icon in the header.
+            // failed load falls back to axgit's own default mark rather than
+            // leaving a broken-image icon in the header (docs/DECISIONS.md
+            // #85). `onerror` clears itself first so a failure loading the
+            // default itself can't loop.
             logo.onerror = () => {
-              logo.hidden = true;
+              logo.onerror = null;
+              logo.src = DEFAULT_SITE_LOGO;
             };
             logo.src = logoMeta.content;
-            logo.hidden = false;
           }
           if (logoLinkMeta && brandLink) {
             brandLink.setAttribute("href", logoLinkMeta.content);
@@ -247,14 +255,16 @@ const { title = "Axgit" } = Astro.props;
             header shape, and it degrades correctly when only one of the two
             is configured. `data-site-brand` carries the link (its `href`
             defaults to `/`, swapped to `AXGIT_LOGO_LINK` by `fillSiteChrome`
-            below when set); `data-site-logo` starts `hidden` with no `src`
-            and is only unhidden once `axgit:logo` names one, so an
-            unconfigured deployment renders exactly this markup unchanged.
-            `alt=""` because the adjacent title text already names the site.
+            below when set); `data-site-logo` starts pointed at axgit's own
+            mark (`/favicon.svg`, the same default the tab icon uses — see
+            DECISIONS.md #85) so an unconfigured deployment's header isn't
+            text-only, and is swapped to `axgit:logo`'s content once
+            `fillSiteChrome` sees that meta. `alt=""` because the adjacent
+            title text already names the site.
           */
         }
         <a href="/" data-site-brand class="flex items-center gap-2">
-          <img data-site-logo alt="" hidden class="h-6 w-auto" />
+          <img data-site-logo alt="" src="/favicon.svg" class="h-6 w-auto" />
           <span data-site-title class="font-heading text-lg font-medium">Axgit</span>
         </a>
         <ThemeToggle client:only="react">

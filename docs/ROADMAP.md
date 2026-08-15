@@ -1423,6 +1423,14 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   hand-writes the ICONDIR/ICONDIRENTRY header rather than pulling in a new dependency for a one-time
   asset build). No API contract change.
 
+- **Default the header logo to axgit's own mark** (docs/DECISIONS.md #85), closing the gap #84 left:
+  the tab icon got a default but the header brand didn't — `[data-site-logo]` shipped with no `src`
+  and stayed `hidden` until `AXGIT_LOGO` set one, so an unconfigured deployment's header was
+  text-only. It now starts at `/favicon.svg` (the same default the tab icon uses) baked into the
+  markup, and a configured logo that fails to load falls back to that mark instead of hiding the
+  image (amends #82's `onerror` choice). Deliberately not tied to `AXGIT_FAVICON` — `AXGIT_LOGO`
+  and `AXGIT_FAVICON` stay independent per #81. Web-only; no API contract change.
+
 ## Next up
 
 No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,

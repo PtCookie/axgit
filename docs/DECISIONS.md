@@ -3461,3 +3461,31 @@ dependency for a one-time asset build — the same "keep the generator script al
 precedent `scripts/make-fixtures.sh` already sets. Lives under `web/` rather than the repo-root
 `scripts/` (which has no `package.json` of its own, so a bare `node` there can't resolve the
 `playwright` import without extra flags).
+
+## #85 Default header logo to axgit's own mark
+
+Gap noticed after #84 gave the tab icon a real default: the header brand had no equivalent.
+`Layout.astro`'s `<img data-site-logo>` shipped with no `src` and `hidden`, only unhidden once
+`fillSiteChrome` saw an `axgit:logo` meta (#82) — so an unconfigured deployment, the common case,
+showed a text-only header while the tab already carried axgit's mark.
+
+- **The default is always axgit's own `/favicon.svg`, not a configured `AXGIT_FAVICON`.** `AXGIT_LOGO`
+  and `AXGIT_FAVICON` stay the independent options #81 designed them as — an operator who wants a
+  different image in the tab than in the header (or either alone) loses nothing. Only the
+  *unconfigured* default changes, and web-only: `api/`, `docs/API.md`, `docs/openapi.json`, and
+  `web/src/lib/api/types.ts` are all untouched, since nothing about the wire contract changed.
+- **Baked into the markup, not set from `fillSiteChrome`.** `[data-site-logo]`'s `src` is
+  `/favicon.svg` from first paint; `fillSiteChrome` only overwrites it when `axgit:logo` is present.
+  This avoids a pop-in on the header's un-persisted first load — the header is
+  `transition:persist`ed after that, so subsequent navigations don't repaint it regardless.
+- **A configured logo that fails to load now falls back to the default mark instead of hiding the
+  image** (amends #82's `onerror` choice, `logo.hidden = true` → `logo.src = DEFAULT_SITE_LOGO`).
+  The reasoning for *why* a load can fail is unchanged from #82 (`shell.rs` can't re-verify the file
+  per request without defeating `Cache-Control: no-cache`) — only the degraded state changed, since
+  a blank header slot is worse than falling back to the same mark an unconfigured deployment already
+  shows. `onerror` clears itself before setting the fallback `src` so a failure loading the default
+  itself can't loop.
+- `web/e2e/site.spec.ts` updated: the unconfigured-logo assertions now expect the image visible at
+  `/favicon.svg` instead of hidden, and the load-failure test (renamed to describe the fallback,
+  not the hide) asserts the same `/favicon.svg` fallback rather than `toBeHidden()`.
+  `README.md`/`packaging/axgit.env.example`'s `AXGIT_LOGO` docs gained a note about the default.

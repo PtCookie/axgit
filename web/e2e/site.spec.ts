@@ -58,9 +58,9 @@ test("fillSiteChrome applies injected site metas to the brand, description, titl
     await route.fulfill({ json: UNCONFIGURED });
   });
   // The image actually has to load for the `toBeVisible()` assertions below
-  // to hold — `fillSiteChrome`'s `onerror` handler (docs/DECISIONS.md #82)
-  // re-hides it on a failed load, and nothing serves this path in the
-  // `astro dev` e2e environment otherwise.
+  // to hold — `fillSiteChrome`'s `onerror` handler (docs/DECISIONS.md #85)
+  // falls back to the default mark on a failed load, and nothing serves this
+  // path in the `astro dev` e2e environment otherwise.
   await page.route("**/api/v1/site/logo", async (route) => {
     await route.fulfill({
       contentType: "image/svg+xml",
@@ -70,9 +70,10 @@ test("fillSiteChrome applies injected site metas to the brand, description, titl
 
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Axgit", exact: true })).toBeVisible();
-  // Unconfigured: the logo image is present but hidden, and the brand link
-  // still points at `/` (docs/DECISIONS.md #82).
-  await expect(page.locator("[data-site-logo]")).toBeHidden();
+  // Unconfigured: the logo image is already visible at axgit's own default
+  // mark, and the brand link still points at `/` (docs/DECISIONS.md #85).
+  await expect(page.locator("[data-site-logo]")).toBeVisible();
+  await expect(page.locator("[data-site-logo]")).toHaveAttribute("src", "/favicon.svg");
   await expect(page.locator("[data-site-brand]")).toHaveAttribute("href", "/");
 
   await page.evaluate(() => {
@@ -107,13 +108,13 @@ test("fillSiteChrome applies injected site metas to the brand, description, titl
   await expect(page.locator("[data-site-brand]")).toHaveAttribute("href", "https://example.net");
 });
 
-// docs/DECISIONS.md #82: `AXGIT_LOGO` being *configured* (the meta is
+// docs/DECISIONS.md #85: `AXGIT_LOGO` being *configured* (the meta is
 // present) doesn't guarantee the file actually loads — shell.rs can't
 // re-verify that per shell response without defeating the point of serving
 // it with `Cache-Control: no-cache`. This exercises the client-side
-// recovery: a load failure re-hides the image instead of leaving a
-// broken-image icon in the header.
-test("a logo that fails to load is hidden again rather than shown broken", async ({ page }) => {
+// recovery: a load failure falls back to axgit's own default mark instead of
+// leaving a broken-image icon in the header.
+test("a logo that fails to load falls back to axgit's own mark rather than shown broken", async ({ page }) => {
   await page.route("**/api/v1/repos", async (route) => {
     await route.fulfill({ json: { repos: [], sort: "name" } });
   });
@@ -125,7 +126,7 @@ test("a logo that fails to load is hidden again rather than shown broken", async
   });
 
   await page.goto("/");
-  await expect(page.locator("[data-site-logo]")).toBeHidden();
+  await expect(page.locator("[data-site-logo]")).toHaveAttribute("src", "/favicon.svg");
 
   await page.evaluate(() => {
     const logo = document.createElement("meta");
@@ -136,5 +137,6 @@ test("a logo that fails to load is hidden again rather than shown broken", async
     (window as unknown as { __axgit: { fillSiteChrome: () => void } }).__axgit.fillSiteChrome();
   });
 
-  await expect(page.locator("[data-site-logo]")).toBeHidden();
+  await expect(page.locator("[data-site-logo]")).toBeVisible();
+  await expect(page.locator("[data-site-logo]")).toHaveAttribute("src", "/favicon.svg");
 });
