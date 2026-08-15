@@ -65,9 +65,7 @@ describe("SearchView", () => {
     mockedSearchRepo.mockReset();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("shows a prompt and does not fetch when there is no query", async () => {
     render(<SearchView repo="git-compose" q="" />);

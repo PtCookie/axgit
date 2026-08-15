@@ -59,9 +59,7 @@ describe("RefsView", () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("lists branches and tags", async () => {
     mockedGetRefs.mockResolvedValue(REFS);

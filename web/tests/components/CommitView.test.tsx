@@ -81,9 +81,7 @@ describe("CommitView", () => {
     mockedGetRefs.mockResolvedValue(NO_REFS);
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("shows the commit header, message, diffstat and diff lines", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);

@@ -20,9 +20,7 @@ describe("SiteIntro", () => {
     mockedGetSite.mockReset();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("renders nothing when nothing is configured", async () => {
     mockedGetSite.mockResolvedValue(UNCONFIGURED);

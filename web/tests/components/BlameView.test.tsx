@@ -54,9 +54,7 @@ describe("BlameView", () => {
     vi.mocked(rawUrl).mockClear();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("renders content with a per-range gutter", async () => {
     mockedGetBlame.mockResolvedValue(BLAME);

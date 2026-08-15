@@ -34,9 +34,7 @@ describe("BlobView", () => {
     vi.mocked(rawUrl).mockClear();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("renders text content with line numbers", async () => {
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);

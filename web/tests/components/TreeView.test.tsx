@@ -70,9 +70,7 @@ describe("TreeView", () => {
     mockedGetTree.mockReset();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("lists directory and file entries", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);

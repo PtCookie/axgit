@@ -26,9 +26,7 @@ describe("ReadmeView", () => {
     vi.mocked(rawUrl).mockClear();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("renders sanitized markdown with a heading and a link", async () => {
     mockedGetReadme.mockResolvedValue(MARKDOWN_README);

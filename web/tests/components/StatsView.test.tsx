@@ -63,9 +63,7 @@ describe("StatsView", () => {
     mockedGetStats.mockReset();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("fetches with the resolved period and ref", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);

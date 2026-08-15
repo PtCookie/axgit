@@ -5,9 +5,7 @@ import { page } from "vitest/browser";
 import SplitHunk from "@/components/repo/diff/SplitHunk";
 import type { Hunk } from "@/lib/api/schemas";
 
-afterEach(() => {
-  cleanup();
-});
+afterEach(cleanup);
 
 describe("SplitHunk", () => {
   it("renders both content columns for a context line", async () => {

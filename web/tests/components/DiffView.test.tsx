@@ -90,9 +90,7 @@ describe("DiffView", () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("prefills `to` with the default branch and names it in the idle message", async () => {
     render(<DiffView repo="git-compose" />);

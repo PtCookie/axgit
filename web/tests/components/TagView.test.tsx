@@ -34,9 +34,7 @@ describe("TagView", () => {
     mockedGetTag.mockReset();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("shows the tag object, tagger, message, and a linked commit object", async () => {
     mockedGetTag.mockResolvedValue(ANNOTATED);

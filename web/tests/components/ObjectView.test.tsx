@@ -100,9 +100,7 @@ describe("ObjectView", () => {
     mockedFetchRawBytes.mockReset();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("lists a tree's entries, linking onward by their own sha except a gitlink", async () => {
     mockedGetObject.mockResolvedValue(TREE);

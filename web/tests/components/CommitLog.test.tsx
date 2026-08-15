@@ -40,9 +40,7 @@ describe("CommitLog", () => {
     mockedGetRefs.mockResolvedValue(NO_REFS);
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("lists commits", async () => {
     mockedListCommits.mockResolvedValue(PAGE);

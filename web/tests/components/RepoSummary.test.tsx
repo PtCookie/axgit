@@ -36,9 +36,7 @@ describe("RepoSummary", () => {
     mockedGetRepo.mockReset();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(cleanup);
 
   it("shows the repository summary fields", async () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);

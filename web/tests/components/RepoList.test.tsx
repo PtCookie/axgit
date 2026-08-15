@@ -30,8 +30,8 @@ describe("RepoList", () => {
     mockedListRepos.mockReset();
   });
 
-  afterEach(() => {
-    cleanup();
+  afterEach(async () => {
+    await cleanup();
     // Each mount can leave `?q=` behind via `history.replaceState` — reset it
     // so later tests (and other files sharing this page) get a clean URL.
     window.history.replaceState(null, "", window.location.pathname);
