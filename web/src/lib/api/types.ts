@@ -1030,11 +1030,23 @@ export interface components {
        * @example git-compose
        */
       name: string;
-      /** @description From the repo config's `[axgit]` section, falling back to `[cgit]`. */
+      /**
+       * @description From the repo config's `[axgit]` section, falling back to `[cgit]`.
+       *     A blank (empty or whitespace-only) configured value is treated as
+       *     unset, same as `null`.
+       */
       section: string | null;
-      /** @description From the repo config's `[axgit]` section, falling back to `[cgit]`. */
+      /**
+       * @description From the repo config's `[axgit]` section, falling back to `[cgit]`.
+       *     A blank (empty or whitespace-only) configured value is treated as
+       *     unset, same as `null`.
+       */
       owner: string | null;
-      /** @description From the repo config's `[axgit]` section, falling back to `[cgit]`. */
+      /**
+       * @description From the repo config's `[axgit]` section, falling back to `[cgit]`.
+       *     A blank (empty or whitespace-only) configured value is treated as
+       *     unset, same as `null`.
+       */
       description: string | null;
       /**
        * @description From the repo config's `homepage` key, same `[axgit]`/`[cgit]`
@@ -1061,8 +1073,20 @@ export interface components {
     RepoSummary: {
       /** @example git-compose */
       name: string;
+      /**
+       * @description A blank (empty or whitespace-only) configured value is treated as
+       *     unset, same as `null`.
+       */
       section: string | null;
+      /**
+       * @description A blank (empty or whitespace-only) configured value is treated as
+       *     unset, same as `null`.
+       */
       owner: string | null;
+      /**
+       * @description A blank (empty or whitespace-only) configured value is treated as
+       *     unset, same as `null`.
+       */
       description: string | null;
       /** @example https://git.ptcookie.net */
       homepage: string | null;

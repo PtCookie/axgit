@@ -37,13 +37,16 @@ describe("RepoList", () => {
     window.history.replaceState(null, "", window.location.pathname);
   });
 
-  it("groups repositories by section, moving the unsectioned group last", async () => {
+  it("groups repositories by section, unsectioned group first then named sections A–Z", async () => {
     mockedListRepos.mockResolvedValue(fixture);
     render(<RepoList />);
 
     const headings = page.getByRole("heading", { level: 2 });
-    await expect.element(headings.first()).toHaveTextContent("infra");
-    await expect.element(headings.last()).toHaveTextContent("Other");
+    // The unsectioned group (scratch) has no visible label — its heading exists only for
+    // screen readers — but still comes first in the accessibility tree.
+    await expect.element(headings.first()).toHaveTextContent("Uncategorized");
+    await expect.element(headings.first()).toHaveClass("sr-only");
+    await expect.element(headings.last()).toHaveTextContent("tools");
     const link = page.getByRole("link", { name: "git-compose", exact: true });
     await expect.element(link).toBeVisible();
     await expect.element(link).toHaveAttribute("href", "/git-compose");
@@ -140,15 +143,19 @@ describe("RepoList", () => {
     const { container } = await render(<RepoList />);
     await expect.element(page.getByText("git-compose")).toBeVisible();
 
-    expect(visibleRepoOrder(container)).toEqual(["git-compose", "axgit", "dotfiles", "scratch"]);
+    // Group order is fixed (unsectioned first, then sections A–Z) regardless of the active
+    // column sort — only the order *within* each group tracks the sorted column. scratch (no
+    // section) leads; within infra, the fixture's own order (git-compose, axgit) is preserved
+    // since neither `?sort=` nor the default `name` order has been applied yet.
+    expect(visibleRepoOrder(container)).toEqual(["scratch", "git-compose", "axgit", "dotfiles"]);
 
     await userEvent.click(page.getByRole("button", { name: "Owner" }).first());
 
     expect(new URLSearchParams(window.location.search).get("sort")).toBe("owner");
-    // Owner ascending: both "PtCookie" repos (tie broken by name: axgit
-    // before git-compose), then both `null`-owner repos (dotfiles, scratch),
-    // `null` always last regardless of direction.
-    expect(visibleRepoOrder(container)).toEqual(["axgit", "git-compose", "dotfiles", "scratch"]);
+    // Owner ascending: within infra, both repos share "PtCookie" so the name
+    // tiebreak applies (axgit before git-compose); dotfiles (tools, `null`
+    // owner) is unaffected since it's alone in its group.
+    expect(visibleRepoOrder(container)).toEqual(["scratch", "axgit", "git-compose", "dotfiles"]);
     await expect
       .element(page.getByRole("columnheader", { name: "Owner" }).first())
       .toHaveAttribute("aria-sort", "ascending");
@@ -161,8 +168,9 @@ describe("RepoList", () => {
     await expect.element(page.getByText("git-compose")).toBeVisible();
 
     // "-idle" flips idle's own descending default to ascending (oldest
-    // last_modified first); `null` (scratch) still sorts last.
-    expect(visibleRepoOrder(container)).toEqual(["dotfiles", "git-compose", "axgit", "scratch"]);
+    // last_modified first) within each group; the group order itself (scratch first, then
+    // infra, then tools) is unaffected by which column drives the within-group sort.
+    expect(visibleRepoOrder(container)).toEqual(["scratch", "git-compose", "axgit", "dotfiles"]);
     await expect
       .element(page.getByRole("columnheader", { name: "Last activity" }).first())
       .toHaveAttribute("aria-sort", "ascending");

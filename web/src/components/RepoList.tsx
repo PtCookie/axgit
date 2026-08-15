@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-const UNSECTIONED_LABEL = "Other";
+const UNSECTIONED_LABEL = "Uncategorized";
 /** Query-string param the filter box reads its initial value from and keeps
  *  in sync with (`?q=`, docs/DECISIONS.md #25). */
 const QUERY_PARAM = "q";
@@ -31,7 +31,11 @@ const SORT_PARAM = "sort";
 
 /** Sortable columns, in header order. `section` has no header button — it's
  *  the group heading (`groupBySection`), not a column — but stays reachable
- *  via `?sort=section` or `AXGIT_REPOSITORY_SORT`. */
+ *  via `?sort=section` or `AXGIT_REPOSITORY_SORT`. Since `groupBySection`
+ *  always orders groups itself (unsectioned first, then alphabetically),
+ *  `sort=section` only affects the within-group order (which, since every
+ *  repo in a group shares the same section, collapses to the `name`
+ *  tiebreak) — not which group comes first. */
 const SORT_COLUMNS: readonly { key: RepoSortKey; label: string }[] = [
   { key: "name", label: "Name" },
   { key: "desc", label: "Description" },
@@ -56,9 +60,16 @@ function groupBySection(repos: RepoInfo[]): RepoGroup[] {
     }
   }
 
-  // section: null ("Other") always sorts last. Other groups keep their first-appearance order
-  // of whatever array `repos` was passed in (the API's order, or a client-side re-sort of it).
-  groups.sort((a, b) => (a.section === null ? 1 : b.section === null ? -1 : 0));
+  // section: null (unsectioned) always sorts first — those repos have no group of their own to
+  // land in, so surfacing them ahead of every named section keeps them from getting lost between
+  // alphabetically-nearby sections. Named groups sort A–Z; comparison mirrors repo-sort.ts's
+  // `compareOptStr` (plain code-point comparison, not `localeCompare`) to match the API's own
+  // `str::cmp`-based ordering (api/src/repo/sort.rs).
+  groups.sort((a, b) => {
+    if (a.section === null) return b.section === null ? 0 : -1;
+    if (b.section === null) return 1;
+    return a.section < b.section ? -1 : a.section > b.section ? 1 : 0;
+  });
   return groups;
 }
 
@@ -242,7 +253,12 @@ export default function RepoList() {
         <div className="space-y-8">
           {groupBySection(filtered).map(({ section, repos }) => (
             <section key={section ?? UNSECTIONED_LABEL}>
-              <h2 className="text-muted-foreground mb-2 text-sm font-medium">{section ?? UNSECTIONED_LABEL}</h2>
+              {/* The unsectioned group has no visible label — it's the "everything else" bucket
+                  pinned to the top, not a category — but keeps a heading for screen readers so
+                  the section landmark stays announced like every other group's. */}
+              <h2 className={section === null ? "sr-only" : "text-muted-foreground mb-2 text-sm font-medium"}>
+                {section ?? UNSECTIONED_LABEL}
+              </h2>
               <Table>
                 <TableHeader>
                   <TableRow>

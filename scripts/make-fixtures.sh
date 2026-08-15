@@ -117,8 +117,13 @@ echo "2026-07-24 13:06:00 +0900" > "$BARE/info/web/last-modified"
 # Also exercises cgit.defbranch (docs/DECISIONS.md #68): `legacy` branches off
 # before the second commit, so it diverges from `main` (HEAD) — a `defbranch`
 # reader that just followed HEAD wouldn't tell them apart.
+# `section` is explicitly set to a blank value (rather than left unset) to
+# exercise the "blank config value reads as unset" normalization
+# (docs/DECISIONS.md #86) — this is what an operator's `[cgit] section =`
+# with no value looks like, distinct from the key being absent entirely.
 BARE="$DEST/dotfiles.git"
 git init --quiet --bare --initial-branch=main "$BARE"
+git config --file "$BARE/config" cgit.section ""
 git config --file "$BARE/config" cgit.desc "Personal dotfiles"
 git config --file "$BARE/config" cgit.defbranch legacy
 

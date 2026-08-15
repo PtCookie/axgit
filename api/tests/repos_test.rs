@@ -241,6 +241,30 @@ async fn list_repos_drops_a_non_http_homepage_scheme() {
 }
 
 #[tokio::test]
+async fn list_repos_treats_blank_metadata_as_unset() {
+    let root = setup_fixtures();
+    // alpha.git already has non-blank section/owner/desc from setup_fixtures — overwrite them
+    // with blank (empty and whitespace-only) values, distinct from the key being absent
+    // entirely (which `empty.git` already covers).
+    common::set_meta(&root.path().join("alpha.git"), "cgit", "section", "");
+    common::set_meta(&root.path().join("alpha.git"), "cgit", "owner", "   ");
+    common::set_meta(&root.path().join("alpha.git"), "cgit", "desc", "");
+
+    let json = list_repos(root.path()).await;
+
+    let alpha = &json["repos"][0];
+    assert_eq!(
+        (
+            alpha["section"].as_str(),
+            alpha["owner"].as_str(),
+            alpha["description"].as_str(),
+        ),
+        (None, None, None),
+        "unexpected response: {json}"
+    );
+}
+
+#[tokio::test]
 async fn list_repos_rejects_an_unknown_sort() {
     let root = setup_fixtures();
 

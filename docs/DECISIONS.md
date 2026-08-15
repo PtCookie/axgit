@@ -3489,3 +3489,56 @@ showed a text-only header while the tab already carried axgit's mark.
   `/favicon.svg` instead of hidden, and the load-failure test (renamed to describe the fallback,
   not the hide) asserts the same `/favicon.svg` fallback rather than `toBeHidden()`.
   `README.md`/`packaging/axgit.env.example`'s `AXGIT_LOGO` docs gained a note about the default.
+
+## #86 Blank repo metadata reads as unset; unsectioned group moves to the top, sorted A–Z
+
+Reported bug: on git.ptcookie.net, repositories with no category showed up in the *middle* of the
+list instead of grouped together. Root cause was two separate gaps that only showed up combined:
+
+- Several repos' git config had `section = ` (the key present, value blank) rather than the key
+  being absent — an operator artifact, not malformed data. `api/src/repo/meta.rs::config_value`
+  had no blank-value handling, so `RepoInfo.section` came back `Some("")`, not `None`.
+- `web/src/components/RepoList.tsx`'s `groupBySection` only special-cased `section === null` as the
+  "Other" bucket. `Some("")` formed its own group — sorted alphabetically among the named ones by
+  the then-current "first-appearance order" rule, its `<h2>` rendering as an empty heading — which
+  is how it ended up wedged between two named sections instead of standing out as "uncategorized."
+
+Two independent fixes, needed together to actually change what renders:
+
+- **Blank config values normalize to `None` in the API**, not just in the frontend. Added a
+  `.filter(|value| !value.trim().is_empty())` to the `meta` closure in
+  `read_repo_info` (`api/src/repo/meta.rs`), covering `section`/`owner`/`desc` — all three are
+  free-text operator fields that only ever get rendered as-is, unlike `homepage`
+  (already filtered by `is_http_url`) or `defbranch` (validated against real branches).
+  `config_value` itself is untouched: `module_link_template` calls it too, and there an empty
+  per-path override is a deliberate "suppress the repo-wide template" signal
+  (`module_link_template_empty_per_path_value_suppresses_repo_wide`), not "unset." Fixing this at
+  the API layer — rather than only in `groupBySection` — means `GET /api/v1/repos`,
+  `GET /api/v1/repos/{repo}`, and the Atom feed (all three share `read_repo_info`) agree on what
+  "no section configured" means, instead of the frontend silently reinterpreting a wire value the
+  API contract (docs/API.md) never actually promised was meaningful.
+- **The unsectioned group now sorts first, and named groups sort A–Z** — not "unsectioned last,
+  named groups in first-appearance (≈ name-sort) order," the rule the original section-grouping
+  design note (docs/ROADMAP.md, "web app shell" entry) had set. Putting unsectioned repositories
+  last made sense when the assumption was that most repositories would eventually get a category;
+  in practice, on a personal git server, a large plurality never will (single-use scripts,
+  archived one-offs) — burying them at the bottom of a long page is worse than surfacing them
+  first, ahead of the categories someone deliberately curated. The group itself keeps a `<h2>` for
+  screen readers (`sr-only`, not removed) so the section landmark stays consistent with every other
+  group, but the visible page carries no "Uncategorized" label — the position alone communicates
+  it. `UNSECTIONED_LABEL` was renamed from `"Other"` to `"Uncategorized"` to read sensibly as
+  screen-reader-only text.
+  - Group comparison uses plain code-point ordering (`a.section < b.section`), matching
+    `repo-sort.ts`'s `compareOptStr` and the API's `str::cmp`-based `sort.rs` — not
+    `localeCompare`, which would let the two ordering rules drift apart on non-ASCII section names.
+  - `?sort=section` (and `AXGIT_REPOSITORY_SORT=section`) no longer has any influence on which
+    group appears first, since group order is now fixed by the rule above rather than derived from
+    response order. It still governs the (moot, since every repo in a group shares one section)
+    order *within* a group, via the `name` tiebreak.
+- `fixtures/repos/dotfiles.git` (and `scripts/make-fixtures.sh`, so a regenerated fixture set stays
+  consistent) now sets `cgit.section` to an explicit blank value instead of leaving the key unset —
+  otherwise none of the checked-in fixtures reproduced the actual bug shape, only the "key entirely
+  absent" case. `web/tests/fixtures/repos.json` (the *mocked API response* fixture, not a real repo
+  config) wasn't changed the same way, since by the time a response reaches the frontend the API
+  has already normalized blank to `null` — a `""` there would test a wire shape the real API no
+  longer produces.

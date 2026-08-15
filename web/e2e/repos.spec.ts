@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import fixture from "../tests/fixtures/repos.json" with { type: "json" };
 
-test("shows repositories grouped by section", async ({ page }) => {
+test("shows repositories grouped by section, unsectioned first then A–Z", async ({ page }) => {
   await page.route("**/api/v1/repos", async (route) => {
     await route.fulfill({ json: fixture });
   });
@@ -11,7 +11,11 @@ test("shows repositories grouped by section", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "infra", level: 2 })).toBeVisible();
   await expect(page.getByText("git-compose")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Other", level: 2 })).toBeVisible();
+  // The unsectioned group (scratch) has no visible label — its `sr-only` heading is present for
+  // screen readers only — but it's still the first section landmark on the page.
+  const headings = page.getByRole("heading", { level: 2 });
+  await expect(headings.first()).toHaveText("Uncategorized");
+  await expect(headings.first()).toHaveClass(/sr-only/);
 });
 
 test("filters the repository list and syncs the query into the URL", async ({ page }) => {
@@ -97,10 +101,11 @@ test("deep-links a sorted list from ?sort=", async ({ page }) => {
     "aria-sort",
     "ascending",
   );
-  // "-idle" flips idle's descending default to ascending (oldest first):
-  // dotfiles (2025) before git-compose/axgit (2026-07), scratch (null) last.
+  // Group order is fixed (unsectioned first, then sections A–Z): scratch leads regardless of
+  // the active sort. "-idle" flips idle's descending default to ascending within each group —
+  // visible here in infra, where git-compose (2026-07-24) now precedes axgit (2026-07-30).
   const names = await page.locator("table tbody a").allTextContents();
-  expect(names.filter((name) => name.trim() !== "")).toEqual(["dotfiles", "git-compose", "axgit", "scratch"]);
+  expect(names.filter((name) => name.trim() !== "")).toEqual(["scratch", "git-compose", "axgit", "dotfiles"]);
 });
 
 // robots.txt is a real static file (`web/public/robots.txt`), served ahead of

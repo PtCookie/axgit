@@ -26,12 +26,18 @@ pub struct RepoInfo {
     #[schema(example = "git-compose")]
     pub name: String,
     /// From the repo config's `[axgit]` section, falling back to `[cgit]`.
+    /// A blank (empty or whitespace-only) configured value is treated as
+    /// unset, same as `null`.
     #[schema(required = true)]
     pub section: Option<String>,
     /// From the repo config's `[axgit]` section, falling back to `[cgit]`.
+    /// A blank (empty or whitespace-only) configured value is treated as
+    /// unset, same as `null`.
     #[schema(required = true)]
     pub owner: Option<String>,
     /// From the repo config's `[axgit]` section, falling back to `[cgit]`.
+    /// A blank (empty or whitespace-only) configured value is treated as
+    /// unset, same as `null`.
     #[schema(required = true)]
     pub description: Option<String>,
     /// From the repo config's `homepage` key, same `[axgit]`/`[cgit]`
@@ -56,10 +62,16 @@ pub struct RepoInfo {
 pub struct RepoSummary {
     #[schema(example = "git-compose")]
     pub name: String,
+    /// A blank (empty or whitespace-only) configured value is treated as
+    /// unset, same as `null`.
     #[schema(required = true)]
     pub section: Option<String>,
+    /// A blank (empty or whitespace-only) configured value is treated as
+    /// unset, same as `null`.
     #[schema(required = true)]
     pub owner: Option<String>,
+    /// A blank (empty or whitespace-only) configured value is treated as
+    /// unset, same as `null`.
     #[schema(required = true)]
     pub description: Option<String>,
     #[schema(required = true, example = "https://git.ptcookie.net")]

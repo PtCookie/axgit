@@ -3340,21 +3340,21 @@
               "string",
               "null"
             ],
-            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`."
+            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`.\nA blank (empty or whitespace-only) configured value is treated as\nunset, same as `null`."
           },
           "owner": {
             "type": [
               "string",
               "null"
             ],
-            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`."
+            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`.\nA blank (empty or whitespace-only) configured value is treated as\nunset, same as `null`."
           },
           "description": {
             "type": [
               "string",
               "null"
             ],
-            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`."
+            "description": "From the repo config's `[axgit]` section, falling back to `[cgit]`.\nA blank (empty or whitespace-only) configured value is treated as\nunset, same as `null`."
           },
           "homepage": {
             "type": [
@@ -3406,19 +3406,22 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "A blank (empty or whitespace-only) configured value is treated as\nunset, same as `null`."
           },
           "owner": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "A blank (empty or whitespace-only) configured value is treated as\nunset, same as `null`."
           },
           "description": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "A blank (empty or whitespace-only) configured value is treated as\nunset, same as `null`."
           },
           "homepage": {
             "type": [

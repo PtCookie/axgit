@@ -1431,6 +1431,32 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
   image (amends #82's `onerror` choice). Deliberately not tied to `AXGIT_FAVICON` — `AXGIT_LOGO`
   and `AXGIT_FAVICON` stay independent per #81. Web-only; no API contract change.
 
+- **Move the unsectioned repository group to the top of the list** (docs/DECISIONS.md #86), fixing
+  a real regression seen on git.ptcookie.net: repositories with no `section` configured were meant
+  to group under "Other," last (per the original design note this superseded), but many repos there
+  actually had `section = ` (present, blank) rather than the key being absent — `RepoInfo.section`
+  came back `Some("")`, not `None`, so `RepoList.tsx`'s `groupBySection` (which only special-cased
+  `null`) rendered them as their own headingless group sorted alphabetically among the named ones,
+  landing in the middle of the page instead of anywhere predictable.
+  - `api/src/repo/meta.rs::read_repo_info`'s `meta` closure now filters `section`/`owner`/`desc` to
+    `None` when blank (empty or whitespace-only) — `config_value` itself is untouched, since
+    `module_link_template` reuses it and treats an empty per-path value as an intentional
+    suppression signal, not "unset" (see the `module_link_template_empty_per_path_value_suppresses_repo_wide`
+    test). This normalization is shared by the list, summary, and feed handlers, all of which call
+    `read_repo_info`.
+  - `RepoList.tsx`'s `groupBySection` now sorts the unsectioned group **first**, then named groups
+    alphabetically (`a.section < b.section`, plain code-point comparison — not `localeCompare`,
+    matching `repo-sort.ts`'s `compareOptStr` and the API's `str::cmp`-based `sort.rs`) — replacing
+    the previous "unsectioned last, named groups keep first-appearance order" rule. The unsectioned
+    group's `<h2>` is `sr-only` rather than removed, keeping the section landmark accessible;
+    `UNSECTIONED_LABEL` was renamed from `"Other"` to `"Uncategorized"` since it's screen-reader-only
+    text now, not a visible label competing with the named groups.
+  - `?sort=section`/`AXGIT_REPOSITORY_SORT=section` no longer influence which group renders first —
+    that's fixed by the rule above — only the (moot, single-section) order within a group.
+  - `fixtures/repos/dotfiles.git` and `scripts/make-fixtures.sh` now set `cgit.section` to an
+    explicit blank value (rather than leaving the key unset) so the blank-vs-absent distinction
+    stays exercised end-to-end, not just in unit/integration tests.
+
 ## Next up
 
 No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,

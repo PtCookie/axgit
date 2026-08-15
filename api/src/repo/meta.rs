@@ -38,7 +38,17 @@ pub fn validator(repo: &Repository) -> Validator {
 pub fn read_repo_info(repo: &Repository, name: &str) -> RepoInfo {
     // git2 requires a snapshot to read string values from a live config.
     let config = repo.config().and_then(|mut cfg| cfg.snapshot()).ok();
-    let meta = |key: &str| config.as_ref().and_then(|cfg| config_value(cfg, key));
+    // An empty (or whitespace-only) value is treated the same as unset —
+    // `section`/`owner`/`desc` land straight in the API response and the web
+    // list's section grouping, where a blank string would otherwise render
+    // as a group with no heading (docs/DECISIONS.md #86) instead of falling
+    // into the same bucket as a truly-unset section.
+    let meta = |key: &str| {
+        config
+            .as_ref()
+            .and_then(|cfg| config_value(cfg, key))
+            .filter(|value| !value.trim().is_empty())
+    };
 
     RepoInfo {
         name: name.to_owned(),
@@ -260,6 +270,23 @@ mod tests {
         let dir = tempfile::tempdir().expect("failed to create tempdir");
         let repo = Repository::init_bare(dir.path()).expect("failed to init bare repo");
         (dir, repo)
+    }
+
+    #[test]
+    fn read_repo_info_treats_blank_metadata_as_unset() {
+        let (_dir, repo) = bare_repo();
+        repo.config()
+            .and_then(|mut config| {
+                config.set_str("cgit.section", "")?;
+                config.set_str("cgit.owner", "   ")?;
+                config.set_str("cgit.desc", "")
+            })
+            .expect("failed to set config strings");
+
+        let info = read_repo_info(&repo, "blank-meta");
+        assert_eq!(info.section, None);
+        assert_eq!(info.owner, None);
+        assert_eq!(info.description, None);
     }
 
     fn set_str(repo: &Repository, key: &str, value: &str) {
