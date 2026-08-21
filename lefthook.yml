@@ -7,6 +7,10 @@ pre-commit:
       glob: "api/**/*.rs"
       root: "api/"
       run: cargo fmt -- --check
+    check-types:
+      glob: "web/**/*.{js,mjs,ts,tsx}"
+      root: "web/"
+      run: pnpm exec tsc --noEmit
     eslint:
       glob: "web/**/*.{js,cjs,mjs,ts,tsx,astro}"
       root: "web/"
