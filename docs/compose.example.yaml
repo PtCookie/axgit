@@ -24,17 +24,19 @@ services:
       # exists. See packaging/axgit.toml.example for every key.
       #
       # Caveat specific to the container: an environment variable always beats the file, and
-      # this image sets AXGIT_REPO_ROOT/AXGIT_STATIC_DIR/AXGIT_LISTEN in its own ENV
-      # (Containerfile), so those three can't be changed from the file — set them as
-      # `environment:` entries here instead. Everything else ([site], [cache],
-      # clone-url-base, repository-sort) is the file's to set, as long as the same setting
-      # isn't also listed below.
+      # this image sets AXGIT_STATIC_DIR in its own ENV (Containerfile — it names where the
+      # image put the frontend build), so that one key can't be changed from the file.
+      # Everything else is the file's to set, as long as the same setting isn't also spelled
+      # out under `environment:` below. Note that setting `listen` in the file means updating
+      # `expose:`, the healthcheck and any published port to match.
       # - ./axgit.toml:/etc/axgit/axgit.toml:ro
     environment:
-      AXGIT_REPO_ROOT: /srv/git
       # Base URL shown for `git clone` in the repository summary page.
       AXGIT_CLONE_URL_BASE: https://git.example.com
-      # Defaults shown for reference — uncomment to override:
+      # Defaults shown for reference — uncomment to override. Deliberately left commented
+      # rather than spelled out: an environment variable beats the config file, so restating
+      # a default here would quietly stop a mounted axgit.toml from setting it.
+      # AXGIT_REPO_ROOT: /srv/git
       # AXGIT_LISTEN: 0.0.0.0:8080
       # AXGIT_CACHE_SCAN_TTL: "60"
       # AXGIT_CACHE_RESPONSE_TTL: "300"

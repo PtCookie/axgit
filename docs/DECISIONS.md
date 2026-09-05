@@ -3617,13 +3617,26 @@ configuration. Axgit exists to replace cgit, so it should be configurable the wa
   would mean inventing a directive rather than adopting a format's.
 - **Verified against the container image**, since that is where the precedence choice actually
   bites: with `/etc/axgit/axgit.toml` bind-mounted in, `[site]`/`clone-url-base`/`repository-sort`
-  all apply, while the file's `repo-root`/`listen` are ignored in favour of the image's own `ENV`
-  (the startup line reports `repo_root=/srv/git`, `listen=0.0.0.0:8080` and
-  `config_file=/etc/axgit/axgit.toml`), and an `-e AXGIT_ROOT_TITLE` beats the file's `root-title`
-  while its `root-desc` still comes through. `docs/compose.example.yaml` carries the mount as a
-  commented-out volume with that caveat spelled out, and README.md repeats it — a config file is
-  the natural thing to reach for in compose, and "three of these keys silently do nothing here" is
-  not something to leave for someone to discover.
+  all apply, an `-e AXGIT_ROOT_TITLE` beats the file's `root-title` while its `root-desc` still
+  comes through, and the startup line reports `config_file=/etc/axgit/axgit.toml`.
+- **The image's `ENV` was cut back to `AXGIT_STATIC_DIR` alone** once that verification showed the
+  cost of the other two. `AXGIT_REPO_ROOT=/srv/git` and `AXGIT_LISTEN=0.0.0.0:8080` were
+  byte-identical to the binary's own clap defaults, so pinning them in the `Containerfile` bought
+  nothing — it only made them unsettable from a mounted config file, since an `ENV` line is
+  *always* "set" and env beats file. Deleting them is exactly the `${VAR:=default}` semantic
+  someone would reach for: same effective default, but the file can now have them (confirmed by
+  running the rebuilt image with no config, and again with a file setting `repo-root`). This is
+  the general rule for this image: **don't restate a default the binary already has** — and
+  `docs/compose.example.yaml` follows it too, with `AXGIT_REPO_ROOT` moved from a spelled-out
+  `environment:` entry to a commented-out one.
+  - `AXGIT_STATIC_DIR` is the exception and stays: it has no clap default to fall back to (unset
+    means "serve no frontend" in a non-`embed-web` build, `assets.rs::resolve`), and its correct
+    value is a fact about the image — where the web stage's output was copied — not an operator
+    preference. So it remains the one key a mounted config file cannot set, which
+    `docs/compose.example.yaml` and README.md both say. Making even that one file-settable would
+    mean building the runtime image with `--features embed-web` and dropping the
+    `COPY --from=web` — a deployment-shape change (it serializes the web and api build stages,
+    which are independent today) that isn't worth it for one key.
 - Docs: README.md's configuration table gained a "Config file key" column plus a precedence
   paragraph and an example file; `packaging/axgit.toml.example` is the file-shaped sibling of
   `axgit.env.example` (both now cross-reference each other and say the environment wins), shipped

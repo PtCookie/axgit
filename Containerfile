@@ -96,9 +96,21 @@ RUN adduser -D -H -u 10001 axgit
 COPY --from=api /axgit /usr/local/bin/axgit
 COPY --from=web /app/web/dist /app/dist
 
-ENV AXGIT_REPO_ROOT=/srv/git \
-    AXGIT_STATIC_DIR=/app/dist \
-    AXGIT_LISTEN=0.0.0.0:8080
+# Only the one setting whose correct value is a fact about *this image* —
+# where the web stage's build was copied to. `AXGIT_REPO_ROOT` and
+# `AXGIT_LISTEN` used to be here too, set to `/srv/git` and `0.0.0.0:8080`;
+# both are byte-identical to the binary's own clap defaults, so pinning them
+# here changed nothing except to make them unsettable from a mounted
+# `/etc/axgit/axgit.toml` — an environment variable beats the config file
+# (docs/DECISIONS.md #87), and an `ENV` line is always "set". Leaving them
+# out is the `${VAR:=default}` semantic: same effective default, but now the
+# config file can have them.
+#
+# `AXGIT_STATIC_DIR` can't be dropped the same way — it has no clap default
+# to fall back to (unset means "serve no frontend" in a non-`embed-web`
+# build, `assets.rs::resolve`), so it stays pinned here and stays the one
+# key a mounted config file cannot set.
+ENV AXGIT_STATIC_DIR=/app/dist
 
 EXPOSE 8080
 USER axgit

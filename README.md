@@ -163,9 +163,9 @@ Section names are organizational only; keys keep cgit's own `cgitrc` spelling wh
 one, so an existing value can be pasted straight across.
 
 One consequence of that precedence order is worth knowing before mounting a config file into the
-container: the image sets `AXGIT_REPO_ROOT`, `AXGIT_STATIC_DIR` and `AXGIT_LISTEN` in its own `ENV`
-(`Containerfile`), so those three can't be changed from the file — set them as environment
-variables instead. Everything else is the file's to set.
+container: the image sets `AXGIT_STATIC_DIR` in its own `ENV` (`Containerfile` — it names where the
+image put the frontend build), so that one key can't be changed from the file. Everything else is
+the file's to set, as long as the same setting isn't also passed as an environment variable.
 
 | Variable | Config file key | Default | Description |
 | --- | --- | --- | --- |
