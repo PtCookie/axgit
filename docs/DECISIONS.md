@@ -3615,6 +3615,15 @@ configuration. Axgit exists to replace cgit, so it should be configurable the wa
   (AGENTS.md), not something the site config file should be able to override. `include=` is a
   cgitrc feature with no demand behind it here; TOML has no include of its own, so adding one
   would mean inventing a directive rather than adopting a format's.
+- **Verified against the container image**, since that is where the precedence choice actually
+  bites: with `/etc/axgit/axgit.toml` bind-mounted in, `[site]`/`clone-url-base`/`repository-sort`
+  all apply, while the file's `repo-root`/`listen` are ignored in favour of the image's own `ENV`
+  (the startup line reports `repo_root=/srv/git`, `listen=0.0.0.0:8080` and
+  `config_file=/etc/axgit/axgit.toml`), and an `-e AXGIT_ROOT_TITLE` beats the file's `root-title`
+  while its `root-desc` still comes through. `docs/compose.example.yaml` carries the mount as a
+  commented-out volume with that caveat spelled out, and README.md repeats it — a config file is
+  the natural thing to reach for in compose, and "three of these keys silently do nothing here" is
+  not something to leave for someone to discover.
 - Docs: README.md's configuration table gained a "Config file key" column plus a precedence
   paragraph and an example file; `packaging/axgit.toml.example` is the file-shaped sibling of
   `axgit.env.example` (both now cross-reference each other and say the environment wins), shipped

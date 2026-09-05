@@ -162,6 +162,11 @@ response-ttl = 300
 Section names are organizational only; keys keep cgit's own `cgitrc` spelling wherever cgit has
 one, so an existing value can be pasted straight across.
 
+One consequence of that precedence order is worth knowing before mounting a config file into the
+container: the image sets `AXGIT_REPO_ROOT`, `AXGIT_STATIC_DIR` and `AXGIT_LISTEN` in its own `ENV`
+(`Containerfile`), so those three can't be changed from the file — set them as environment
+variables instead. Everything else is the file's to set.
+
 | Variable | Config file key | Default | Description |
 | --- | --- | --- | --- |
 | `AXGIT_CONFIG` | _(n/a)_ | `/etc/axgit/axgit.toml` when it exists | TOML config file holding any of the settings below |

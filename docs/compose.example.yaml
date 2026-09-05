@@ -19,6 +19,17 @@ services:
       # Read-only: axgit never writes to a repository (CLAUDE.md's core invariant). Push is
       # SSH-only, handled entirely by the git-server container.
       - git-repository:/srv/git:ro
+      # Optional: the TOML config file (docs/DECISIONS.md #87), an alternative to the
+      # `environment:` block below — axgit reads /etc/axgit/axgit.toml by itself when it
+      # exists. See packaging/axgit.toml.example for every key.
+      #
+      # Caveat specific to the container: an environment variable always beats the file, and
+      # this image sets AXGIT_REPO_ROOT/AXGIT_STATIC_DIR/AXGIT_LISTEN in its own ENV
+      # (Containerfile), so those three can't be changed from the file — set them as
+      # `environment:` entries here instead. Everything else ([site], [cache],
+      # clone-url-base, repository-sort) is the file's to set, as long as the same setting
+      # isn't also listed below.
+      # - ./axgit.toml:/etc/axgit/axgit.toml:ro
     environment:
       AXGIT_REPO_ROOT: /srv/git
       # Base URL shown for `git clone` in the repository summary page.
