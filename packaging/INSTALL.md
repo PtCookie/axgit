@@ -67,7 +67,7 @@ sudo systemctl status axgit
 
 axgit listens on `AXGIT_LISTEN` (default `0.0.0.0:8080`) and has no built-in TLS — put a reverse
 proxy in front of it for a public deployment (docs/DECISIONS.md #10), the same assumption
-`docs/compose.example.yaml` makes for the container deployment.
+`compose.example.yaml` makes for the container deployment.
 
 ## 5. Verify
 

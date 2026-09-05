@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
 COPY web/ web/
-COPY docs/openapi.json docs/openapi.json
+COPY openapi.json openapi.json
 RUN pnpm --filter web build
 
 # ---------------------------------------------------------------------------

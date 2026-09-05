@@ -8,7 +8,7 @@
 //!
 //! The generated document is served at [`crate::routes::OPENAPI_JSON_PATH`],
 //! browsable at [`crate::routes::SWAGGER_UI_PATH`], and committed to
-//! `docs/openapi.json`; `api/tests/openapi_test.rs` fails when the two drift.
+//! `openapi.json`; `api/tests/openapi_test.rs` fails when the two drift.
 
 use utoipa::OpenApi;
 

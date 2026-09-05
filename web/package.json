@@ -6,7 +6,7 @@
         "build": "astro build",
         "preview": "astro preview",
         "astro": "astro",
-        "gen:types": "openapi-typescript ../docs/openapi.json -o src/lib/api/types.ts && prettier --write src/lib/api/types.ts",
+        "gen:types": "openapi-typescript ../openapi.json -o src/lib/api/types.ts && prettier --write src/lib/api/types.ts",
         "gen:favicon": "node scripts/make-favicon.mjs",
         "lint": "eslint",
         "format": "prettier --write .",

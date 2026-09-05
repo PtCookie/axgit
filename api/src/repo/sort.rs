@@ -1,6 +1,6 @@
 //! Repository-index sort order (`?sort=` on `GET /api/v1/repos`,
 //! `AXGIT_REPOSITORY_SORT`) — cgit's `s=name|desc|owner|idle|section` /
-//! `repository-sort=age|name` (docs/ROADMAP.md "Repository index").
+//! `repository-sort=age|name` (docs/DECISIONS.md #64).
 //!
 //! Sorting is applied in the handler, on a clone of the [`super::RepoInfo`]
 //! snapshot `ScanCache` hands back — the snapshot itself stays name-ordered

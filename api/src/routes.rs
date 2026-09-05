@@ -22,7 +22,7 @@ use crate::shell;
 use crate::smart_http;
 use crate::state::AppState;
 
-/// Where the generated spec is served, and the file `docs/openapi.json` mirrors.
+/// Where the generated spec is served, and the file `openapi.json` mirrors.
 pub const OPENAPI_JSON_PATH: &str = "/api/v1/openapi.json";
 /// Where Swagger UI is mounted (assets are vendored into the binary).
 pub const SWAGGER_UI_PATH: &str = "/swagger-ui";

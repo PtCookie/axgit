@@ -3,7 +3,7 @@
 The **normative document** for the web ↔ api contract. Any commit that adds or changes an
 endpoint must update this document too.
 
-The machine-readable spec is `docs/openapi.json` (OpenAPI 3.1), **generated from code** via
+The machine-readable spec is `openapi.json` (OpenAPI 3.1), **generated from code** via
 utoipa annotations (DECISIONS.md #15). While the server is running it can be explored at
 `/swagger-ui`, and the raw spec is at `/api/v1/openapi.json`. The spec covers schemas, parameters,
 and status codes; this document covers the **semantic rules** the spec can't express (truncation

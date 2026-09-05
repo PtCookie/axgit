@@ -11,7 +11,7 @@ Deployed either as a single container (see [Deployment](#deployment)) or as a si
 The API is self-documenting at `/swagger-ui` (raw spec at `/api/v1/openapi.json`).
 
 Docs: [Architecture](docs/ARCHITECTURE.md) · [API spec](docs/API.md) ·
-[Decision history](docs/DECISIONS.md) · [Roadmap](docs/ROADMAP.md)
+[Decisions](docs/DECISIONS.md) · [Roadmap](docs/ROADMAP.md)
 
 ## Features
 
@@ -61,8 +61,8 @@ pnpm --filter web test:e2e      # Playwright e2e
 pnpm --filter web check         # eslint + prettier check
 ```
 
-Changing the API means updating `docs/API.md`, `docs/openapi.json`, and
-`web/src/lib/api/types.ts` together, in the same commit — see `docs/openapi.json`'s regeneration
+Changing the API means updating `docs/API.md`, `openapi.json`, and
+`web/src/lib/api/types.ts` together, in the same commit — see `openapi.json`'s regeneration
 command and `pnpm --filter web gen:types` (both in `AGENTS.md`/`CLAUDE.md`). See
 [web/README.md](web/README.md) for frontend-specific commands and layout.
 
@@ -97,7 +97,7 @@ docker run --rm -p 8080:8080 -v "$PWD/fixtures/repos:/srv/git:ro" axgit:latest
 ```
 
 In the actual git-compose stack, this image replaces the `git-web` service — see
-[docs/compose.example.yaml](docs/compose.example.yaml) for an illustrative service definition
+[compose.example.yaml](compose.example.yaml) for an illustrative service definition
 (the real change is tracked in the separate git-compose.git repository).
 
 ### Single-binary build

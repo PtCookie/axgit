@@ -11,7 +11,7 @@ pnpm --filter web build        # static build → web/dist/
 pnpm --filter web test         # vitest (browser mode)
 pnpm --filter web test:e2e     # Playwright e2e
 pnpm --filter web check        # eslint + prettier check
-pnpm --filter web gen:types    # regenerate src/lib/api/types.ts from docs/openapi.json
+pnpm --filter web gen:types    # regenerate src/lib/api/types.ts from openapi.json
 ```
 
 ## Structure
@@ -29,5 +29,5 @@ web/
   e2e/              # Playwright
 ```
 
-`src/lib/api/types.ts` is generated from `docs/openapi.json`, so it isn't edited directly (and is
+`src/lib/api/types.ts` is generated from `openapi.json`, so it isn't edited directly (and is
 excluded from eslint). When the API changes, regenerate it with `pnpm --filter web gen:types`.

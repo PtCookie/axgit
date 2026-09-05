@@ -1,4 +1,4 @@
-//! The generated OpenAPI document is committed to `docs/openapi.json` so that
+//! The generated OpenAPI document is committed to `openapi.json` so that
 //! spec changes show up in review diffs and the frontend can generate its
 //! types from a checked-in file. These tests guard that snapshot and the
 //! routes that serve it.
@@ -17,7 +17,7 @@ use axgit::routes::{OPENAPI_JSON_PATH, SWAGGER_UI_PATH};
 
 use common::{get_bytes_with_headers, router_for};
 
-/// Set to rewrite `docs/openapi.json` instead of failing on a mismatch.
+/// Set to rewrite `openapi.json` instead of failing on a mismatch.
 const UPDATE_ENV: &str = "AXGIT_UPDATE_OPENAPI";
 
 /// Every path+method the spec is expected to describe. Adding an endpoint
@@ -53,11 +53,11 @@ const EXPECTED_OPERATIONS: &[(&str, &str)] = &[
 ];
 
 fn snapshot_path() -> PathBuf {
-    // CARGO_MANIFEST_DIR is `api/`; the spec lives next to the prose contract.
+    // CARGO_MANIFEST_DIR is `api/`; the spec lives at the workspace root.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../docs/openapi.json")
+        .join("../openapi.json")
         .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/openapi.json"))
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../openapi.json"))
 }
 
 /// Trailing newline included so the file is POSIX-clean and diffs stay small.
@@ -71,14 +71,14 @@ fn openapi_snapshot_should_match_the_committed_document() {
     let generated = generated();
 
     if std::env::var_os(UPDATE_ENV).is_some() {
-        std::fs::write(&path, &generated).expect("failed to write docs/openapi.json");
+        std::fs::write(&path, &generated).expect("failed to write openapi.json");
         return;
     }
 
     let committed = std::fs::read_to_string(&path).unwrap_or_default();
     assert_eq!(
         committed, generated,
-        "docs/openapi.json is out of date; regenerate with\n    \
+        "openapi.json is out of date; regenerate with\n    \
          {UPDATE_ENV}=1 cargo test --manifest-path api/Cargo.toml --test openapi_test",
     );
 }

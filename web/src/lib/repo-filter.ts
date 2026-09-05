@@ -4,9 +4,9 @@ import type { RepoInfo } from "@/lib/api/schemas";
  * Client-side filter for the repository list (`RepoList.tsx`,
  * docs/DECISIONS.md #25). `GET /api/v1/repos` already returns every field
  * matched here, so this needs no API change — it's the first, "obviously in
- * bounds" cut of ROADMAP.md's repository search item. Searching *inside*
- * repository content (file contents, commit messages) is a separate,
- * server-side follow-up.
+ * bounds" cut of repository search. Searching *inside* repository content
+ * (file contents, commit messages) is the server-side `GET /search`
+ * endpoint instead (docs/DECISIONS.md #26).
  */
 
 /** Fields searched, in the order checked. */

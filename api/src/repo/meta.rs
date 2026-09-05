@@ -112,10 +112,10 @@ fn config_flag(cfg: &git2::Config, key: &str) -> bool {
 }
 
 /// Whether the repository belongs in `GET /api/v1/repos` — `false` when
-/// either `hide` or `ignore` is set (docs/DECISIONS.md #66,
-/// docs/ROADMAP.md "Repository index"). Direct access (`GET /repos/{name}`,
-/// clone) has its own, narrower check ([`is_ignored`]) — a *hidden*
-/// repository stays fully reachable by name, only dropped from the listing.
+/// either `hide` or `ignore` is set (docs/DECISIONS.md #66). Direct
+/// access (`GET /repos/{name}`, clone) has its own, narrower check
+/// ([`is_ignored`]) — a *hidden* repository stays fully reachable by name,
+/// only dropped from the listing.
 pub fn should_list(repo: &Repository) -> bool {
     let config = repo.config().and_then(|mut cfg| cfg.snapshot()).ok();
     let flag = |key: &str| config.as_ref().is_some_and(|cfg| config_flag(cfg, key));
