@@ -163,7 +163,7 @@ export default function RefsView({ repo }: RefsViewProps) {
       </section>
 
       {/* Remote-tracking branches (`refs/remotes/*`) are empty on
-          essentially every repository axgit serves (docs/API.md) — unlike
+          essentially every repository axgit serves (api/README.md) — unlike
           Branches/Tags, this section renders nothing at all rather than an
           always-present "No remote branches." line, which would be noise on
           every repository page for a feature nobody's repository uses. */}
@@ -274,7 +274,7 @@ export default function RefsView({ repo }: RefsViewProps) {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {/* A tag that never reaches a commit has nothing to compare or
-                        archive (docs/API.md's `target: null` condition). */}
+                        archive (api/README.md's `target: null` condition). */}
                     {defaultBranch === null || tag.target === null ? null : (
                       <a
                         className="hover:underline"

@@ -1,4 +1,4 @@
-//! Tag detail for `GET /api/v1/repos/{repo}/tags/{name}` (docs/API.md).
+//! Tag detail for `GET /api/v1/repos/{repo}/tags/{name}` (api/README.md).
 //!
 //! Kept separate from `refs.rs` rather than folded into it: `TagDetail` is
 //! not a superset of `TagRef` the way `CommitDetail` is of `CommitInfo` —
@@ -39,7 +39,7 @@ pub struct TagObject {
     pub kind: ObjectKind,
 }
 
-/// Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (docs/API.md).
+/// Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TagDetail {
     #[schema(example = "v1.0.0")]

@@ -32,7 +32,7 @@ pub enum EntryKind {
     Commit,
 }
 
-/// Tree entry of the tree endpoint (docs/API.md).
+/// Tree entry of the tree endpoint (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TreeEntryInfo {
     pub name: String,

@@ -39,7 +39,7 @@ export function BlameViewSkeleton() {
 
 /** One gutter cell's content — short sha link, relative time, author name
  *  (cgit's compact blame gutter). `authored_at`/`summary` can be `null` for
- *  an unrepresentable timestamp or non-UTF-8 commit message (docs/API.md). */
+ *  an unrepresentable timestamp or non-UTF-8 commit message (api/README.md). */
 function RangeCell({ repo, range }: { repo: string; range: BlameRange }) {
   const commitHref = `/${encodeSegment(repo)}/commit/${encodeSegment(range.sha)}`;
   const title = [
@@ -55,7 +55,7 @@ function RangeCell({ repo, range }: { repo: string; range: BlameRange }) {
         <a className="hover:text-foreground font-mono underline" href={commitHref}>
           {range.sha.slice(0, 7)}
         </a>
-        {/* Whole-file renames are tracked (docs/API.md); this marker links
+        {/* Whole-file renames are tracked (api/README.md); this marker links
          *  back to the file's blame under its earlier path, at the commit
          *  that still had it. */}
         {range.orig_path && (
@@ -110,7 +110,7 @@ export default function BlameView({ repo, path, ref: refParam }: BlameViewProps)
   useEffect(() => {
     let cancelled = false;
 
-    // The blame response carries no file content (docs/API.md), so the blob
+    // The blame response carries no file content (api/README.md), so the blob
     // is fetched alongside it — same parallel-fetch shape as `CommitView`'s
     // detail + diff.
     Promise.all([getBlame(resolvedRepo, resolvedRef, resolvedPath), getBlob(resolvedRepo, resolvedRef, resolvedPath)])

@@ -1,4 +1,4 @@
-//! Diffstat and structured diff for a single commit (docs/API.md).
+//! Diffstat and structured diff for a single commit (api/README.md).
 //!
 //! All diffs are first-parent: a merge shows its changes against parent 0 and
 //! the root commit diffs against the empty tree. Rename detection runs with
@@ -71,7 +71,7 @@ pub enum DiffStatus {
     Typechange,
 }
 
-/// Diffstat of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).
+/// Diffstat of `GET /api/v1/repos/{repo}/commits/{sha}` (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct DiffStat {
     pub files: Vec<DiffStatFile>,
@@ -98,7 +98,7 @@ pub struct DiffStatFile {
     pub binary: bool,
 }
 
-/// Structured diff of `GET /api/v1/repos/{repo}/commits/{sha}/diff` (docs/API.md).
+/// Structured diff of `GET /api/v1/repos/{repo}/commits/{sha}/diff` (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CommitDiff {
     pub sha: String,
@@ -110,7 +110,7 @@ pub struct CommitDiff {
     pub files: Vec<FileDiff>,
 }
 
-/// Two-revision diff of `GET /api/v1/repos/{repo}/diff` (docs/API.md). A
+/// Two-revision diff of `GET /api/v1/repos/{repo}/diff` (api/README.md). A
 /// plain tree-to-tree comparison (`git diff <from> <to>`), not a merge-base
 /// `...` diff.
 #[derive(Debug, Serialize, ToSchema)]
@@ -182,7 +182,7 @@ pub struct Line {
 
 /// Diffstat against the first parent, covering every changed file. Always
 /// uses default display options — the diffstat is the canonical file list for
-/// a commit (docs/API.md) and must not vary with a display toggle.
+/// a commit (api/README.md) and must not vary with a display toggle.
 pub fn diffstat(repo: &Repository, commit: &Commit) -> Result<DiffStat, ApiError> {
     let (old_tree, new_tree) = commit_trees(commit)?;
     diffstat_for_trees(repo, old_tree.as_ref(), Some(&new_tree))

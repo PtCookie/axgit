@@ -238,7 +238,7 @@ fn render_entry(xml: &mut String, base: &str, name: &str, commit: &CommitInfo) {
     let title = commit.summary.as_deref().unwrap_or("(no message)");
     let updated = commit.authored_at.as_deref().unwrap_or(EPOCH);
     // The web UI's commit page, not the API — feed readers should land
-    // somewhere a human can read (docs/API.md, previously "provisional").
+    // somewhere a human can read (api/README.md, previously "provisional").
     // The sha is hex, so it needs no encoding.
     let commit_url = format!("{base}/{}/commit/{}", encode_segment(name), commit.sha);
 
@@ -259,7 +259,7 @@ fn render_entry(xml: &mut String, base: &str, name: &str, commit: &CommitInfo) {
 }
 
 /// Percent-encodes a repository name for use as a URL path segment.
-/// `open_named` only rejects `/`, `\`, and a leading `.` (docs/API.md), so a
+/// `open_named` only rejects `/`, `\`, and a leading `.` (api/README.md), so a
 /// name containing a space or other reserved byte is otherwise reachable and
 /// would produce a syntactically invalid URI if interpolated raw.
 fn encode_segment(value: &str) -> String {

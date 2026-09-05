@@ -6,7 +6,7 @@ use super::meta;
 use super::tag::{self, TagObject};
 use crate::error::ApiError;
 
-/// Branch entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).
+/// Branch entry of `GET /api/v1/repos/{repo}/refs` (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct BranchRef {
     #[schema(example = "main")]
@@ -18,7 +18,7 @@ pub struct BranchRef {
     pub committed_at: Option<String>,
 }
 
-/// Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).
+/// Tag entry of `GET /api/v1/repos/{repo}/refs` (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TagRef {
     #[schema(example = "v1.0.0")]

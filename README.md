@@ -10,8 +10,9 @@ Deployed either as a single container (see [Deployment](#deployment)) or as a si
 [Single-binary build](#single-binary-build)); push is handled by the existing git-server (SSH).
 The API is self-documenting at `/swagger-ui` (raw spec at `/api/v1/openapi.json`).
 
-Docs: [Architecture](docs/ARCHITECTURE.md) · [API spec](docs/API.md) ·
-[Decisions](docs/DECISIONS.md) · [Roadmap](docs/ROADMAP.md)
+Docs: [api/README.md](api/README.md) (backend design + the normative API spec) ·
+[web/README.md](web/README.md) (frontend design) · [Decisions](docs/DECISIONS.md) ·
+[Roadmap](docs/ROADMAP.md)
 
 ## Features
 
@@ -42,6 +43,35 @@ differences), plus a few things cgit doesn't have:
 **The app is strictly read-only** — no auth, no write endpoints; every mutation happens over SSH
 against the git-server directly.
 
+## Architecture
+
+Axgit replaces the `git-web` service (Cgit + Nginx + fcgiwrap) in the existing git-compose stack.
+The requirements came out of analyzing Cgit:
+
+- Cgit is a C CGI program linked against git's internal libraries, executed via
+  nginx → fcgiwrap → cgit.cgi, with a disk cache (`cache-root`) offsetting CGI execution cost.
+- Per-repository metadata is stored in the bare repo's `config`, under the `[cgit]` section, and
+  the last-activity timestamp is stored in the agefile (`info/web/last-modified`, updated by the
+  post-receive hook). **Axgit reads these same two sources as-is.**
+- Clone traffic was handled by `git-http-backend`, not Cgit (upload-pack only, push is SSH-only).
+- Screens to replace: index (repo list), summary, log, tree, blob/plain, commit/diff, refs,
+  blame, stats, snapshot, Atom feed.
+
+```
+Browser ──→ Axgit container (single)
+              ├─ /              → Astro static build output (web/dist)
+              ├─ /api/v1/*      → axum JSON API ──→ git2 / git exec ──→ /srv/git (ro)
+              └─ /{repo}.git/*  → Smart HTTP (git upload-pack --stateless-rpc)
+git push ──→ SSH 2222 → git-server container (unchanged, existing)
+```
+
+TLS is terminated by a separate reverse proxy container added to the git-compose stack (the
+certbot volume moves there too). Axgit serves HTTP only (docs/DECISIONS.md #10).
+
+Per-component design — the backend's caching, scanning, search and Smart HTTP layers, and the
+frontend's shell/island split — lives in [api/README.md](api/README.md#design) and
+[web/README.md](web/README.md#design).
+
 ## Development
 
 ```sh
@@ -61,7 +91,7 @@ pnpm --filter web test:e2e      # Playwright e2e
 pnpm --filter web check         # eslint + prettier check
 ```
 
-Changing the API means updating `docs/API.md`, `openapi.json`, and
+Changing the API means updating `api/README.md`, `openapi.json`, and
 `web/src/lib/api/types.ts` together, in the same commit — see `openapi.json`'s regeneration
 command and `pnpm --filter web gen:types` (both in `AGENTS.md`/`CLAUDE.md`). See
 [web/README.md](web/README.md) for frontend-specific commands and layout.
@@ -100,6 +130,30 @@ In the actual git-compose stack, this image replaces the `git-web` service — s
 [compose.yaml](compose.yaml) for an illustrative service definition
 (the real change is tracked in the separate git-compose.git repository).
 
+What the image is made of:
+
+- Stage ① (`node:24.11-alpine3.22`) runs `pnpm --filter web build`; stage ②
+  (`rust:1.97-alpine3.22`, `musl-dev` added) copies that `web/dist` in and runs `cargo build
+  --release`, so the binary carries the frontend (docs/DECISIONS.md #74, #88); stage ③
+  (`alpine:3.22`) is the runtime. `libgit2-sys` builds vendored libgit2 statically since alpine
+  has no system libgit2 — the same `cc` toolchain also builds the vendored `zstd`/`liblzma` C
+  sources the archive encoders depend on.
+- Base image tags are pinned to a minor version (`ARG`s at the top of `Containerfile`), spelled
+  out with their `docker.io/library/` registry so podman/buildah's short-name resolution doesn't
+  need an interactive prompt (docs/DECISIONS.md #22, #80). Stage ① COPYs the root
+  `package.json`/`pnpm-workspace.yaml`/`pnpm-lock.yaml` + `web/package.json` before the rest of the
+  source, so `pnpm install --frozen-lockfile` lands in its own cached layer.
+- Runtime packages are just `git` (for exec) and `ca-certificates`. cgit's filter dependencies
+  (Python, pygments, groff) aren't needed at all, `tzdata` isn't either (jiff only uses UTC and the
+  fixed offsets read from git commits, never the system tzdb), and neither are `bzip2`/`xz`/`zstd`
+  — those archive formats are encoded in-process (docs/DECISIONS.md #54).
+- The container runs as a dedicated non-root user, and `/etc/gitconfig` sets `[safe] directory = *`
+  since the read-only `/srv/git` mount is owned by the git-server container's uid, which would
+  otherwise trip git's/libgit2's ownership check (docs/DECISIONS.md #22). The systemd deployment
+  below avoids this by running as the repository-owning user instead.
+- Logs go to stdout/stderr as JSON (`tracing` + `tracing-subscriber`), collected by the stack's
+  fluentd logging driver.
+
 ### Single-binary build
 
 The default build bakes `web/dist` directly into the `axgit` executable (docs/DECISIONS.md #74,
@@ -137,7 +191,7 @@ all of them. See [systemd install](#systemd-install) for what to do with one.
 The alternative to the container image, for a bare-metal or VM install. A release tarball is a
 complete deployment on its own: the binary has the frontend baked in (docs/DECISIONS.md #74, #88),
 so nothing else from the build needs to be copied. A `git` binary must still be on `PATH` — it's
-used for archive downloads and Smart HTTP clone/fetch (docs/ARCHITECTURE.md's hybrid libgit2+exec
+used for archive downloads and Smart HTTP clone/fetch (api/README.md's hybrid libgit2+exec
 policy).
 
 Releases ship one tarball per CPU architecture (docs/DECISIONS.md #79), and the filename is the

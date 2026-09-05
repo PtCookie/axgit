@@ -137,7 +137,7 @@ async fn tree_should_list_root_with_trees_first() {
         without_sha(by_name("README.md")),
         json!({ "name": "README.md", "type": "blob", "mode": "100644", "size": 16, "target": null, "module_link": null })
     );
-    // A symlink carries its target; `size` stays blob-only (docs/API.md).
+    // A symlink carries its target; `size` stays blob-only (api/README.md).
     assert_eq!(
         without_sha(by_name("link")),
         json!({ "name": "link", "type": "symlink", "mode": "120000", "size": null, "target": "README.md", "module_link": null })

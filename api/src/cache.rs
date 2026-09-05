@@ -1,4 +1,4 @@
-//! Caching layer (docs/ARCHITECTURE.md#caching).
+//! Caching layer (api/README.md#caching).
 //!
 //! Two caches live here. [`ScanCache`] holds the repository scan snapshot —
 //! a single value, which does not fit moka's per-key model, so a `RwLock`

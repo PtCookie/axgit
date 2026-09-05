@@ -1,5 +1,5 @@
 //! Commit-activity statistics: period-bucketed commit counts plus a
-//! per-author breakdown (`GET /api/v1/repos/{repo}/stats`, docs/API.md).
+//! per-author breakdown (`GET /api/v1/repos/{repo}/stats`, api/README.md).
 //! cgit's `stats` page — the last gap versus cgit (docs/DECISIONS.md #9's
 //! other v1 exclusion, closed by #28).
 //!
@@ -40,7 +40,7 @@ pub enum StatsPeriod {
     Year,
 }
 
-/// One time bucket (docs/API.md).
+/// One time bucket (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct BucketStats {
     /// Bucket start, UTC, RFC 3339. Ascending order (oldest first).
@@ -49,7 +49,7 @@ pub struct BucketStats {
     pub commits: usize,
 }
 
-/// Per-author breakdown (docs/API.md).
+/// Per-author breakdown (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuthorStats {
     pub author: CommitAuthor,
@@ -59,7 +59,7 @@ pub struct AuthorStats {
     pub buckets: Vec<usize>,
 }
 
-/// Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows
+/// Aggregate of the authors cut by `limit` (api/README.md), so the visible rows
 /// plus this one always reconcile with the bucket totals.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct OtherAuthors {
@@ -71,7 +71,7 @@ pub struct OtherAuthors {
     pub buckets: Vec<usize>,
 }
 
-/// Response of `GET /api/v1/repos/{repo}/stats` (docs/API.md).
+/// Response of `GET /api/v1/repos/{repo}/stats` (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct StatsResults {
     /// Resolved commit sha the window is anchored on. `None` only for an

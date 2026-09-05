@@ -1,5 +1,5 @@
 //! Integration tests for the response cache and ETag/Cache-Control contract
-//! (docs/ARCHITECTURE.md#caching, docs/API.md).
+//! (api/README.md#caching, api/README.md).
 //!
 //! Unlike the per-endpoint tests, these reuse one router across requests
 //! (`Router` is cheaply clonable and shares the `AppState` response cache),

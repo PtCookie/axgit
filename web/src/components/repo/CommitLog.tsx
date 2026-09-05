@@ -78,7 +78,7 @@ export default function CommitLog({
   const resolvedFollow = followParam ?? paramFromSearch("follow", window.location.search);
   const resolvedStat = statParam ?? paramFromSearch("stat", window.location.search);
   const expanded = resolvedMsg === "1";
-  // Meaningless without a path filter (docs/API.md's `follow` rule) — dropped
+  // Meaningless without a path filter (api/README.md's `follow` rule) — dropped
   // from every href built below whenever `resolvedPath` is unset.
   const following = Boolean(resolvedPath) && resolvedFollow === "1";
   const showStat = resolvedStat === "1";

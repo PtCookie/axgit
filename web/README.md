@@ -31,3 +31,39 @@ web/
 
 `src/lib/api/types.ts` is generated from `openapi.json`, so it isn't edited directly (and is
 excluded from eslint). When the API changes, regenerate it with `pnpm --filter web gen:types`.
+
+## Design
+
+- **Astro static** + React islands + shadcn/ui + Tailwind. Astro pages are prerendered shells —
+  page chrome (heading, tab nav, `<title>`) is static HTML; only the data regions are client-fetched
+  React islands (`client:only="react"`, with a static `slot="fallback"` skeleton).
+- Route layout — each is a real file under `src/pages/`:
+  - `/` repository list (grouped by section, equivalent to cgit's index)
+  - `/{repo}/` summary · `/{repo}/refs` · `/{repo}/log` · `/{repo}/commit/{sha}` · `/{repo}/diff`
+  - `/{repo}/tree/[...path]` · `/{repo}/blob/[...path]` · `/{repo}/blame/[...path]`
+  - `/{repo}/tag/{name}` · `/{repo}/object/{oid}` · `/{repo}/search` · `/{repo}/stats`
+  - ref selection is unified via the `?ref=` URL query
+- Per-repository pages can't be enumerated at build time (the repo list is per-deployment), so
+  `src/pages/[repo]/*.astro` is prerendered once under a reserved placeholder param and the server
+  maps request path _shapes_ onto the matching shell (`api/src/shell.rs`, docs/DECISIONS.md #17).
+  The route-shape table lives in `src/lib/shell-routes.ts`; the build emits it to
+  `dist/shell-routes.json`, read by both `src/lib/shell.ts::shellFor` (the `astro dev` middleware)
+  and `api/src/shell.rs::shell_for` (docs/DECISIONS.md #88). Ahead of that mapping, a small
+  compatibility layer (`api/src/cgit_compat.rs`, docs/DECISIONS.md #35) permanently redirects
+  cgit-style URLs (`.git`-suffixed paths, cgit's `commit`/`diff`/`log` query shapes) onto their
+  axgit equivalents. `serve_shell` also injects a repository shell's `<head>` with per-repo
+  Atom-discovery and `rel="vcs-git"` clone `<link>`s server-side (docs/DECISIONS.md #63), for the
+  same reason the shell can't carry them statically. There is no client-side router; the only
+  client-side URL parsing left is recovering the real repository name from `location` for the data
+  islands and for one `is:inline` script that fills in the heading/tab links/title before first
+  paint.
+- Code highlighting: **Shiki, client-side**, with lazy-loaded language grammars, using the
+  **JavaScript RegExp engine** (not Oniguruma/WASM, docs/DECISIONS.md #19). Highlighting is skipped
+  above a size threshold for large files. (Astro's built-in Shiki/markdown is build-time only, so
+  it can't be used for runtime-fetched data.)
+- README rendering: **react-markdown + remark-gfm + rehype-sanitize** (markdown only; rst/plain
+  are shown as `<pre>`).
+- Avatars: generated locally with **DiceBear**, seeded from a hash of the committer's email
+  address (no external requests). Commit message linkification uses regex-based linkify.
+- vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`) + Playwright e2e.
+  The API client is tested with fetch mocking, components with fixture JSON.

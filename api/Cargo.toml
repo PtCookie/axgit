@@ -24,7 +24,7 @@ jiff = "0.2"
 # build (docs/DECISIONS.md #54).
 liblzma = { version = "0.4", features = ["static"] }
 mime_guess = "2"
-# Response cache keyed by (repo, endpoint, params) — docs/ARCHITECTURE.md#caching.
+# Response cache keyed by (repo, endpoint, params) — api/README.md#caching.
 moka = { version = "0.12", features = ["future"] }
 # Decoding request paths against the embedded `web/dist` copy
 # (docs/DECISIONS.md #74) — already in the dependency graph transitively
@@ -70,7 +70,7 @@ api-only = []
 
 [dev-dependencies]
 # Decompressing the archive endpoint's bzip2/xz/zstd output in tests, without
-# depending on those binaries being installed on the test host (docs/API.md's
+# depending on those binaries being installed on the test host (api/README.md's
 # archive section, docs/DECISIONS.md #54).
 async-compression = { version = "0.4", features = ["tokio", "bzip2", "xz", "zstd"] }
 # Building gzip-compressed Smart HTTP request bodies in tests.

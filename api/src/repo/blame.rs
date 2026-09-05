@@ -11,7 +11,7 @@ use super::blob;
 use super::commits::{CommitAuthor, signature_info, time_rfc3339};
 use crate::error::ApiError;
 
-/// One contiguous run of lines attributed to the same commit (docs/API.md).
+/// One contiguous run of lines attributed to the same commit (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct BlameRange {
     /// 1-based, inclusive.
@@ -33,7 +33,7 @@ pub struct BlameRange {
     pub orig_path: Option<String>,
 }
 
-/// Response of the blame endpoint (docs/API.md).
+/// Response of the blame endpoint (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct BlameInfo {
     /// Resolved commit sha the file was blamed at.

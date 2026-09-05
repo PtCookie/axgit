@@ -4,7 +4,7 @@
 //! router: `tree`/`blob`/`raw`/`blame`/`archive` are single `{*rest}` catch-all
 //! routes whose ref/path boundary is resolved per request
 //! (`repo::resolve::resolve_ref_path`), so auto-collection would document
-//! `/tree/{rest}` instead of the `/tree/{ref}/{path}` contract in docs/API.md.
+//! `/tree/{rest}` instead of the `/tree/{ref}/{path}` contract in api/README.md.
 //!
 //! The generated document is served at [`crate::routes::OPENAPI_JSON_PATH`],
 //! browsable at [`crate::routes::SWAGGER_UI_PATH`], and committed to
@@ -27,7 +27,7 @@ on the git-server container, never here.
 This document describes shapes, parameters and status codes. The semantic \
 rules it cannot express — truncation caps, longest-ref matching for the \
 `{ref}`/`{path}` split, merge-commit log simplification, and the exact \
-conditions under which a field is `null` — live in `docs/API.md`, which \
+conditions under which a field is `null` — live in `api/README.md`, which \
 remains the normative contract.",
         license(name = "MIT"),
     ),

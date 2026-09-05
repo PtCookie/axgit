@@ -36,7 +36,7 @@ export function BlobViewSkeleton() {
   );
 }
 
-/** `mode` for a symlink entry (API.md's tree/blob section). */
+/** `mode` for a symlink entry (api/README.md's tree/blob section). */
 const SYMLINK_MODE = "120000";
 
 export default function BlobView({ repo, path, ref: refParam }: BlobViewProps) {

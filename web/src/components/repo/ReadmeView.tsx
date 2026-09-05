@@ -12,7 +12,7 @@ type State =
   | { status: "error"; error: ApiError }
   /** No README candidate found (`path_not_found`) or an unborn HEAD
    *  (`ref_not_found`) — both are a normal "nothing to show" outcome, not
-   *  an error (docs/API.md's readme section). */
+   *  an error (api/README.md's readme section). */
   | { status: "empty" }
   | { status: "data"; readme: ReadmeInfo };
 

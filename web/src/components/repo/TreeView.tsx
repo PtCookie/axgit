@@ -97,7 +97,7 @@ const KIND_LABEL: Record<EntryKind, string> = {
 };
 
 /** cgit-style `name -> target` suffix for a symlink row. The API stores the
- *  target verbatim, relative to the entry's own *directory* (docs/API.md), so
+ *  target verbatim, relative to the entry's own *directory* (api/README.md), so
  *  `dir` is the tree being listed — not the entry's own path.
  *
  *  Displays the raw target but links the normalized one, reusing

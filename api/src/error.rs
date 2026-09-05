@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use utoipa::ToSchema;
 
-/// Error envelope shared by every failing endpoint (docs/API.md).
+/// Error envelope shared by every failing endpoint (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorResponse {
     pub error: ErrorBody,
@@ -23,7 +23,7 @@ pub struct ErrorBody {
     pub message: String,
 }
 
-/// API error mapped to the JSON error contract in docs/API.md.
+/// API error mapped to the JSON error contract in api/README.md.
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
     #[error("repository '{0}' not found")]
@@ -33,7 +33,7 @@ pub enum ApiError {
     #[error("path '{0}' not found")]
     PathNotFound(String),
     /// `GET /objects/{oid}` addressing a full oid the odb has no object for
-    /// (docs/API.md) — distinct from [`Self::RefNotFound`], which describes
+    /// (api/README.md) — distinct from [`Self::RefNotFound`], which describes
     /// a ref/sha *resolution* failure rather than an outright-missing object.
     #[error("object '{0}' not found")]
     ObjectNotFound(String),

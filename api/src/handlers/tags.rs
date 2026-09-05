@@ -1,4 +1,4 @@
-//! Handler for `GET /repos/{repo}/tags/{name}` (docs/API.md).
+//! Handler for `GET /repos/{repo}/tags/{name}` (api/README.md).
 
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;

@@ -37,7 +37,7 @@ commits. A single Rust binary serves static files + API + Smart HTTP, replacing 
 ## #6 Caching: cgit's TTL approach, with an improved validator
 
 Response cache key `(repo, endpoint, params)`; validator = HEAD sha + agefile mtime. Sha-pinned
-responses are immutable. (ARCHITECTURE.md#caching)
+responses are immutable. (api/README.md#caching)
 
 - The validator is a git2 open, then `head().target()` compared against the agefile's raw
   `SystemTime` (`repo/meta.rs::Validator`). Parsing `.git/HEAD`/`packed-refs` directly was rejected
@@ -64,7 +64,7 @@ responses are immutable. (ARCHITECTURE.md#caching)
 
 ## #8 API style
 
-- REST JSON under `/api/v1`. `docs/API.md` is the normative contract; the OpenAPI spec is generated
+- REST JSON under `/api/v1`. `api/README.md` is the normative contract; the OpenAPI spec is generated
   from code (#15).
 - Commit author emails are never exposed — only a hash, used as the avatar seed.
 - Pagination uses a cursor (see #37 for its current form).
@@ -123,7 +123,7 @@ libraries:
 
 ## #14 blame: git2 `blame_file` (not exec)
 
-- git2 `blame_file`, not a `git blame --line-porcelain` parser: ARCHITECTURE.md already lists blame
+- git2 `blame_file`, not a `git blame --line-porcelain` parser: api/README.md already lists blame
   under git2, the path never becomes a command-line argument, and git2 hands back hunk structs
   directly. If libgit2 proves slow on large histories, an exec fallback is reconsidered then.
 - Binary/over-1-MiB detection reuses the blob endpoint's limit (`blob::BLOB_CONTENT_LIMIT`, shared
@@ -141,7 +141,7 @@ libraries:
   `AXGIT_UPDATE_OPENAPI=1 cargo test --test openapi_test`.
 - **`utoipa-axum`'s `OpenApiRouter` auto-collection is not used.** tree/blob/raw/blame/archive are
   one `{*rest}` catch-all in axum with the ref/path boundary resolved at request time;
-  auto-collection would document `/tree/{rest}`, which contradicts API.md. Paths are written by
+  auto-collection would document `/tree/{rest}`, which contradicts api/README.md. Paths are written by
   hand in `api/src/openapi.rs` — dual maintenance with the router, covered by the operation-list
   test.
 - **Swagger UI ships via `utoipa-swagger-ui`'s `vendored` feature** (`/swagger-ui`): assets live in
@@ -736,7 +736,7 @@ resolved the repo as literally `{repo}.git`, which the API 404'd.
   other side of a two-dot tree comparison (`git diff <from> <to>`); on `/patch` it is the
   **excluded** start of a commit range (`git format-patch <from>..<to>`). This matches git's own two
   conventions, but it is the most confusable part of the API surface and is spelled out with a
-  worked example in `docs/API.md`. `/patch` also diffs every commit against its own first parent,
+  worked example in `api/README.md`. `/patch` also diffs every commit against its own first parent,
   including merges — `git format-patch` skips merges, but every other axgit diff is first-parent.
 - **`/patch` is a deliberate, narrow exception to "email addresses are never exposed"** (#8).
   `git am` cannot preserve authorship without a real `From: Name <email>` header, so redacting it
@@ -826,7 +826,7 @@ resolved the repo as literally `{repo}.git`, which the API 404'd.
   from a push, so it survives to TTL/LRU instead of being evicted by the validator — page 1 still
   invalidates on HEAD move and produces a different `next_cursor`, so an active repo's paging chain
   self-refreshes from the tip.
-- `docs/API.md`'s generic caching bullet now reads "pins the resource to a full sha — whether a path
+- `api/README.md`'s generic caching bullet now reads "pins the resource to a full sha — whether a path
   segment or a query parameter", matching what `/diff`, `/search` and `/stats` already did.
 
 ## #43 Diff stat-only mode (`view=stat`), with a `stat=1` fast path on `GET /diff`
@@ -923,7 +923,7 @@ Same endpoint and response envelope as #26 — one type selector, not three more
 - **`author`/`committer` match the signature *name* only, never the email.** Matching the email
   would turn the search box into a confirm/deny oracle for a specific address, which the hash-only
   design (#8) exists to prevent. A deliberate difference from cgit's `--author=`, which matches
-  `Name <email>`, and documented in `docs/API.md` so it isn't mistaken for a bug.
+  `Name <email>`, and documented in `api/README.md` so it isn't mistaken for a bug.
 - **`range` treats `q` as a rev-list expression, not a text filter** — `q` alone names everything to
   include, the way `git log <range>` ignores the checked-out branch. `ref` still resolves the
   response's `sha` (keeping the empty-repository carve-out) but plays no part in the walk.
@@ -1058,7 +1058,7 @@ Built on request as future-proofing, after an investigation found no repository 
   via SSH push, never `git remote add` + `fetch`. Worth recording: `git clone --mirror` lands
   upstream branches in `refs/heads/*` via its `+refs/*:refs/*` refspec, so a mirrored repository was
   *already* fully visible through the local-branch path — `refs/remotes/*` only appears from a
-  hand-configured remote with a custom fetch refspec against a bare repo. `docs/API.md` says so
+  hand-configured remote with a custom fetch refspec against a bare repo. `api/README.md` says so
   plainly, so a future reader doesn't wonder why the field is always empty.
 - **A separate `RefsInfo.remote_branches`, not merged into `branches`** — merging would silently
   change what `RepoSummary.branch_count` counts. It reuses `BranchRef`, since git2 exposes no way to
@@ -1157,7 +1157,7 @@ Built on request as future-proofing, after an investigation found no repository 
   format into the validator.
 - **A mid-stream `git archive` failure yields a well-formed-but-truncated file for the three encoder
   formats**, since the encoder still finalizes its container — unlike `tar.gz`, whose truncation
-  produces an invalid gzip stream a decompressor rejects outright. Documented in `docs/API.md`
+  produces an invalid gzip stream a decompressor rejects outright. Documented in `api/README.md`
   rather than treated as a defect; fixing it would mean buffering the whole archive before sending.
 - **Tests decompress with the same crate the handler encodes with**, not a system binary — macOS's
   bsdtar doesn't reliably support zstd and GNU tar shells out for `-j`/`-J`/`--zstd`. Magic bytes are
@@ -1236,7 +1236,7 @@ value space for no use case.
   - **This restriction is `path`-only, not rename-aware**, unlike the diff endpoints: a pathspec
     restricts the tree diff *before* `find_similar` runs, so on the renaming commit
     `path=<new name>&stat=1` sees a plain addition rather than a zero-change rename. Documented in
-    `docs/API.md` rather than special-cased — a real `git log --stat -- <path>` behaves the same way.
+    `api/README.md` rather than special-cased — a real `git log --stat -- <path>` behaves the same way.
 - **`CommitInfo.stat` is an omitted key when absent**, like `body` (#44) and `renamed_from` (#56);
   `commit_info()` defaults it to `None`, so `/search`'s reuse is unaffected.
 - **`stat` joins `follow`/`msg` in the cache key's `params`** — irrelevant to immutability, but it
@@ -2141,3 +2141,34 @@ say one thing.
 - **`compose.example.yaml` → `compose.yaml`.** The header comment already said it is illustrative
   and not wired into any deploy process, and the `.example` infix defeated editor/tooling
   recognition of the compose schema for no benefit the comment wasn't already providing.
+
+## #90 API and architecture docs folded into the component READMEs
+
+Same motive as #89, one level up: `docs/API.md` and `docs/ARCHITECTURE.md` described code that
+lives in a specific directory, while `api/` had no README at all — someone opening it found neither
+the build commands nor the contract the handlers implement. And `ARCHITECTURE.md`'s "Build/deploy"
+section restated README.md's Deployment / Single-binary build / Configuration sections, so the
+`AXGIT_*` list existed in two places again.
+
+- **`docs/API.md` → `api/README.md`'s `API (v1)` section** (a `git mv`, so the history follows).
+  Its headings dropped one level to nest under the new `##`; the heading *text* is unchanged, so
+  every `#anchor` still resolves. Prose that said "this document" now says "this section", and the
+  two references the file made to itself and to `ARCHITECTURE.md` became in-document pointers.
+- **`ARCHITECTURE.md`'s Backend section → `api/README.md`'s `Design` section**, keeping
+  `### Caching` verbatim: `api/README.md#caching` is cited from `cache.rs`, `repo/meta.rs`,
+  `handlers/mod.rs`, `Cargo.toml`, and `cache_test.rs`.
+- **Its Frontend section → `web/README.md`'s `Design` section**, with the route list refreshed —
+  it still marked blame as planned and predated the `diff`/`search`/`stats`/`tag`/`object` pages.
+- **Its Background and Overall layout → README.md's new `Architecture` section**; its Build/deploy
+  section was folded into the existing Deployment section, keeping only what README.md didn't
+  already say (image stages and layer caching, runtime packages, the non-root user and
+  `[safe] directory = *`, JSON logs to stdout). The `AXGIT_*` enumeration was dropped outright —
+  README.md's configuration table already carries every variable with its config-file key and
+  default.
+- **`docs/` is now just `DECISIONS.md` and `ROADMAP.md`**, the two records that belong to the
+  repository rather than to one component and whose `#NN` anchors are cited from both `api/` and
+  `web/` sources.
+- Roughly 90 `docs/API.md` citations across `api/src`, `api/tests`, `web/src` and `DECISIONS.md`
+  were repointed at `api/README.md`. `openapi.json` and `web/src/lib/api/types.ts` carry the same
+  strings but are **generated**, so they were regenerated rather than edited — the only reason this
+  rename touches them at all.

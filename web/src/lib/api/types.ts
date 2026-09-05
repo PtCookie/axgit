@@ -627,7 +627,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
-    /** @description Per-author breakdown (docs/API.md). */
+    /** @description Per-author breakdown (api/README.md). */
     AuthorStats: {
       author: components["schemas"]["CommitAuthor"];
       /** @description Total commits by this author within the window. */
@@ -635,7 +635,7 @@ export interface components {
       /** @description Parallel to the response's `buckets` — same length and order. */
       buckets: number[];
     };
-    /** @description Response of the blame endpoint (docs/API.md). */
+    /** @description Response of the blame endpoint (api/README.md). */
     BlameInfo: {
       /** @description Resolved commit sha the file was blamed at. */
       sha: string;
@@ -652,7 +652,7 @@ export interface components {
        */
       ranges: components["schemas"]["BlameRange"][];
     };
-    /** @description One contiguous run of lines attributed to the same commit (docs/API.md). */
+    /** @description One contiguous run of lines attributed to the same commit (api/README.md). */
     BlameRange: {
       /** @description 1-based, inclusive. */
       start_line: number;
@@ -671,7 +671,7 @@ export interface components {
        */
       orig_path: string | null;
     };
-    /** @description Response of the blob endpoint (docs/API.md). */
+    /** @description Response of the blob endpoint (api/README.md). */
     BlobInfo: {
       /** @description Resolved commit sha the blob was read from. */
       sha: string;
@@ -696,7 +696,7 @@ export interface components {
        */
       content: string | null;
     };
-    /** @description Branch entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md). */
+    /** @description Branch entry of `GET /api/v1/repos/{repo}/refs` (api/README.md). */
     BranchRef: {
       /** @example main */
       name: string;
@@ -705,7 +705,7 @@ export interface components {
       /** @description Authordate (RFC 3339) of the branch tip. */
       committed_at: string | null;
     };
-    /** @description One time bucket (docs/API.md). */
+    /** @description One time bucket (api/README.md). */
     BucketStats: {
       /** @description Bucket start, UTC, RFC 3339. Ascending order (oldest first). */
       start: string;
@@ -713,7 +713,7 @@ export interface components {
       commits: number;
     };
     /**
-     * @description Commit author of `GET /api/v1/repos/{repo}/commits` (docs/API.md).
+     * @description Commit author of `GET /api/v1/repos/{repo}/commits` (api/README.md).
      *     The raw email is never exposed; `email_hash` seeds locally generated avatars.
      */
     CommitAuthor: {
@@ -725,7 +725,7 @@ export interface components {
       email_hash: string;
     };
     /**
-     * @description Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).
+     * @description Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (api/README.md).
      *     Superset of [`CommitInfo`] so the frontend can extend the log entry type.
      */
     CommitDetail: {
@@ -747,10 +747,10 @@ export interface components {
       authored_at: string | null;
       committed_at: string | null;
       parents: string[];
-      /** @description First-parent diffstat (docs/API.md). */
+      /** @description First-parent diffstat (api/README.md). */
       diffstat: components["schemas"]["DiffStat"];
     };
-    /** @description Structured diff of `GET /api/v1/repos/{repo}/commits/{sha}/diff` (docs/API.md). */
+    /** @description Structured diff of `GET /api/v1/repos/{repo}/commits/{sha}/diff` (api/README.md). */
     CommitDiff: {
       sha: string;
       /** @description First parent the diff was computed against; `null` for a root commit. */
@@ -759,7 +759,7 @@ export interface components {
       truncated: boolean;
       files: components["schemas"]["FileDiff"][];
     };
-    /** @description Log entry of `GET /api/v1/repos/{repo}/commits` (docs/API.md). */
+    /** @description Log entry of `GET /api/v1/repos/{repo}/commits` (api/README.md). */
     CommitInfo: {
       /** @description Full commit sha. */
       sha: string;
@@ -796,7 +796,7 @@ export interface components {
        */
       next_cursor: string | null;
     };
-    /** @description Diffstat of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md). */
+    /** @description Diffstat of `GET /api/v1/repos/{repo}/commits/{sha}` (api/README.md). */
     DiffStat: {
       files: components["schemas"]["DiffStatFile"][];
       files_changed: number;
@@ -848,7 +848,7 @@ export interface components {
        */
       message: string;
     };
-    /** @description Error envelope shared by every failing endpoint (docs/API.md). */
+    /** @description Error envelope shared by every failing endpoint (api/README.md). */
     ErrorResponse: {
       error: components["schemas"]["ErrorBody"];
     };
@@ -861,7 +861,7 @@ export interface components {
       /** @description Empty for binary files. */
       hunks: components["schemas"]["Hunk"][];
     };
-    /** @description A file with at least one match (docs/API.md). */
+    /** @description A file with at least one match (api/README.md). */
     FileMatch: {
       path: string;
       /**
@@ -901,7 +901,7 @@ export interface components {
        */
       new_lineno: number | null;
     };
-    /** @description Matched line within a file (docs/API.md). */
+    /** @description Matched line within a file (api/README.md). */
     LineMatch: {
       /** @description 1-based line number. */
       line: number;
@@ -933,7 +933,7 @@ export interface components {
       content: string | null;
     };
     /**
-     * @description Response of `GET /objects/{oid}` (docs/API.md). Every key is always
+     * @description Response of `GET /objects/{oid}` (api/README.md). Every key is always
      *     present (this document's general rule) rather than a `oneOf` union — one
      *     envelope, with only the `type`-matching payload populated.
      */
@@ -981,7 +981,7 @@ export interface components {
       entries: components["schemas"]["TreeEntryInfo"][];
     };
     /**
-     * @description Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows
+     * @description Aggregate of the authors cut by `limit` (api/README.md), so the visible rows
      *     plus this one always reconcile with the bucket totals.
      */
     OtherAuthors: {
@@ -1023,7 +1023,7 @@ export interface components {
       /** @description Sorted by name ascending. */
       tags: components["schemas"]["TagRef"][];
     };
-    /** @description Repository list entry as defined by `GET /api/v1/repos` in docs/API.md. */
+    /** @description Repository list entry as defined by `GET /api/v1/repos` in api/README.md. */
     RepoInfo: {
       /**
        * @description Repository name without the `.git` suffix.
@@ -1066,7 +1066,7 @@ export interface components {
       last_modified: string | null;
     };
     /**
-     * @description Repository summary as defined by `GET /api/v1/repos/{repo}` in docs/API.md.
+     * @description Repository summary as defined by `GET /api/v1/repos/{repo}` in api/README.md.
      *     Kept separate from [`RepoInfo`] — the list and summary responses are
      *     distinct API contracts.
      */
@@ -1115,7 +1115,7 @@ export interface components {
       sort: string;
     };
     /**
-     * @description Two-revision diff of `GET /api/v1/repos/{repo}/diff` (docs/API.md). A
+     * @description Two-revision diff of `GET /api/v1/repos/{repo}/diff` (api/README.md). A
      *     plain tree-to-tree comparison (`git diff <from> <to>`), not a merge-base
      *     `...` diff.
      */
@@ -1146,7 +1146,7 @@ export interface components {
      * @enum {string}
      */
     SearchKind: "content" | "path" | "message" | "author" | "committer" | "range";
-    /** @description Response of `GET /api/v1/repos/{repo}/search` (docs/API.md). */
+    /** @description Response of `GET /api/v1/repos/{repo}/search` (api/README.md). */
     SearchResults: {
       /**
        * @description Resolved commit sha the search ran against. `None` only for an empty
@@ -1197,7 +1197,7 @@ export interface components {
      * @enum {string}
      */
     StatsPeriod: "week" | "month" | "quarter" | "year";
-    /** @description Response of `GET /api/v1/repos/{repo}/stats` (docs/API.md). */
+    /** @description Response of `GET /api/v1/repos/{repo}/stats` (api/README.md). */
     StatsResults: {
       /**
        * @description Resolved commit sha the window is anchored on. `None` only for an
@@ -1220,7 +1220,7 @@ export interface components {
       authors: components["schemas"]["AuthorStats"][];
       others: null | components["schemas"]["OtherAuthors"];
     };
-    /** @description Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (docs/API.md). */
+    /** @description Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (api/README.md). */
     TagDetail: {
       /** @example v1.0.0 */
       name: string;
@@ -1258,7 +1258,7 @@ export interface components {
       sha: string;
       type: components["schemas"]["ObjectKind"];
     };
-    /** @description Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md). */
+    /** @description Tag entry of `GET /api/v1/repos/{repo}/refs` (api/README.md). */
     TagRef: {
       /** @example v1.0.0 */
       name: string;
@@ -1279,7 +1279,7 @@ export interface components {
       /** @description Tagger date (RFC 3339). `None` for lightweight tags. */
       tagged_at: string | null;
     };
-    /** @description Tree entry of the tree endpoint (docs/API.md). */
+    /** @description Tree entry of the tree endpoint (api/README.md). */
     TreeEntryInfo: {
       name: string;
       type: components["schemas"]["EntryKind"];

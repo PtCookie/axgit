@@ -9,7 +9,7 @@ use super::diff::StatCounts;
 use super::{diff, meta};
 use crate::error::ApiError;
 
-/// Commit author of `GET /api/v1/repos/{repo}/commits` (docs/API.md).
+/// Commit author of `GET /api/v1/repos/{repo}/commits` (api/README.md).
 /// The raw email is never exposed; `email_hash` seeds locally generated avatars.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct CommitAuthor {
@@ -19,7 +19,7 @@ pub struct CommitAuthor {
     pub email_hash: String,
 }
 
-/// Log entry of `GET /api/v1/repos/{repo}/commits` (docs/API.md).
+/// Log entry of `GET /api/v1/repos/{repo}/commits` (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CommitInfo {
     /// Full commit sha.
@@ -101,7 +101,7 @@ impl Cursor {
     }
 }
 
-/// Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).
+/// Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (api/README.md).
 /// Superset of [`CommitInfo`] so the frontend can extend the log entry type.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CommitDetail {
@@ -126,7 +126,7 @@ pub struct CommitDetail {
     #[schema(required = true)]
     pub committed_at: Option<String>,
     pub parents: Vec<String>,
-    /// First-parent diffstat (docs/API.md).
+    /// First-parent diffstat (api/README.md).
     pub diffstat: diff::DiffStat,
 }
 

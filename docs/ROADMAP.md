@@ -10,8 +10,10 @@ add its decision entry to `docs/DECISIONS.md`, in the same commit.
 
 No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,
 see the "not planned" notes below), the single-binary deploy path — feature (#74) and packaging
-(#75) both — is done, and configuration now has a file surface as well as flags/env (#87). Pick a
-candidate below, or a fresh request.
+(#75) both — is done, configuration has a file surface as well as flags/env (#87), and the docs
+now live next to the code they describe: the API contract and backend design in `api/README.md`,
+the frontend design in `web/README.md`, deployment in `README.md` (#89, #90). Pick a candidate
+below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 

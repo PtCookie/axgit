@@ -58,7 +58,7 @@ services:
       timeout: 3s
       retries: 3
     logging:
-      # Matches ARCHITECTURE.md's "logs go to stdout/stderr as JSON, collected by fluentd" note.
+      # Matches README.md's "logs go to stdout/stderr as JSON, collected by fluentd" note.
       driver: fluentd
 
 volumes:

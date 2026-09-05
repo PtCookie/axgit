@@ -11,7 +11,7 @@ use crate::error::ApiError;
 /// Inline-content cap for blob/readme JSON; larger files are raw-only.
 pub const BLOB_CONTENT_LIMIT: usize = 1024 * 1024;
 
-/// Response of the blob endpoint (docs/API.md).
+/// Response of the blob endpoint (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct BlobInfo {
     /// Resolved commit sha the blob was read from.

@@ -1,5 +1,5 @@
 //! Object-by-id lookups for `GET /api/v1/repos/{repo}/objects/{oid}` and
-//! `.../objects/{oid}/raw` (docs/API.md).
+//! `.../objects/{oid}/raw` (api/README.md).
 //!
 //! Every other route in this API resolves through a ref (branch/tag/sha)
 //! plus, for trees/blobs, a path — there's no way to address an object by
@@ -67,7 +67,7 @@ pub struct ObjectTag {
     pub tagged_at: Option<String>,
 }
 
-/// Response of `GET /objects/{oid}` (docs/API.md). Every key is always
+/// Response of `GET /objects/{oid}` (api/README.md). Every key is always
 /// present (this document's general rule) rather than a `oneOf` union — one
 /// envelope, with only the `type`-matching payload populated.
 #[derive(Debug, Serialize, ToSchema)]

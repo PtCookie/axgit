@@ -38,7 +38,7 @@ pub fn build_router(state: AppState) -> Router {
         // ref half of the `{*rest}` routes below — but unlike those, there is
         // no ref/path boundary to resolve: the whole remainder is the name.
         .route("/repos/{repo}/tags/{*name}", get(tags::get_tag))
-        // The one by-oid entry point in this API (docs/API.md) — `{oid}` is
+        // The one by-oid entry point in this API (api/README.md) — `{oid}` is
         // a fixed-length hex id with no `/`, so a plain segment (not a
         // wildcard) is enough, unlike every ref-addressed route above/below.
         .route("/repos/{repo}/objects/{oid}", get(objects::get_object))

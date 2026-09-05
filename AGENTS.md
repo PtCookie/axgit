@@ -90,14 +90,14 @@ docker build --tag axgit:latest .
 
 ## Architecture
 
-See `docs/ARCHITECTURE.md` for detailed design, `docs/API.md` for the API contract,
-`docs/DECISIONS.md` for the standing decisions behind the code (source comments cite these as
-`#NN`), and `docs/ROADMAP.md` for what's next.
+See `api/README.md` for the backend design and the API contract, `web/README.md` for the frontend
+design, `README.md` for the deployment shape, `docs/DECISIONS.md` for the standing decisions behind
+the code (source comments cite these as `#NN`), and `docs/ROADMAP.md` for what's next.
 
 **When changing the API, update all three of the following in the same commit**:
 
-1. `docs/API.md` — the **normative document** for the contract. Semantic rules the spec can't
-   express (limits, ref matching, `null` conditions) live here.
+1. `api/README.md`'s `API (v1)` section — the **normative definition** of the contract. Semantic
+   rules the spec can't express (limits, ref matching, `null` conditions) live here.
 2. `openapi.json` — the spec **generated** from utoipa annotations (do not edit directly, use
    the regeneration command above). Adding an endpoint means updating `#[utoipa::path]`,
    `paths(...)` in `api/src/openapi.rs`, and `EXPECTED_OPERATIONS` in `tests/openapi_test.rs` for
@@ -119,7 +119,7 @@ See `docs/ARCHITECTURE.md` for detailed design, `docs/API.md` for the API contra
 - **Caching follows a cgit-style approach, improved**: response cache keyed by
   (repo, endpoint, params) with TTL, but instead of a plain TTL, the repo's HEAD/agefile mtime is
   used as a validator so changes are invalidated immediately after a push. Client-side caching
-  uses ETag (based on commit sha). Details in `docs/ARCHITECTURE.md#caching`.
+  uses ETag (based on commit sha). Details in `api/README.md#caching`.
 
 ### Frontend notes
 
@@ -176,17 +176,19 @@ See `docs/ARCHITECTURE.md` for detailed design, `docs/API.md` for the API contra
 ```
 axgit/
   api/                # Rust crate (axum + git2)
+    README.md         # backend design + the normative API spec
     src/
       main.rs         # entry point (thin), lib.rs declares modules
       routes.rs       # router setup + Swagger UI mount
       config/         # clap Config + the optional TOML config file layered under it
       repo/           # repository scanning, metadata, git2 reads (response structs live here too)
-      handlers/        # HTTP handlers (1:1 with API.md, #[utoipa::path] annotations)
+      handlers/       # HTTP handlers (1:1 with the API section, #[utoipa::path] annotations)
       openapi.rs      # #[derive(OpenApi)] — the spec's path/tag listing
       cache.rs        # response cache
       smart_http.rs   # git-upload-pack proxy
     tests/            # fixture-repo-based integration tests (+ openapi_test.rs snapshot)
   web/                # Astro + React + shadcn/ui (pnpm workspace package, name: web)
+    README.md         # frontend design + commands
     src/
       pages/          # Astro routes
       layouts/        # shared layouts
@@ -196,7 +198,7 @@ axgit/
         format/       # display formatting utils (dates, etc.)
     tests/            # vitest (browser mode)
     e2e/              # Playwright
-  docs/               # ARCHITECTURE.md, API.md, DECISIONS.md, ROADMAP.md
+  docs/               # DECISIONS.md, ROADMAP.md
   scripts/            # make-fixtures.sh, make-release.sh
   lefthook.yml
   openapi.json        # generated OpenAPI spec (see the regeneration command above)

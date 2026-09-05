@@ -155,7 +155,7 @@ export function compareRawDiffUrl(name: string, params: RevDiffParams = {}): str
 
 /** Link-only (never `fetch`ed by the client) — `git format-patch`-style
  *  series for the commit range `(from, to]`, for `git am`. No `context`/
- *  `ignorews`: the api ignores them on `/patch` (docs/API.md). */
+ *  `ignorews`: the api ignores them on `/patch` (api/README.md). */
 export function comparePatchUrl(name: string, params: { from?: string; to?: string; path?: string } = {}): string {
   const query = buildQuery(params);
   return apiUrl(`/repos/${encodeSegment(name)}/patch${query}`);

@@ -547,7 +547,7 @@ async fn the_index_shell_should_not_get_an_immutable_cache_control() {
 
     assert_eq!(status, StatusCode::OK);
     // Shells already carry their own validator-based `no-cache`
-    // (docs/API.md); the point here is that the immutable-assets layer
+    // (api/README.md); the point here is that the immutable-assets layer
     // didn't overwrite it.
     assert_eq!(headers["cache-control"], "no-cache");
 }

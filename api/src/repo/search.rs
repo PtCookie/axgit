@@ -1,5 +1,5 @@
 //! Repository search: content, file path, and commit message
-//! (`GET /api/v1/repos/{repo}/search`, docs/API.md).
+//! (`GET /api/v1/repos/{repo}/search`, api/README.md).
 //!
 //! git2 in-process scan (docs/DECISIONS.md #26) rather than a `git grep` exec
 //! or a persistent index: the container's read-only, stateless invariants
@@ -54,7 +54,7 @@ pub enum SearchKind {
     Range,
 }
 
-/// Matched line within a file (docs/API.md).
+/// Matched line within a file (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LineMatch {
     /// 1-based line number.
@@ -63,7 +63,7 @@ pub struct LineMatch {
     pub text: String,
 }
 
-/// A file with at least one match (docs/API.md).
+/// A file with at least one match (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FileMatch {
     pub path: String,
@@ -72,7 +72,7 @@ pub struct FileMatch {
     pub lines: Vec<LineMatch>,
 }
 
-/// Response of `GET /api/v1/repos/{repo}/search` (docs/API.md).
+/// Response of `GET /api/v1/repos/{repo}/search` (api/README.md).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SearchResults {
     /// Resolved commit sha the search ran against. `None` only for an empty

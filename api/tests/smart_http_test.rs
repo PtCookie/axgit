@@ -1,5 +1,5 @@
 //! Integration tests for Smart HTTP upload-pack: oneshot protocol checks and
-//! real `git clone http://…` round-trips (docs/ARCHITECTURE.md test strategy).
+//! real `git clone http://…` round-trips (api/README.md test strategy).
 
 mod common;
 

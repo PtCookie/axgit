@@ -10,7 +10,7 @@ use super::RepoInfo;
 
 const RFC3339_OUT: &str = "%Y-%m-%dT%H:%M:%S%:z";
 
-/// Freshness validator for cached responses (docs/ARCHITECTURE.md#caching):
+/// Freshness validator for cached responses (api/README.md#caching):
 /// a cache entry is served only while the repository still produces the same
 /// validator, so a push (HEAD move or agefile touch) invalidates immediately.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

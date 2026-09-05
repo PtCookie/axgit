@@ -1,14 +1,153 @@
-# Axgit API Spec (v1)
+# api
 
-The **normative document** for the web ↔ api contract. Any commit that adds or changes an
-endpoint must update this document too.
+Axgit backend. Rust (axum + git2/libgit2) — a read-only JSON API over bare repositories, Smart
+HTTP clone/fetch, and the Astro static build served at `/`.
+
+Commands run from the repository root (see the root [README.md](../README.md) for the workspace as
+a whole):
+
+```sh
+# The default build bakes web/dist into the binary, so build the frontend once first
+pnpm --filter web build
+
+cargo build --manifest-path api/Cargo.toml
+cargo test --manifest-path api/Cargo.toml
+cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
+cargo fmt --manifest-path api/Cargo.toml
+
+# Pure-API build: no bundled frontend, no web/dist dependency
+# (AXGIT_STATIC_DIR still serves a directory at runtime either way)
+cargo build --manifest-path api/Cargo.toml --features api-only
+
+# Local run against fixture repositories (./scripts/make-fixtures.sh generates them).
+# --static-dir overrides the binary's baked-in copy, so the frontend can be
+# iterated on without a full `cargo build` per change.
+cargo run --manifest-path api/Cargo.toml -- --repo-root ./fixtures/repos --static-dir ./web/dist
+
+# Regenerate ../openapi.json — run in any commit that changes the API,
+# then `pnpm --filter web gen:types` to regenerate the TS types from it
+AXGIT_UPDATE_OPENAPI=1 cargo test --manifest-path api/Cargo.toml --test openapi_test
+```
+
+## Structure
+
+```text
+api/
+  build.rs          # rebuild trigger for the embedded web/dist copy (skipped under `api-only`)
+  src/
+    main.rs         # entry point (thin), lib.rs declares modules
+    routes.rs       # router setup + Swagger UI mount
+    config/         # clap Config + the optional TOML config file layered under it
+    repo/           # repository scanning, metadata, git2 reads (response structs live here too)
+    handlers/       # HTTP handlers (1:1 with the API section below, #[utoipa::path] annotations)
+    openapi.rs      # #[derive(OpenApi)] — the spec's path/tag listing
+    cache.rs        # response cache
+    shell.rs        # maps request path shapes onto the prerendered Astro shells
+    cgit_compat.rs  # permanent redirects from cgit-style URLs
+    smart_http.rs   # git-upload-pack proxy
+    assets.rs       # embedded web/dist served at /
+  tests/            # fixture-repo-based integration tests (+ openapi_test.rs snapshot)
+```
+
+## Design
+
+### Stack
+
+- **axum** + tokio. See `docs/DECISIONS.md` #2 for the framework choice rationale.
+- **git2** (libgit2 bindings): refs, tree, blob, commit lookups, diff, blame.
+- **git binary exec**: `git archive` (snapshots), `git upload-pack --stateless-rpc` (Smart HTTP),
+  and an escape hatch for operations confirmed to be a bottleneck on large repos. Not trying to
+  solve everything with libgit2. `git archive` itself only emits `tar`, `tar.gz`, and `zip`; the
+  `tar.bz2`/`tar.xz`/`tar.zst` snapshot formats are produced by streaming its `tar` output through
+  an in-process `bzip2`/`xz`/`zstd` encoder (`async-compression`) instead of piping into an
+  external compressor binary, so the runtime image needs no extra compressor packages
+  (DECISIONS.md #54).
+
+### Repository scanning
+
+- On startup and periodically, scans `AXGIT_REPO_ROOT` (default `/srv/git`) for `*.git`
+  directories (equivalent to cgit's `scan-path`).
+- Parses `section`/`name`/`owner`/`desc` from each repo's config, checking `[axgit]` then `[cgit]`
+  in order.
+- Scan results are kept as an in-memory list, rescanned when the TTL (default 60s) elapses
+  (equivalent to cgit's `cache-scanrc-ttl`).
+
+### Caching
+
+A two-layer improvement on cgit's disk TTL cache:
+
+1. **Server response cache** — in-memory LRU (`moka`, `cache.rs`). Key: `(repo, endpoint,
+   normalized params)`.
+   - Validator: the repo's **HEAD sha + agefile mtime** (`repo/meta.rs::Validator`). On a cache
+     hit, the entry is discarded if the validator differs — unlike cgit's plain TTL, this reflects
+     a push immediately while still letting a quiet repo reuse its entry until the TTL expires.
+   - Looking up the validator itself (reading HEAD + stat'ing the agefile) is cheap, so it's done
+     on every request.
+   - Responses the request pins to a full sha (commit detail, diff, sha-based tree/blob/blame, a
+     full-sha `ref` on search/stats/log, and every `cursor` page of the commit log) are immutable,
+     so they skip validation and go straight to the LRU — this is the only path where a cache hit
+     avoids opening the repository at all. The TTL below still applies to them too, so a
+     validator-less entry is never pinned indefinitely.
+   - Capacity is tracked by body bytes (`AXGIT_CACHE_RESPONSE_MAX_BYTES`), with a 1 MiB cap per
+     entry body (so a single huge diff can't evict the whole cache). The TTL
+     (`AXGIT_CACHE_RESPONSE_TTL`) acts as a staleness ceiling for changes the validator can't see
+     (e.g. manual config edits).
+   - Exclusions: the repo list is a scan snapshot, so it keeps using `ScanCache` (a single-value
+     TTL) as-is; the site endpoint reads config plus, for the readme, the filesystem directly, so
+     it isn't cached at all — a hash-of-body ETag still gives clients 304s; raw is large binary
+     data and archive is streamed, so neither is cached.
+2. **Client-side cache** — requests pinned to a full sha get `immutable`; everything else gets
+   `ETag` (validator-based) + `no-cache` + 304.
+
+The caching layer lives in a shared handler helper (`handlers/mod.rs::cached_response`), not tower
+middleware: whether a response is immutable is only known after ref resolution, params
+normalization and content-type differ per endpoint, and error responses must never be cached.
+
+Note: git2's `Repository` isn't `Sync`. The cache stores only serialized responses; `Repository`
+is opened within request scope.
+
+### Smart HTTP
+
+- Advertise: prepends a pkt-line service header to the output of
+  `git upload-pack --stateless-rpc --advertise-refs {repo}`.
+- Data: streams the request body into `git upload-pack --stateless-rpc {repo}`'s stdin, and its
+  stdout back as the response. Needs to handle decompressing a gzip'd request body
+  (`Content-Encoding: gzip`).
+- receive-pack is never exposed in any form (403).
+
+### Search
+
+`repo/search.rs` implements content/path/commit-message search as an **in-process git2 scan** —
+not a `git grep` exec, and not a persistent index (DECISIONS.md #26). An index was rejected
+outright: it would be the first piece of mutable, persistent state in an otherwise stateless,
+read-only container. git2 was chosen over exec because it fits the existing synchronous
+`cached_response` helper directly and lets every scan enforce an exact byte/file/commit budget,
+rather than only a process timeout.
+
+Every scan carries **two independent caps**: `limit` bounds the number of results returned, while
+a fixed scan budget (tree entries walked, blob bytes actually read, commits walked) bounds the
+*work done* regardless of how many results are found — either one sets `truncated: true` in the
+response. Content search reuses the blob endpoint's binary/size classification
+(`repo/blob.rs::classify`), so search never reads something the blob view itself would refuse to
+render.
+
+### Test strategy
+
+- `api/tests/` builds fixture bare repos with the git CLI in a tempdir (commits/tags/submodules
+  included), then runs integration tests against the axum router. Snapshot/clone are verified via
+  actual round-trips using `git clone http://…`.
+
+## API (v1)
+
+The **normative definition** of the web ↔ api contract. Any commit that adds or changes an
+endpoint must update this section too.
 
 The machine-readable spec is `openapi.json` (OpenAPI 3.1), **generated from code** via
 utoipa annotations (DECISIONS.md #15). While the server is running it can be explored at
 `/swagger-ui`, and the raw spec is at `/api/v1/openapi.json`. The spec covers schemas, parameters,
-and status codes; this document covers the **semantic rules** the spec can't express (truncation
+and status codes; this section covers the **semantic rules** the spec can't express (truncation
 limits, refs longest-match, merge simplification, conditions under which a field is `null`).
-**When they conflict, this document wins.**
+**When they conflict, this section wins.**
 
 - Base path: `/api/v1`
 - All responses are `application/json` (except raw/archive/feed)
@@ -20,9 +159,9 @@ limits, refs longest-match, merge simplification, conditions under which a field
 - Fields in response objects are **always present as keys**, even when they have no value
   (serialized as `null`, never omitted).
 
-## Common
+### Common
 
-### Error format
+#### Error format
 
 ```json
 { "error": { "code": "repo_not_found", "message": "repository 'foo' not found" } }
@@ -42,7 +181,7 @@ limits, refs longest-match, merge simplification, conditions under which a field
 There is exactly one exception to this envelope: if the upload-pack request body exceeds 8 MiB,
 axum's `DefaultBodyLimit` returns a plain-text `413`.
 
-### Caching headers
+#### Caching headers
 
 - **Immutable** responses get `Cache-Control: public, max-age=31536000, immutable` and no `ETag`.
   This applies only when the request itself pins the resource to a full sha — the sha-bearing
@@ -64,16 +203,16 @@ axum's `DefaultBodyLimit` returns a plain-text `413`.
     `git archive`.
   - Smart HTTP endpoints are always `no-cache` and never use an ETag.
 
-### Pagination (commit log)
+#### Pagination (commit log)
 
 Cursor-based. Pass the response's `next_cursor` verbatim as the next request's `cursor`. The
 cursor is an opaque token, not a commit sha — each page re-walks from the same fixed start commit
 and skips ahead, which is what makes pagination lossless across side branches (see the `cursor`
 row under `/commits` below, and `docs/DECISIONS.md` #37). Default `limit=50`, max 100.
 
-## Endpoints
+### Endpoints
 
-### `GET /api/v1/site`
+#### `GET /api/v1/site`
 
 Site-wide metadata. Not tied to any one repository — cgit's `root-title`/`root-desc`/`root-readme`.
 
@@ -100,7 +239,7 @@ Site-wide metadata. Not tied to any one repository — cgit's `root-title`/`root
 - Cached the same way `GET /api/v1/repos` is: not tied to a single repository, so its `ETag` is a
   hash of the response body rather than a HEAD/agefile validator.
 
-### `GET /api/v1/site/logo`, `GET /api/v1/site/favicon`
+#### `GET /api/v1/site/logo`, `GET /api/v1/site/favicon`
 
 Site logo and favicon — cgit's `logo`/`logo-link`/`favicon`. `AXGIT_LOGO`, `AXGIT_LOGO_LINK`, and
 `AXGIT_FAVICON` each name either an `http(s)://` URL (used verbatim wherever the value would be
@@ -127,7 +266,7 @@ these two endpoints.
   for the logo, read client-side to fill in the header brand; a real `<link rel="icon">` for the
   favicon, replacing axgit's own default pair), not fetched by the frontend at runtime.
 
-### `GET /api/v1/repos?sort=`
+#### `GET /api/v1/repos?sort=`
 
 Repository list. Equivalent to cgit's index.
 
@@ -177,7 +316,7 @@ Repository list. Equivalent to cgit's index.
   - `idle` compares actual instants, not the formatted string — two agefiles recorded under
     different UTC offsets still compare correctly.
 
-### `GET /api/v1/repos/{repo}`
+#### `GET /api/v1/repos/{repo}`
 
 Repository summary. Equivalent to cgit's summary. List item fields plus `head` sha,
 branch/tag counts, and the clone URL.
@@ -206,7 +345,7 @@ branch/tag counts, and the clone URL.
 - `clone_url`: `{clone_url_base}/{repo}.git`. `null` if `--clone-url-base`
   (`AXGIT_CLONE_URL_BASE`) is not configured.
 
-### `GET /api/v1/repos/{repo}/refs`
+#### `GET /api/v1/repos/{repo}/refs`
 
 ```json
 {
@@ -248,7 +387,7 @@ branch/tag counts, and the clone URL.
   **Both are `null` for lightweight tags.**
 - For the tag object's own sha, its full message, and the tagger, see `GET /tags/{name}` below.
 
-### `GET /api/v1/repos/{repo}/tags/{name}`
+#### `GET /api/v1/repos/{repo}/tags/{name}`
 
 Tag detail — the tag message body, tagger, and dereferenced target that `GET /refs` leaves out
 (`tags[].annotation` there is only the first line, and `tags[].target` is already the fully
@@ -268,7 +407,7 @@ peeled commit).
 
 - `{name}`: tag name exactly as it appears under `refs/tags` — may itself contain `/`. **Only a
   real tag resolves here**: a branch name, a commit sha, or `HEAD` all answer `404 ref_not_found`
-  (only `refs/tags/{name}` is consulted), which is an exception to this document's general "the ref
+  (only `refs/tags/{name}` is consulted), which is an exception to this section's general "the ref
   parameter accepts branch names, tag names, and commit shas" rule.
 - `tag_object`: the annotated tag object's own sha. `null` for a lightweight tag — a lightweight tag
   has no tag object, so `message`/`tagger`/`tagged_at` are `null` too, and `object.sha == target`.
@@ -286,7 +425,7 @@ peeled commit).
 - **Never immutably cached**: the URL names a tag ref, not a sha, and a tag can be force-moved onto
   a different object without its name changing — always `ETag` + `Cache-Control: no-cache`.
 
-### `GET /api/v1/repos/{repo}/objects/{oid}`
+#### `GET /api/v1/repos/{repo}/objects/{oid}`
 
 Object detail, addressed by its own id — the one exception to every other endpoint's "resolve
 through a ref, plus a path for trees/blobs" shape (cgit's `cgit_object_link()`: a tag's target that
@@ -304,11 +443,11 @@ link to).
 ```
 
 - `{oid}`: **must be a full 40-character hex object id.** Unlike the `ref` parameter used
-  everywhere else in this document, an abbreviation is `400 invalid_param` — every link axgit
+  everywhere else in this section, an abbreviation is `400 invalid_param` — every link axgit
   itself emits carries a full oid, and requiring one is what makes this endpoint unconditionally
   immutable (see below).
 - `type`: one of `commit`, `tree`, `blob`, `tag`. Only the matching payload key is non-null; the
-  other two are always present as `null` (this document's general "every key always present" rule).
+  other two are always present as `null` (this section's general "every key always present" rule).
 - `tree`: `{ "entries": [...] }`, same entry shape `GET /tree` reports (`name`/`type`/`mode`/`sha`/
   `size`/`target`/`module_link`) — trees first, then by name ascending. Each entry's own `sha` links
   onward to another `GET /objects/{oid}` call; there's no commit or path behind an oid, so
@@ -324,16 +463,16 @@ link to).
 - `404 object_not_found` for an oid the repository's object database has nothing for. Distinct from
   `ref_not_found`: there's no ref or sha resolution involved, just a direct lookup.
 - **Always immutably cached**: the address *is* the content, unlike every other tag/branch-name-
-  shaped URL in this document.
+  shaped URL in this section.
 
-### `GET /api/v1/repos/{repo}/objects/{oid}/raw`
+#### `GET /api/v1/repos/{repo}/objects/{oid}/raw`
 
 Blob bytes by id — the by-oid analogue of `GET /raw/{ref}/{path...}`. Same `{oid}` rule as above.
 `404 object_not_found` for a missing oid or one that isn't a blob. With no filename behind an oid
 there's no extension to guess a `Content-Type` from: always `text/plain; charset=utf-8` or
 `application/octet-stream`, and always `X-Content-Type-Options: nosniff`. Always immutably cached.
 
-### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=&follow=&stat=`
+#### `GET /api/v1/repos/{repo}/commits?ref=&path=&cursor=&limit=&msg=&follow=&stat=`
 
 Commit log. When `path` is given, only commits that changed that path (cgit log's path filter).
 
@@ -407,7 +546,7 @@ address (the gravatar approach).
   the cache key, so a `msg=1`/`follow=1`/`stat=1` response never collides with the default one for
   the same request.
 
-### `GET /api/v1/repos/{repo}/commits/{sha}`
+#### `GET /api/v1/repos/{repo}/commits/{sha}`
 
 Commit detail: full message, author/committer, parents, diffstat. A superset of the log entry
 (`sha`/`summary`/`author`/`authored_at`/`parents` follow the same rules).
@@ -450,7 +589,7 @@ Commit detail: full message, author/committer, parents, diffstat. A superset of 
   the resolved full sha — a note can change without the commit sha changing, so the response falls
   back to `ETag` + `no-cache` (see "Caching headers").
 
-### `GET /api/v1/repos/{repo}/commits/{sha}/diff?path=&context=&ignorews=`
+#### `GET /api/v1/repos/{repo}/commits/{sha}/diff?path=&context=&ignorews=`
 
 A unified diff structured as JSON (file → hunk → line). File-level fields follow the same rules
 as diffstat entries.
@@ -501,7 +640,7 @@ as diffstat entries.
   file, since libgit2 recomputes line stats from the whitespace-ignoring patch too. Any other value
   is `400 invalid_param`.
 
-### `GET /api/v1/repos/{repo}/diff?from=&to=&path=&context=&ignorews=&stat=`
+#### `GET /api/v1/repos/{repo}/diff?from=&to=&path=&context=&ignorews=&stat=`
 
 Arbitrary two-revision diff — `git diff <from> <to>`, a plain tree-to-tree comparison, **not** a
 merge-base `A...B` diff. Same file/hunk/line shape as the per-commit diff, plus an uncapped
@@ -537,7 +676,7 @@ merge-base `A...B` diff. Same file/hunk/line shape as the per-commit diff, plus 
   is immutable, `?from=<full sha>&to=<full sha>` is immutable, `?to=main` is not). `stat` is part of
   the cache key, so a stat-only response never collides with the full diff for the same revisions.
 
-### `GET /api/v1/repos/{repo}/rawdiff?from=&to=&path=&context=&ignorews=`
+#### `GET /api/v1/repos/{repo}/rawdiff?from=&to=&path=&context=&ignorews=`
 
 Plain unified diff (`text/plain; charset=utf-8`) between two revisions, for `git apply`. Same
 `from`/`to`/`path`/`context`/`ignorews` semantics as `GET /diff` — a two-dot tree comparison, not a
@@ -548,7 +687,7 @@ merge-base `...` diff.
 - `X-Content-Type-Options: nosniff` is always set (repository content is untrusted input).
 - Caching rules (immutable vs. `ETag`) are identical to `GET /diff`.
 
-### `GET /api/v1/repos/{repo}/patch?from=&to=&path=`
+#### `GET /api/v1/repos/{repo}/patch?from=&to=&path=`
 
 `git format-patch`-style mbox series (`text/plain; charset=utf-8`) for the commit range
 `(from, to]`, for `git am`.
@@ -572,7 +711,7 @@ merge-base `...` diff.
   `X-Robots-Tag: noindex, nofollow`; see docs/DECISIONS.md #38.
 - Caching rules (immutable vs. `ETag`) are identical to `GET /diff`.
 
-### `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
+#### `GET /api/v1/repos/{repo}/tree/{ref}/{path...}`
 
 Directory listing. Since `{ref}` may contain `/` (branch/tag names), the boundary with the path is
 resolved via **refs longest-match**: the longest sequence of leading segments that matches an
@@ -638,10 +777,10 @@ blob/raw follow the same rule. Omitting `{path...}` means the root tree.
 - If the request's `{ref}` matches the resolved full sha as a string, an immutable
   `Cache-Control` is attached (see the caching headers section — blob/raw/readme follow the same
   rule). Note that this validator is driven by HEAD/agefile movement: a `module-link` config edit
-  with no accompanying push is invisible to it (same caveat as `homepage`/`defbranch`, docs/API.md's
-  caching section), while a `.gitmodules` edit is content and invalidates normally.
+  with no accompanying push is invisible to it (same caveat as `homepage`/`defbranch`, in the
+  caching headers section above), while a `.gitmodules` edit is content and invalidates normally.
 
-### `GET /api/v1/repos/{repo}/blob/{ref}/{path...}`
+#### `GET /api/v1/repos/{repo}/blob/{ref}/{path...}`
 
 File metadata + content.
 
@@ -663,7 +802,7 @@ File metadata + content.
 - Symlinks have mode `120000` and `content` = the link target path.
 - `404 path_not_found` if the path doesn't exist or isn't a file (a directory or submodule).
 
-### `GET /api/v1/repos/{repo}/raw/{ref}/{path...}`
+#### `GET /api/v1/repos/{repo}/raw/{ref}/{path...}`
 
 Streams the raw file content. Equivalent to cgit's plain view. No size limit.
 
@@ -672,7 +811,7 @@ Streams the raw file content. Equivalent to cgit's plain view. No size limit.
 - Since repository content is untrusted input, `X-Content-Type-Options: nosniff` is always
   attached.
 
-### `GET /api/v1/repos/{repo}/readme?ref=`
+#### `GET /api/v1/repos/{repo}/readme?ref=`
 
 Looks for a README and returns `{ "path": "...", "format": "markdown|rst|plain", "content": "..." }`.
 Rendering (HTML conversion) is the frontend's responsibility. Only `markdown` is rendered;
@@ -686,7 +825,7 @@ Rendering (HTML conversion) is the frontend's responsibility. Only `markdown` is
   or resolution failure.
 - `content` is subject to the same 1 MiB limit as blob.
 
-### `GET /api/v1/repos/{repo}/blame/{ref}/{path...}`
+#### `GET /api/v1/repos/{repo}/blame/{ref}/{path...}`
 
 Per-line-range attribution. `{ref}/{path...}` splitting and 404/400 rules are the same as
 tree/blob/raw (refs longest-match, `.`/`..`/empty segments are 400, missing path/directory is 404).
@@ -723,13 +862,13 @@ tree/blob/raw (refs longest-match, `.`/`..`/empty segments are 400, missing path
   **not** supported — libgit2's equivalent flags are reserved but unimplemented upstream, so this
   would need an exec fallback.
 - Implemented via **git2 `Repository::blame_file`** (not exec) — the path never touches a command
-  line, and ARCHITECTURE.md already lists blame as git2's responsibility. If it proves slow on
-  large histories, a `git blame --line-porcelain` exec fallback is a candidate for later (not
-  currently implemented).
+  line, and the Design section above already lists blame as git2's responsibility. If it proves
+  slow on large histories, a `git blame --line-porcelain` exec fallback is a candidate for later
+  (not currently implemented).
 - Caching is the same as tree/blob: an immutable `Cache-Control` when `{ref}` matches the resolved
   full sha as a string, otherwise ETag (validator-based) + `no-cache` + 304.
 
-### `GET /api/v1/repos/{repo}/archive/{ref}.{format}`
+#### `GET /api/v1/repos/{repo}/archive/{ref}.{format}`
 
 `format`: `tar.gz` | `tar.bz2` | `tar.xz` | `tar.zst` | `zip`. `git archive` itself only produces
 `tar.gz`, `zip`, and plain `tar`; the other three formats are produced by streaming
@@ -765,7 +904,7 @@ maintained Rust encoder.
   over-capacity request waits rather than failing, since archives are never response-cached and
   each encoder holds meaningful memory for the request's duration.
 
-### `GET /api/v1/repos/{repo}/feed.atom?ref=&path=&all=&limit=`
+#### `GET /api/v1/repos/{repo}/feed.atom?ref=&path=&all=&limit=`
 
 An Atom feed of a repository's most recent commits — the default branch (HEAD) and **20** entries
 by default. `Content-Type: application/atom+xml; charset=utf-8`.
@@ -810,7 +949,7 @@ by default. `Content-Type: application/atom+xml; charset=utf-8`.
   response cache key, along with every other param that changes the walk (`all`, `ref`, `path`,
   `limit`).
 
-### `GET /api/v1/repos/{repo}/search?q=&type=&ref=&limit=`
+#### `GET /api/v1/repos/{repo}/search?q=&type=&ref=&limit=`
 
 Repository search: file content, file paths, commit messages, author/committer names, or a
 rev-list range expression. Implemented as an in-process git2 scan (not a `git grep`/`git log` exec,
@@ -875,7 +1014,7 @@ independent of `limit`.
   immutable for `type=range`**, even with a full-sha `ref` — the result depends on the revisions
   named in `q` (e.g. `main~5..main`), which can move independently of `ref`.
 
-### `GET /api/v1/repos/{repo}/stats?ref=&period=&path=&limit=`
+#### `GET /api/v1/repos/{repo}/stats?ref=&period=&path=&limit=`
 
 Commit-activity statistics: commit counts bucketed by time period, plus a per-author breakdown.
 cgit's `stats` page. Implemented as an in-process git2 revwalk (not a `git log` exec, not a
@@ -933,13 +1072,13 @@ persistent index — DECISIONS.md #28), bounded by the same kind of scan budget 
 - Caching follows the commit-detail pattern: immutable only when `ref` is given and equals the
   resolved commit's full sha as a string; otherwise `ETag` + `Cache-Control: no-cache`.
 
-## Smart HTTP (clone/fetch only)
+### Smart HTTP (clone/fetch only)
 
 Outside the API prefix, mapped directly to repository paths. Handled by spawning
 `git upload-pack --stateless-rpc` (`--advertise-refs` for the advertise step, DECISIONS.md #13).
 Smart protocol only — the dumb protocol (info/refs without a `service` parameter) isn't supported.
 
-### `GET /{repo}.git/info/refs?service=git-upload-pack`
+#### `GET /{repo}.git/info/refs?service=git-upload-pack`
 
 - `200` response: `Content-Type: application/x-git-upload-pack-advertisement`,
   `Cache-Control: no-cache`. The body is a pkt-line service header
@@ -948,7 +1087,7 @@ Smart protocol only — the dumb protocol (info/refs without a `service` paramet
   `GIT_PROTOCOL` env var — supporting protocol v2 negotiation. The service header pkt-line is
   attached the same way in v2.
 
-### `POST /{repo}.git/git-upload-pack`
+#### `POST /{repo}.git/git-upload-pack`
 
 - The request body is upload-pack negotiation data
   (`application/x-git-upload-pack-request` — Content-Type isn't validated). A
@@ -959,7 +1098,7 @@ Smart protocol only — the dumb protocol (info/refs without a `service` paramet
   streaming has started, the status code can't change and the stream ends early (the client sees
   an early EOF).
 
-### Status codes
+#### Status codes
 
 | Situation | Status | code |
 | --- | --- | --- |

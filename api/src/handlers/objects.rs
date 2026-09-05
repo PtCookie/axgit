@@ -1,5 +1,5 @@
 //! Handlers for `GET /repos/{repo}/objects/{oid}` and `.../objects/{oid}/raw`
-//! (docs/API.md) — the one by-oid entry point in this API, closing the
+//! (api/README.md) — the one by-oid entry point in this API, closing the
 //! "Tags and refs" cgit-parity gap (`cgit_object_link()`).
 
 use axum::extract::{Path, State};

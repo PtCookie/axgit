@@ -1,4 +1,4 @@
-//! git CLI based fixture helpers (docs/ARCHITECTURE.md test strategy).
+//! git CLI based fixture helpers (api/README.md test strategy).
 
 // Shared across test binaries; not every binary uses every helper.
 #![allow(dead_code)]

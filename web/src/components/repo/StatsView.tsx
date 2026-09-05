@@ -255,7 +255,7 @@ function StatsResultsView({ results, period }: StatsResultsViewProps) {
               ))
             )}
             {/* The authors cut by `limit`, aggregated rather than dropped
-             *  (docs/API.md). No `AuthorAvatar`: the identicon seeds from
+             *  (api/README.md). No `AuthorAvatar`: the identicon seeds from
              *  `email_hash` and this row has no identity — reading as plainly
              *  different from a real author is the point. */}
             {results.others && (
@@ -272,7 +272,7 @@ function StatsResultsView({ results, period }: StatsResultsViewProps) {
           </TableBody>
           {/* Totals come from the top-level `buckets`, not from summing the
            *  rows above — they have always included authors cut by `limit`
-           *  (docs/API.md). Since `others` landed those authors get their own
+           *  (api/README.md). Since `others` landed those authors get their own
            *  row, so the two now agree column for column; that's a property of
            *  the response, not something to enforce by re-deriving here. */}
           <TableFooter>

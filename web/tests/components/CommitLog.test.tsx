@@ -141,7 +141,7 @@ describe("CommitLog", () => {
     });
   });
 
-  it("ignores follow=1 when no path filter is set (docs/API.md's follow rule)", async () => {
+  it("ignores follow=1 when no path filter is set (api/README.md's follow rule)", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
     render(<CommitLog repo="git-compose" follow="1" />);
 

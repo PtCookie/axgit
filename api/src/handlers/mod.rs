@@ -22,11 +22,11 @@ use crate::repo::meta::Validator;
 use crate::repo::{meta, open};
 use crate::state::AppState;
 
-/// `Cache-Control` for responses addressed by a full commit sha (docs/API.md).
+/// `Cache-Control` for responses addressed by a full commit sha (api/README.md).
 pub(crate) const IMMUTABLE_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
 /// `Cache-Control` for validator-based responses: clients may store them but
-/// must revalidate with `If-None-Match` (docs/API.md).
+/// must revalidate with `If-None-Match` (api/README.md).
 pub(crate) const NO_CACHE_CONTROL: &str = "no-cache";
 
 pub(crate) const JSON_CONTENT_TYPE: &str = "application/json";
@@ -40,7 +40,7 @@ pub(crate) const MAX_LIMIT: usize = 100;
 
 /// Shared by `commits::list_commits`, `search::get_search`, `stats::get_stats`,
 /// and `feed::get_feed` — all page or cap results with the same "1-100,
-/// never clamped" rule (docs/API.md), differing only in their default
+/// never clamped" rule (api/README.md), differing only in their default
 /// (`DEFAULT_LIMIT` for the first three, `FEED_DEFAULT_LIMIT` for the feed).
 /// Parsed manually so an invalid value yields the JSON `invalid_param`
 /// envelope instead of axum's plain-text 400.
@@ -56,7 +56,7 @@ pub(crate) fn parse_limit(raw: Option<&str>, default: usize) -> Result<usize, Ap
     }
 }
 
-/// Shared by every diff endpoint's `context=` param (docs/API.md). Parsed
+/// Shared by every diff endpoint's `context=` param (api/README.md). Parsed
 /// manually — see [`parse_limit`]. Never clamped.
 pub(crate) fn parse_context(raw: Option<&str>) -> Result<u32, ApiError> {
     let Some(raw) = raw else {
@@ -105,7 +105,7 @@ pub(crate) fn sanitize_component(component: &str) -> String {
 }
 
 /// Serves one per-repo endpoint through the response cache
-/// (docs/ARCHITECTURE.md#caching). `compute` builds the serialized body and
+/// (api/README.md#caching). `compute` builds the serialized body and
 /// reports whether the request addressed an immutable (full-sha) resource:
 ///
 /// - immutable responses are cached without a validator and served with the

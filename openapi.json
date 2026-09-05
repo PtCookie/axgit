@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Axgit API",
-    "description": "Read-only JSON API over bare Git repositories, plus Smart HTTP (fetch/clone) and an Atom feed.\n\nThere are no mutation endpoints and no authentication: writes happen over SSH on the git-server container, never here.\n\nThis document describes shapes, parameters and status codes. The semantic rules it cannot express — truncation caps, longest-ref matching for the `{ref}`/`{path}` split, merge-commit log simplification, and the exact conditions under which a field is `null` — live in `docs/API.md`, which remains the normative contract.",
+    "description": "Read-only JSON API over bare Git repositories, plus Smart HTTP (fetch/clone) and an Atom feed.\n\nThere are no mutation endpoints and no authentication: writes happen over SSH on the git-server container, never here.\n\nThis document describes shapes, parameters and status codes. The semantic rules it cannot express — truncation caps, longest-ref matching for the `{ref}`/`{path}` split, merge-commit log simplification, and the exact conditions under which a field is `null` — live in `api/README.md`, which remains the normative contract.",
     "license": {
       "name": "MIT"
     },
@@ -2374,7 +2374,7 @@
     "schemas": {
       "AuthorStats": {
         "type": "object",
-        "description": "Per-author breakdown (docs/API.md).",
+        "description": "Per-author breakdown (api/README.md).",
         "required": [
           "author",
           "commits",
@@ -2401,7 +2401,7 @@
       },
       "BlameInfo": {
         "type": "object",
-        "description": "Response of the blame endpoint (docs/API.md).",
+        "description": "Response of the blame endpoint (api/README.md).",
         "required": [
           "sha",
           "path",
@@ -2442,7 +2442,7 @@
       },
       "BlameRange": {
         "type": "object",
-        "description": "One contiguous run of lines attributed to the same commit (docs/API.md).",
+        "description": "One contiguous run of lines attributed to the same commit (api/README.md).",
         "required": [
           "start_line",
           "line_count",
@@ -2493,7 +2493,7 @@
       },
       "BlobInfo": {
         "type": "object",
-        "description": "Response of the blob endpoint (docs/API.md).",
+        "description": "Response of the blob endpoint (api/README.md).",
         "required": [
           "sha",
           "path",
@@ -2541,7 +2541,7 @@
       },
       "BranchRef": {
         "type": "object",
-        "description": "Branch entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).",
+        "description": "Branch entry of `GET /api/v1/repos/{repo}/refs` (api/README.md).",
         "required": [
           "name",
           "target",
@@ -2567,7 +2567,7 @@
       },
       "BucketStats": {
         "type": "object",
-        "description": "One time bucket (docs/API.md).",
+        "description": "One time bucket (api/README.md).",
         "required": [
           "start",
           "commits"
@@ -2586,7 +2586,7 @@
       },
       "CommitAuthor": {
         "type": "object",
-        "description": "Commit author of `GET /api/v1/repos/{repo}/commits` (docs/API.md).\nThe raw email is never exposed; `email_hash` seeds locally generated avatars.",
+        "description": "Commit author of `GET /api/v1/repos/{repo}/commits` (api/README.md).\nThe raw email is never exposed; `email_hash` seeds locally generated avatars.",
         "required": [
           "name",
           "email_hash"
@@ -2604,7 +2604,7 @@
       },
       "CommitDetail": {
         "type": "object",
-        "description": "Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).\nSuperset of [`CommitInfo`] so the frontend can extend the log entry type.",
+        "description": "Commit detail of `GET /api/v1/repos/{repo}/commits/{sha}` (api/README.md).\nSuperset of [`CommitInfo`] so the frontend can extend the log entry type.",
         "required": [
           "sha",
           "summary",
@@ -2668,13 +2668,13 @@
           },
           "diffstat": {
             "$ref": "#/components/schemas/DiffStat",
-            "description": "First-parent diffstat (docs/API.md)."
+            "description": "First-parent diffstat (api/README.md)."
           }
         }
       },
       "CommitDiff": {
         "type": "object",
-        "description": "Structured diff of `GET /api/v1/repos/{repo}/commits/{sha}/diff` (docs/API.md).",
+        "description": "Structured diff of `GET /api/v1/repos/{repo}/commits/{sha}/diff` (api/README.md).",
         "required": [
           "sha",
           "parent",
@@ -2706,7 +2706,7 @@
       },
       "CommitInfo": {
         "type": "object",
-        "description": "Log entry of `GET /api/v1/repos/{repo}/commits` (docs/API.md).",
+        "description": "Log entry of `GET /api/v1/repos/{repo}/commits` (api/README.md).",
         "required": [
           "sha",
           "summary",
@@ -2794,7 +2794,7 @@
       },
       "DiffStat": {
         "type": "object",
-        "description": "Diffstat of `GET /api/v1/repos/{repo}/commits/{sha}` (docs/API.md).",
+        "description": "Diffstat of `GET /api/v1/repos/{repo}/commits/{sha}` (api/README.md).",
         "required": [
           "files",
           "files_changed",
@@ -2906,7 +2906,7 @@
       },
       "ErrorResponse": {
         "type": "object",
-        "description": "Error envelope shared by every failing endpoint (docs/API.md).",
+        "description": "Error envelope shared by every failing endpoint (api/README.md).",
         "required": [
           "error"
         ],
@@ -2945,7 +2945,7 @@
       },
       "FileMatch": {
         "type": "object",
-        "description": "A file with at least one match (docs/API.md).",
+        "description": "A file with at least one match (api/README.md).",
         "required": [
           "path",
           "lines"
@@ -3045,7 +3045,7 @@
       },
       "LineMatch": {
         "type": "object",
-        "description": "Matched line within a file (docs/API.md).",
+        "description": "Matched line within a file (api/README.md).",
         "required": [
           "line",
           "text"
@@ -3106,7 +3106,7 @@
       },
       "ObjectDetail": {
         "type": "object",
-        "description": "Response of `GET /objects/{oid}` (docs/API.md). Every key is always\npresent (this document's general rule) rather than a `oneOf` union — one\nenvelope, with only the `type`-matching payload populated.",
+        "description": "Response of `GET /objects/{oid}` (api/README.md). Every key is always\npresent (this document's general rule) rather than a `oneOf` union — one\nenvelope, with only the `type`-matching payload populated.",
         "required": [
           "sha",
           "type",
@@ -3229,7 +3229,7 @@
       },
       "OtherAuthors": {
         "type": "object",
-        "description": "Aggregate of the authors cut by `limit` (docs/API.md), so the visible rows\nplus this one always reconcile with the bucket totals.",
+        "description": "Aggregate of the authors cut by `limit` (api/README.md), so the visible rows\nplus this one always reconcile with the bucket totals.",
         "required": [
           "count",
           "commits",
@@ -3319,7 +3319,7 @@
       },
       "RepoInfo": {
         "type": "object",
-        "description": "Repository list entry as defined by `GET /api/v1/repos` in docs/API.md.",
+        "description": "Repository list entry as defined by `GET /api/v1/repos` in api/README.md.",
         "required": [
           "name",
           "section",
@@ -3383,7 +3383,7 @@
       },
       "RepoSummary": {
         "type": "object",
-        "description": "Repository summary as defined by `GET /api/v1/repos/{repo}` in docs/API.md.\nKept separate from [`RepoInfo`] — the list and summary responses are\ndistinct API contracts.",
+        "description": "Repository summary as defined by `GET /api/v1/repos/{repo}` in api/README.md.\nKept separate from [`RepoInfo`] — the list and summary responses are\ndistinct API contracts.",
         "required": [
           "name",
           "section",
@@ -3490,7 +3490,7 @@
       },
       "RevDiff": {
         "type": "object",
-        "description": "Two-revision diff of `GET /api/v1/repos/{repo}/diff` (docs/API.md). A\nplain tree-to-tree comparison (`git diff <from> <to>`), not a merge-base\n`...` diff.",
+        "description": "Two-revision diff of `GET /api/v1/repos/{repo}/diff` (api/README.md). A\nplain tree-to-tree comparison (`git diff <from> <to>`), not a merge-base\n`...` diff.",
         "required": [
           "from",
           "to",
@@ -3541,7 +3541,7 @@
       },
       "SearchResults": {
         "type": "object",
-        "description": "Response of `GET /api/v1/repos/{repo}/search` (docs/API.md).",
+        "description": "Response of `GET /api/v1/repos/{repo}/search` (api/README.md).",
         "required": [
           "sha",
           "type",
@@ -3663,7 +3663,7 @@
       },
       "StatsResults": {
         "type": "object",
-        "description": "Response of `GET /api/v1/repos/{repo}/stats` (docs/API.md).",
+        "description": "Response of `GET /api/v1/repos/{repo}/stats` (api/README.md).",
         "required": [
           "sha",
           "period",
@@ -3721,7 +3721,7 @@
       },
       "TagDetail": {
         "type": "object",
-        "description": "Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (docs/API.md).",
+        "description": "Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (api/README.md).",
         "required": [
           "name",
           "tag_object",
@@ -3798,7 +3798,7 @@
       },
       "TagRef": {
         "type": "object",
-        "description": "Tag entry of `GET /api/v1/repos/{repo}/refs` (docs/API.md).",
+        "description": "Tag entry of `GET /api/v1/repos/{repo}/refs` (api/README.md).",
         "required": [
           "name",
           "object",
@@ -3840,7 +3840,7 @@
       },
       "TreeEntryInfo": {
         "type": "object",
-        "description": "Tree entry of the tree endpoint (docs/API.md).",
+        "description": "Tree entry of the tree endpoint (api/README.md).",
         "required": [
           "name",
           "type",

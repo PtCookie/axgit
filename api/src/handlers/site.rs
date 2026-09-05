@@ -1,5 +1,5 @@
 //! Handlers for `GET /api/v1/site` (site-wide title, description, and
-//! readme, docs/API.md, docs/DECISIONS.md #70) and
+//! readme, api/README.md, docs/DECISIONS.md #70) and
 //! `GET /api/v1/site/{logo,favicon}` (docs/DECISIONS.md #81).
 
 use axum::extract::State;

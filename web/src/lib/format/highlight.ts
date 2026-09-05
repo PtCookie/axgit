@@ -1,7 +1,7 @@
 import type { HighlighterCore, LanguageInput } from "shiki/core";
 
 /**
- * Client-side syntax highlighting (ARCHITECTURE.md, DECISIONS.md #11/#19) —
+ * Client-side syntax highlighting (web/README.md, DECISIONS.md #11/#19) —
  * Astro's built-in Shiki is build-time only and can't touch runtime-fetched
  * blob content. Uses `shiki/core` with the **JavaScript RegExp engine**
  * (`shiki/engine/javascript`, `forgiving: true`) rather than the default

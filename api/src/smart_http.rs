@@ -1,5 +1,5 @@
 //! Smart HTTP (clone/fetch only) — proxies `git upload-pack --stateless-rpc`
-//! (docs/ARCHITECTURE.md "Smart HTTP", docs/DECISIONS.md #13).
+//! (api/README.md "Smart HTTP", docs/DECISIONS.md #13).
 //!
 //! - `GET /{repo}.git/info/refs?service=git-upload-pack` — spawns
 //!   `git upload-pack --stateless-rpc --advertise-refs` and prepends the

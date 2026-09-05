@@ -19,7 +19,7 @@ pub mod tree;
 use serde::Serialize;
 use utoipa::ToSchema;
 
-/// Repository list entry as defined by `GET /api/v1/repos` in docs/API.md.
+/// Repository list entry as defined by `GET /api/v1/repos` in api/README.md.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct RepoInfo {
     /// Repository name without the `.git` suffix.
@@ -55,7 +55,7 @@ pub struct RepoInfo {
     pub last_modified: Option<String>,
 }
 
-/// Repository summary as defined by `GET /api/v1/repos/{repo}` in docs/API.md.
+/// Repository summary as defined by `GET /api/v1/repos/{repo}` in api/README.md.
 /// Kept separate from [`RepoInfo`] — the list and summary responses are
 /// distinct API contracts.
 #[derive(Debug, Serialize, ToSchema)]
