@@ -1719,7 +1719,8 @@ half.
 - **`scripts/make-release.sh`** builds the frontend, then
   `cargo build --release --locked --features embed-web --target "$TARGET"`, and stages the binary
   with `packaging/axgit.service`, `axgit.env.example`, `INSTALL.md` and `LICENSE` into
-  `release/axgit-$VERSION-$TARGET.tar.gz` + `release/SHA256SUMS`. `VERSION` comes from
+  `release/axgit-$VERSION-$TARGET.tar.gz` + `release/SHA256SUMS` *(superseded by #89 — the tarball
+  now stages the binary and `LICENSE` only)*. `VERSION` comes from
   `api/Cargo.toml` rather than being duplicated; when `TAG_NAME` is set the script asserts it matches
   `v$VERSION` and fails **before building** — a tag/manifest skew should stop the release, not ship a
   mislabelled tarball.
@@ -1730,7 +1731,8 @@ half.
   explicitly rather than letting `cc` fall back to the host's glibc compiler, and checks the rustup
   target first — failing with exact remediation commands rather than a raw linker error. `TARGET` is
   overridable purely so the staging/tar/checksum logic can be exercised on a dev machine.
-- **`packaging/axgit.service`**: `Type=exec`, `EnvironmentFile=-/etc/axgit/axgit.env` (the `-` makes
+- **`packaging/axgit.service`** *(now inline in README.md#systemd-install, #89)*: `Type=exec`,
+  `EnvironmentFile=-/etc/axgit/axgit.env` (the `-` makes
   it optional, matching the all-env-var design). `User=`/`Group=` default to `git`, with a comment
   pointing at #74's ownership finding. Hardened with the standard systemd sandboxing directives while
   leaving process spawning and network access open — axgit forks `git` for archive/upload-pack, so
@@ -1738,9 +1740,10 @@ half.
   reads `$HOME/.gitconfig` as part of the ownership-check config stack (#74), and a fully hidden home
   would make that lookup silently see nothing.
 - **`packaging/axgit.env.example` mirrors README.md's configuration table field-for-field** so the
-  two don't drift — both describe the same `Config` struct.
+  two don't drift — both describe the same `Config` struct *(superseded by #89 — the mirror was the
+  drift; README.md's table is now the only list)*.
 - **`packaging/INSTALL.md` ships inside the tarball**, since it is needed at install time on a host
-  that may never have cloned this repo.
+  that may never have cloned this repo *(superseded by #89 — it is a README.md section instead)*.
 - **Jenkins releases on `v*` tag builds only, via `archiveArtifacts`** — producing and retaining the
   artifact, matching the pipeline's existing "test-only, artifacts archived" posture. The `Release`
   stage runs after `Test`, so a broken build never produces a tagged artifact even if the tag was
@@ -2109,3 +2112,32 @@ first removed the reason a non-embedded build existed at all.
   the explicit flag used to. The Jenkinsfile's old standalone "Embedded build" stage is gone; its
   job (proving the frontend-bundled path compiles and its tests pass) is now just what the default
   `api` branch already does.
+
+## #89 `packaging/` folded into README.md; one config example at the repository root
+
+Four files existed to describe settings and install steps that README.md already described. Each
+was a second place to update, and #75's own "mirrors README.md field-for-field" bullet named the
+problem it was creating: `axgit.env.example` and `axgit.toml.example` both enumerated the same
+`Config` struct as README.md's configuration table, so a new setting meant editing three lists to
+say one thing.
+
+- **`packaging/INSTALL.md` → README.md's `systemd install` section**, and **`packaging/axgit.service`
+  → an `ini` code block inside it**, comments and all. The unit's comments *are* its documentation
+  (the `User=`/`Group=` ownership note, `ProtectHome=read-only` vs `yes`), so they moved with it
+  rather than being summarized away; the one bullet that step 2 already explains in prose was cut.
+- **`packaging/axgit.env.example` deleted outright.** README.md's configuration table lists every
+  `AXGIT_*` variable with its config-file key and default — the template added nothing but a place
+  for the two to disagree.
+- **`packaging/axgit.toml.example` → `axgit.toml` at the repository root**, which doubles as the
+  local-dev config (`--config ./axgit.toml`, since axgit only auto-reads `/etc/axgit/axgit.toml`).
+  One commented file now serves both "what can I set?" and "what do I run locally?", so the example
+  is exercised by ordinary development instead of only being read at install time.
+- **The release tarball is the binary plus `LICENSE`.** The install steps are no longer *in* the
+  tarball, which is the real cost here — #75 shipped `INSTALL.md` precisely because the install host
+  may never have cloned the repo. Accepted deliberately: the tarball is downloaded from a page that
+  can link README.md#systemd-install, and one authoritative copy of the steps beats a second copy
+  that silently ages. Revisit by generating `INSTALL.md` from the README section at release time if
+  that assumption ever stops holding.
+- **`compose.example.yaml` → `compose.yaml`.** The header comment already said it is illustrative
+  and not wired into any deploy process, and the `.example` infix defeated editor/tooling
+  recognition of the compose schema for no benefit the comment wasn't already providing.

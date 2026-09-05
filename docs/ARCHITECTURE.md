@@ -195,7 +195,7 @@ render.
 - **Single-binary packaging** (DECISIONS.md #75, #79): `scripts/make-release.sh` builds the
   default (embedded) binary for both `x86_64-unknown-linux-musl` (natively) and
   `aarch64-unknown-linux-musl` (cross, via a target-specific musl gcc — no Docker either way) and
-  stages each with a systemd unit, env-file template, and install docs (`packaging/`) into its own
-  release tarball, plus one checksums file covering both. `Jenkinsfile`'s `Release` stage runs it
+  stages each with `LICENSE` into its own release tarball, plus one checksums file covering both
+  (the systemd unit and install steps live in README.md, #89). `Jenkinsfile`'s `Release` stage runs it
   on `v*` tag builds and archives the output; the service runs as the repository-owning user, per
   #74's ownership finding, so no `safe.directory` config is needed there either.

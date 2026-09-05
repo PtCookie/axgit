@@ -1,0 +1,84 @@
+# Axgit configuration — the worked example of every config-file key
+# (docs/DECISIONS.md #87), doubling as the local development config. The
+# active values below are the local-dev ones; a deployment copies this to
+# /etc/axgit/axgit.toml and edits them (see README.md#systemd-install and
+# README.md#configuration, which carry the same settings as a table).
+#
+# Axgit only reads /etc/axgit/axgit.toml on its own, so point it at this file
+# explicitly when running from a checkout:
+#
+#   cargo run --manifest-path api/Cargo.toml -- --config ./axgit.toml
+#   AXGIT_CONFIG=./axgit.toml cargo run --manifest-path api/Cargo.toml
+#
+# Every setting here is also a CLI flag (axgit --help) and an AXGIT_*
+# environment variable; api/src/config/ is the source of truth and README.md
+# carries the same table. Precedence is CLI flag > environment variable >
+# this file > default, so a value set here is ignored while the matching
+# AXGIT_* variable is also set in the shell.
+#
+# Keys axgit doesn't recognize are logged as a warning and ignored, so a
+# cgitrc-derived file with cgit-only keys still boots.
+
+# Directory containing bare repositories (*.git). The fixtures are generated
+# by ./scripts/make-fixtures.sh; the /srv/git default only makes sense
+# inside the container image.
+repo-root = "./fixtures/repos"
+
+# Astro static build to serve at /. The default cargo build already bakes
+# web/dist into the binary, so this is only worth setting to iterate on the
+# frontend (pnpm --filter web build) without a full cargo rebuild per change.
+static-dir = "./web/dist"
+
+# Base URL used when displaying clone URLs on the summary page.
+clone-url-base = "http://localhost:8080"
+
+# Socket address to listen on.
+# listen = "0.0.0.0:8080"
+
+# Default repository index sort order (name, desc, owner, idle, section,
+# optionally '-'-prefixed); a request's own ?sort= overrides it.
+# repository-sort = "name"
+
+# Site-wide branding and index-page chrome. Key names are cgit's own cgitrc
+# spelling, so existing values can be pasted straight across.
+[site]
+
+# Site-wide title, shown as the header brand (falls back to "Axgit").
+# root-title = "PtCookie Git"
+
+# Site-wide description, shown on the index page and in
+# <meta name="description">.
+# root-desc = "self-hosted git"
+
+# Path to a markdown/reStructuredText/plain-text file rendered on the index
+# page.
+# root-readme = "./README.md"
+
+# Site logo, shown beside the header brand. An http(s):// URL (used
+# verbatim) or a filesystem path axgit serves itself at
+# GET /api/v1/site/logo. Unset shows axgit's own mark (/favicon.svg), the
+# same one the tab icon defaults to.
+# logo = "./web/public/favicon.svg"
+
+# Where the logo links to; an http(s):// URL or a root-relative path,
+# falling back to /.
+# logo-link = "https://example.com"
+
+# Site favicon, replacing axgit's own default. Same URL-or-path rule as
+# logo, served at GET /api/v1/site/favicon.
+# favicon = "./web/public/favicon.ico"
+
+# Cache knobs. axgit-specific — cgit's own cache-* options don't map onto
+# these. Worth turning down while developing, so an edit to a fixture repo
+# shows up without waiting out a TTL.
+[cache]
+
+# Repository scan cache TTL, in seconds.
+# scan-ttl = 60
+
+# Response cache TTL, in seconds (a safety net — pushes invalidate entries
+# immediately via the HEAD/agefile validator).
+# response-ttl = 300
+
+# Response cache capacity, in bytes.
+# response-max-bytes = 33554432

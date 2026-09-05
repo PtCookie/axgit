@@ -2,7 +2,7 @@
 # Packages release tarballs for the single-binary, non-container deploy path
 # (the default cargo build bakes `web/dist` in, docs/DECISIONS.md #74/#75/#79/#88):
 # builds `axgit` with `web/dist` baked in for each target in $TARGETS, then stages each one
-# together with the systemd unit, env-file template, and install docs into
+# together with LICENSE into
 #   release/axgit-$VERSION-$TARGET.tar.gz  (one per target)
 #   release/SHA256SUMS                     (covers every tarball produced)
 #
@@ -289,10 +289,9 @@ for t in $TARGETS; do
   rm -rf "$STAGE_DIR"
   mkdir -p "$STAGE_DIR"
   cp "$BINARY" "$STAGE_DIR/axgit"
-  cp "$ROOT/packaging/axgit.service" "$STAGE_DIR/"
-  cp "$ROOT/packaging/axgit.env.example" "$STAGE_DIR/"
-  cp "$ROOT/packaging/axgit.toml.example" "$STAGE_DIR/"
-  cp "$ROOT/packaging/INSTALL.md" "$STAGE_DIR/"
+  # Binary + LICENSE only: the systemd unit, the config templates and the
+  # install steps all live in README.md#systemd-install now, rather than
+  # being duplicated as files that ship in every tarball (#89).
   cp "$ROOT/LICENSE" "$STAGE_DIR/"
 
   TARBALL="$RELEASE_DIR/$PKG_NAME.tar.gz"

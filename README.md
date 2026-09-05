@@ -97,7 +97,7 @@ docker run --rm -p 8080:8080 -v "$PWD/fixtures/repos:/srv/git:ro" axgit:latest
 ```
 
 In the actual git-compose stack, this image replaces the `git-web` service — see
-[compose.example.yaml](compose.example.yaml) for an illustrative service definition
+[compose.yaml](compose.yaml) for an illustrative service definition
 (the real change is tracked in the separate git-compose.git repository).
 
 ### Single-binary build
@@ -129,8 +129,149 @@ native x86_64 build, and for the aarch64 leg either musl.cc/Homebrew's `musl-cro
 (`aarch64-linux-musl-gcc`) or `messense/macos-cross-toolchains` (`aarch64-unknown-linux-musl-gcc`)
 — both cross conventions are also usable on macOS, so both musl legs can be built and verified on
 a Mac dev machine (docs/DECISIONS.md #79). Produces one `release/axgit-<version>-<target>.tar.gz`
-per target and a single `release/SHA256SUMS` covering all of them — see the tarball's own
-`INSTALL.md` (also at [packaging/INSTALL.md](packaging/INSTALL.md)) for the systemd install steps.
+per target — the binary plus `LICENSE`, nothing else — and a single `release/SHA256SUMS` covering
+all of them. See [systemd install](#systemd-install) for what to do with one.
+
+### systemd install
+
+The alternative to the container image, for a bare-metal or VM install. A release tarball is a
+complete deployment on its own: the binary has the frontend baked in (docs/DECISIONS.md #74, #88),
+so nothing else from the build needs to be copied. A `git` binary must still be on `PATH` — it's
+used for archive downloads and Smart HTTP clone/fetch (docs/ARCHITECTURE.md's hybrid libgit2+exec
+policy).
+
+Releases ship one tarball per CPU architecture (docs/DECISIONS.md #79), and the filename is the
+only place that's recorded — so before installing, check `uname -m` (`x86_64` or `aarch64`; on
+Linux, `aarch64` is arm64) against the target triple in the `axgit-<version>-<target>.tar.gz` name.
+
+**1. Install the binary**
+
+```sh
+sudo install -m 755 axgit /usr/local/bin/axgit
+```
+
+**2. Choose the service user**
+
+Run the service as **the user that owns the repository root** (`AXGIT_REPO_ROOT`), not as a
+dedicated unprivileged user with no relation to the repositories. This matters because axgit reads
+bare repositories directly with libgit2 and shells out to `git`, both of which refuse to operate on
+a directory owned by a different uid ("dubious ownership") unless a `safe.directory` config entry is
+added. When the process uid already matches the repositories' owning uid, that check passes outright
+and no `safe.directory` entry is needed anywhere — this was verified by reading libgit2's
+ownership-check source directly (docs/DECISIONS.md #74). If your repositories are owned by e.g. a
+`git` user, run axgit as that same user.
+
+**3. Install the unit**
+
+Write this to `/etc/systemd/system/axgit.service`, with `User=`/`Group=` set to the account chosen
+above. The comments are the rationale for each non-obvious directive:
+
+```ini
+[Unit]
+Description=Axgit — read-only web frontend for bare Git repositories
+Documentation=https://git.ptcookie.net/axgit.git
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/axgit
+Restart=on-failure
+RestartSec=2
+
+# The user that OWNS the repository root — see step 2. libgit2's/git's
+# dubious-ownership check passes outright when the process uid matches the
+# repositories' owning uid, so no [safe.directory] entry is needed anywhere
+# (docs/DECISIONS.md #74/#75).
+User=git
+Group=git
+
+# One of the two configuration surfaces — every AXGIT_* variable from
+# api/src/config/ (see README.md's configuration table). The leading '-'
+# makes the file optional: axgit's own defaults apply if it's absent.
+#
+# The other is /etc/axgit/axgit.toml, which axgit reads by itself when it
+# exists (docs/DECISIONS.md #87) — no unit change needed. A variable set
+# here wins over the same setting in that file, so pick one of the two per
+# setting rather than splitting one across both.
+EnvironmentFile=-/etc/axgit/axgit.env
+
+# Sandboxing. The app never writes anywhere (the read-only invariant) but
+# does fork/exec `git` for archive/upload-pack, so process spawning and
+# network access are left open while filesystem/kernel surface is locked
+# down.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+# read-only, not "yes": libgit2 still reads $HOME/.gitconfig for the
+# ownership-check config stack (docs/DECISIONS.md #74).
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Uncomment to bind a privileged port (e.g. :80) directly instead of sitting
+# behind a reverse proxy (the default deployment shape, docs/DECISIONS.md
+# #10):
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**4. Configure it**
+
+Both surfaces below are documented in [Configuration](#configuration); axgit runs on sane defaults
+for anything left unset, but `AXGIT_REPO_ROOT` is required in practice (the `/srv/git` default only
+makes sense inside the container image).
+
+```sh
+sudo mkdir -p /etc/axgit
+sudo "$EDITOR" /etc/axgit/axgit.env    # AXGIT_REPO_ROOT=…, AXGIT_CLONE_URL_BASE=…, one per line
+```
+
+To keep the configuration in one commentable file instead of a list of environment variables, write
+`/etc/axgit/axgit.toml` — axgit reads that path on its own, with no unit change needed
+(docs/DECISIONS.md #87). [axgit.toml](axgit.toml) in this repository is a commented example covering
+every key — copy it and replace its (development-shaped) active values. An `AXGIT_*` variable wins
+over the same setting in the TOML file, so set any given value in one file or the other, not both.
+
+**5. Start it**
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now axgit
+sudo systemctl status axgit
+```
+
+axgit listens on `AXGIT_LISTEN` (default `0.0.0.0:8080`) and has no built-in TLS — put a reverse
+proxy in front of it for a public deployment (docs/DECISIONS.md #10), the same assumption
+`compose.yaml` makes for the container deployment.
+
+**6. Verify**
+
+```sh
+curl -s http://127.0.0.1:8080/api/v1/repos
+```
+
+should return a JSON array (empty if `AXGIT_REPO_ROOT` has no repositories yet), and
+`http://127.0.0.1:8080/` should serve the web UI — with no `AXGIT_STATIC_DIR` set, this is the
+frontend baked into the binary.
+
+**Upgrading** is just a binary swap; repository data is never touched by axgit itself:
+
+```sh
+sudo systemctl stop axgit
+sudo install -m 755 axgit /usr/local/bin/axgit   # from a newer release tarball
+sudo systemctl start axgit
+```
 
 ### Configuration
 

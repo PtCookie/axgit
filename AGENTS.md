@@ -35,7 +35,7 @@ cited from source comments as `docs/DECISIONS.md #NN`. When finishing a piece of
   file, in that precedence order** (`api/src/config/`, docs/DECISIONS.md #87). Adding a setting
   means touching all of them together: the clap field in `config/mod.rs`, the matching
   `FileConfig` field *and* known-key list entry in `config/file.rs`, its arm in `merge`, plus
-  README.md's configuration table and `packaging/axgit.toml.example`/`axgit.env.example`.
+  README.md's configuration table and the `axgit.toml` example at the repository root.
 - **Repository metadata is read from each repo's `config` file, `[cgit]` section**
   (`section`, `name`, `owner`, `desc`). The git-server's `git-init` script writes this format, so
   **do not break compatibility**. An `[axgit]` section, if present, takes precedence.
@@ -197,11 +197,11 @@ axgit/
     tests/            # vitest (browser mode)
     e2e/              # Playwright
   docs/               # ARCHITECTURE.md, API.md, DECISIONS.md, ROADMAP.md
-  packaging/          # systemd unit, env-file template, install docs (single-binary release)
   scripts/            # make-fixtures.sh, make-release.sh
   lefthook.yml
   openapi.json        # generated OpenAPI spec (see the regeneration command above)
-  compose.example.yaml # illustrative git-compose service definition
+  axgit.toml          # commented example config file (every key; dev values active)
+  compose.yaml        # illustrative git-compose service definition
   Containerfile       # web build → api build → runtime (single image)
   Dockerfile          # symlink -> Containerfile (for docker build compatibility)
 ```
