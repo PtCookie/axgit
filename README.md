@@ -301,8 +301,8 @@ over the same setting in the TOML file, so set any given value in one file or th
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now axgit
-sudo systemctl status axgit
+sudo systemctl enable --now axgit.service
+sudo systemctl status axgit.service
 ```
 
 axgit listens on `AXGIT_LISTEN` (default `0.0.0.0:8080`) and has no built-in TLS — put a reverse
@@ -322,9 +322,9 @@ frontend baked into the binary.
 **Upgrading** is just a binary swap; repository data is never touched by axgit itself:
 
 ```sh
-sudo systemctl stop axgit
+sudo systemctl stop axgit.service
 sudo install -m 755 axgit /usr/local/bin/axgit   # from a newer release tarball
-sudo systemctl start axgit
+sudo systemctl start axgit.service
 ```
 
 ### Configuration
@@ -403,3 +403,7 @@ precedence key-by-key.
 `on`/`off`, `1`/`0`). A submodule with no `module-link` key falls back to `.gitmodules`'s own
 `url`. Last-activity timestamps come from the agefile (`info/web/last-modified`, updated by the
 git-server's post-receive hook), falling back to the HEAD commit's authordate when it's missing.
+
+## License
+
+MIT &copy; [PtCookie](https://www.ptcookie.net)
