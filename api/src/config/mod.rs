@@ -90,7 +90,7 @@ pub struct Config {
     /// `http(s)://` URL (used verbatim) or a filesystem path axgit reads and
     /// serves itself at `GET /api/v1/site/logo` (`branding.rs`,
     /// docs/DECISIONS.md #81) — the path form is what works under the
-    /// `embed-web` single-binary deploy, which has no static directory to
+    /// default single-binary deploy, which has no static directory to
     /// drop an image into.
     #[arg(long, env = "AXGIT_LOGO")]
     pub logo: Option<String>,

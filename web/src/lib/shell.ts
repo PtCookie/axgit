@@ -1,45 +1,40 @@
+import { REPO_SHELL_PARAM, SHELL_ROUTES } from "./shell-routes";
+
 /**
- * Reserved `getStaticPaths` param the `/{repo}` page shells are built under.
- * The static build has one HTML file per *route shape*, not per repository —
- * the repository list is per-deployment and unknown at build time — so the
- * server rewrites `/{repo}/…` requests onto these files
- * (`api/src/shell.rs`, docs/DECISIONS.md #17).
+ * Re-exported so the `.astro` pages (and anything else) keep importing the
+ * placeholder param from `lib/shell` — the route *table* moved to
+ * `lib/shell-routes.ts` (docs/DECISIONS.md #88), the entry point did not.
  */
-export const REPO_SHELL_PARAM = "__repo__";
+export { REPO_SHELL_PARAM };
 
 /**
  * Maps a request path to the page shell that serves it, as a site-root path.
- * Mirrors `api/src/shell.rs::shell_for` — the two must change together; both
- * are covered by the same case table (`web/tests/lib/shell.test.ts`,
- * `api/src/shell.rs`'s unit tests).
+ *
+ * Walks the same table (`lib/shell-routes.ts`) the build emits to
+ * `dist/shell-routes.json` and `api/src/shell.rs::shell_for` reads, so the
+ * dev server and the production server agree by construction rather than by
+ * two matchers being kept in sync by hand (docs/DECISIONS.md #88).
  */
 export function shellFor(pathname: string): string {
   const segments = pathname.split("/").filter((segment) => segment.length > 0);
 
   if (segments.length === 0) return "/";
-  if (segments.length === 1) return `/${REPO_SHELL_PARAM}`;
-  if (segments.length === 2 && segments[1] === "refs") return `/${REPO_SHELL_PARAM}/refs`;
-  if (segments.length === 2 && segments[1] === "log") return `/${REPO_SHELL_PARAM}/log`;
-  if (segments.length === 2 && segments[1] === "search") return `/${REPO_SHELL_PARAM}/search`;
-  if (segments.length === 2 && segments[1] === "stats") return `/${REPO_SHELL_PARAM}/stats`;
-  // The compare page never carries the revisions in the path (they're
-  // `?from=`/`?to=` query params, since a ref may itself contain `/`) — a
-  // bare 2-segment shape is the whole story, unlike commit's 3-segment one.
-  if (segments.length === 2 && segments[1] === "diff") return `/${REPO_SHELL_PARAM}/diff`;
-  if (segments.length === 3 && segments[1] === "commit") return `/${REPO_SHELL_PARAM}/commit`;
-  // object: an oid is a single fixed segment, never containing `/` — same
-  // exactly-3-segment shape as commit.
-  if (segments.length === 3 && segments[1] === "object") return `/${REPO_SHELL_PARAM}/object`;
-  // tree: the path after `/tree/` is optional (empty means the root tree).
-  if (segments.length >= 2 && segments[1] === "tree") return `/${REPO_SHELL_PARAM}/tree`;
-  // blob: at least one path segment is required — there's nothing to show
-  // for `/{repo}/blob` itself.
-  if (segments.length >= 3 && segments[1] === "blob") return `/${REPO_SHELL_PARAM}/blob`;
-  // blame: same "at least one path segment" rule as blob.
-  if (segments.length >= 3 && segments[1] === "blame") return `/${REPO_SHELL_PARAM}/blame`;
-  // tag: at least one name segment is required (a tag name may itself
-  // contain `/`) — there's nothing to show for `/{repo}/tag` itself, and the
-  // refs page already is the tag listing.
-  if (segments.length >= 3 && segments[1] === "tag") return `/${REPO_SHELL_PARAM}/tag`;
+
+  // Only the *shape* past the repository segment decides the shell; the
+  // repository name itself is never inspected.
+  const rest = segments.slice(1);
+
+  for (const route of SHELL_ROUTES) {
+    if (route.segment === null) {
+      if (rest.length === 0) return `/${REPO_SHELL_PARAM}`;
+      continue;
+    }
+    if (rest[0] !== route.segment) continue;
+    const extra = rest.length - 1;
+    if (extra < route.minExtra) continue;
+    if (route.maxExtra !== null && extra > route.maxExtra) continue;
+    return `/${REPO_SHELL_PARAM}/${route.shell}`;
+  }
+
   return "/404";
 }

@@ -23,12 +23,12 @@ services:
       # `environment:` block below — axgit reads /etc/axgit/axgit.toml by itself when it
       # exists. See packaging/axgit.toml.example for every key.
       #
-      # Caveat specific to the container: an environment variable always beats the file, and
-      # this image sets AXGIT_STATIC_DIR in its own ENV (Containerfile — it names where the
-      # image put the frontend build), so that one key can't be changed from the file.
-      # Everything else is the file's to set, as long as the same setting isn't also spelled
-      # out under `environment:` below. Note that setting `listen` in the file means updating
-      # `expose:`, the healthcheck and any published port to match.
+      # Caveat specific to the container: an environment variable always beats the file, but
+      # this image sets no ENV of its own (docs/DECISIONS.md #88 — the frontend is baked into
+      # the binary, so there's no AXGIT_STATIC_DIR to pin), so every setting is the file's to
+      # set, as long as it isn't also spelled out under `environment:` below. Note that
+      # setting `listen` in the file means updating `expose:`, the healthcheck and any
+      # published port to match.
       # - ./axgit.toml:/etc/axgit/axgit.toml:ro
     environment:
       # Base URL shown for `git clone` in the repository summary page.

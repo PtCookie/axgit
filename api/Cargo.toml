@@ -27,18 +27,22 @@ mime_guess = "2"
 # Response cache keyed by (repo, endpoint, params) — docs/ARCHITECTURE.md#caching.
 moka = { version = "0.12", features = ["future"] }
 # Decoding request paths against the embedded `web/dist` copy
-# (`embed-web` feature, docs/DECISIONS.md #74) — already in the dependency
-# graph transitively (axum/tower-http), pulled in directly here too.
+# (docs/DECISIONS.md #74) — already in the dependency graph transitively
+# (axum/tower-http), pulled in directly here too.
 percent-encoding = "2"
-# Bakes `web/dist` into the binary for the `embed-web` feature (the
-# single-binary deploy path, docs/DECISIONS.md #74). `debug-embed` embeds in
-# debug builds too, so `cargo test --features embed-web` exercises the same
-# code path as release; `mime-guess` reuses the same `mime_guess` crate
-# already used for file content types elsewhere, so embedded and
-# `AXGIT_STATIC_DIR` serving agree; `deterministic-timestamps` keeps the
-# compiled binary reproducible across checkouts (the embedded timestamps
-# themselves are never read by this crate).
-rust-embed = { version = "8.12", features = ["debug-embed", "mime-guess", "deterministic-timestamps"], optional = true }
+# Bakes `web/dist` into the binary by default — the standard single-binary
+# deploy path (docs/DECISIONS.md #74, #88), so `web/dist` must exist before a
+# default cargo build (`api/build.rs` says so when it doesn't). The crate
+# itself is always a dependency; the opt-in `api-only` feature only skips
+# *using* it (`assets.rs`'s `#[derive(rust_embed::Embed)]` struct is
+# `cfg`-gated out), so an `api-only` build never touches `web/dist` and has
+# no such requirement. `debug-embed` embeds in debug builds too, so
+# `cargo test` exercises the same code path as release; `mime-guess` reuses
+# the same `mime_guess` crate already used for file content types elsewhere,
+# so embedded and `AXGIT_STATIC_DIR` serving agree; `deterministic-timestamps`
+# keeps the compiled binary reproducible across checkouts (the embedded
+# timestamps themselves are never read by this crate).
+rust-embed = { version = "8.12", features = ["debug-embed", "mime-guess", "deterministic-timestamps"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -57,12 +61,12 @@ utoipa = { version = "5.5.0", features = ["preserve_order"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 
 [features]
-# Bakes `web/dist` into the binary — the single-binary, non-container deploy
-# path (docs/DECISIONS.md #74). Requires `pnpm --filter web build` to have
-# produced `web/dist` before this feature is built; the default build has no
-# compile-time dependency on it. `AXGIT_STATIC_DIR` still overrides at
-# runtime when set.
-embed-web = ["dep:rust-embed"]
+# Skips baking `web/dist` into the binary (docs/DECISIONS.md #74, #88) for a
+# pure API build with no bundled frontend. `AXGIT_STATIC_DIR` still serves a
+# directory at runtime either way — this only removes the fallback baked
+# into the binary at compile time, and with it the requirement that
+# `web/dist` exist before this build.
+api-only = []
 
 [dev-dependencies]
 # Decompressing the archive endpoint's bzip2/xz/zstd output in tests, without

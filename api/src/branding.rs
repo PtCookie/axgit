@@ -4,7 +4,7 @@
 //! `AXGIT_FAVICON` each name either an `http(s)://` URL (used verbatim,
 //! cgit's own behaviour) or a filesystem path axgit reads and serves itself
 //! at request time — the file form is what actually works under the
-//! `embed-web` single-binary deploy path, where there is no static
+//! default single-binary deploy path, where there is no static
 //! directory to drop an image into for a URL to point at.
 
 use std::path::{Path, PathBuf};

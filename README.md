@@ -102,18 +102,20 @@ In the actual git-compose stack, this image replaces the `git-web` service — s
 
 ### Single-binary build
 
-For a bare-metal/systemd install instead of the container, `web/dist` can be baked directly into
-the `axgit` executable (docs/DECISIONS.md #74) — the resulting binary plus a `git` binary on
-`PATH` is a complete deployment, no `AXGIT_STATIC_DIR`/directory needed:
+The default build bakes `web/dist` directly into the `axgit` executable (docs/DECISIONS.md #74,
+#88) — the resulting binary plus a `git` binary on `PATH` is a complete deployment, no
+`AXGIT_STATIC_DIR`/directory needed:
 
 ```sh
 pnpm --filter web build
-cargo build --release --manifest-path api/Cargo.toml --features embed-web
+cargo build --release --manifest-path api/Cargo.toml
 ```
 
-`AXGIT_STATIC_DIR` still overrides the embedded copy at runtime when set. To package this into an
-installable release tarball (binary + systemd unit + env-file template + install docs,
-docs/DECISIONS.md #75):
+`AXGIT_STATIC_DIR` still overrides the embedded copy at runtime when set. A pure-API build with no
+bundled frontend at all is `cargo build --release --manifest-path api/Cargo.toml --features
+api-only` — that one does need `AXGIT_STATIC_DIR` (or nothing is served at `/`) and has no
+compile-time dependency on `web/dist`. To package the default build into an installable release
+tarball (binary + systemd unit + env-file template + install docs, docs/DECISIONS.md #75):
 
 ```sh
 ./scripts/make-release.sh
@@ -162,16 +164,16 @@ response-ttl = 300
 Section names are organizational only; keys keep cgit's own `cgitrc` spelling wherever cgit has
 one, so an existing value can be pasted straight across.
 
-One consequence of that precedence order is worth knowing before mounting a config file into the
-container: the image sets `AXGIT_STATIC_DIR` in its own `ENV` (`Containerfile` — it names where the
-image put the frontend build), so that one key can't be changed from the file. Everything else is
-the file's to set, as long as the same setting isn't also passed as an environment variable.
+The container image sets no `ENV` of its own (docs/DECISIONS.md #88 — the frontend is baked into
+the binary, so there's nothing left for `AXGIT_STATIC_DIR` to point at), so every setting below,
+including it, is the config file's to set, as long as the same setting isn't also passed as an
+environment variable.
 
 | Variable | Config file key | Default | Description |
 | --- | --- | --- | --- |
 | `AXGIT_CONFIG` | _(n/a)_ | `/etc/axgit/axgit.toml` when it exists | TOML config file holding any of the settings below |
 | `AXGIT_REPO_ROOT` | `repo-root` | `/srv/git` | Directory containing bare repositories (`*.git`) |
-| `AXGIT_STATIC_DIR` | `static-dir` | _(unset)_ | Astro static build (`web/dist`) to serve at `/`; set to `/app/dist` inside the image. Overrides an `embed-web`-baked build when both are present |
+| `AXGIT_STATIC_DIR` | `static-dir` | _(unset)_ | Astro static build (`web/dist`) to serve at `/`, overriding the binary's own baked-in copy. Only way to serve a frontend at all with the `api-only` Cargo feature |
 | `AXGIT_LISTEN` | `listen` | `0.0.0.0:8080` | Socket address to listen on |
 | `AXGIT_CLONE_URL_BASE` | `clone-url-base` | _(unset)_ | Base URL used when displaying clone URLs on the summary page |
 | `AXGIT_CACHE_SCAN_TTL` | `cache.scan-ttl` | `60` | Repository scan cache TTL, in seconds |

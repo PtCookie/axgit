@@ -1,29 +1,31 @@
 //! Where the frontend static build is served from — a directory
-//! (`AXGIT_STATIC_DIR`) or, behind the opt-in `embed-web` Cargo feature, a
-//! copy of `web/dist` baked into the binary at compile time
-//! (docs/DECISIONS.md #74, the single-binary deploy path). `shell.rs` reads
-//! page shells through this module without needing to know which mode it's
-//! in; `routes.rs` additionally uses [`serve_embedded_file`] directly to
-//! serve real files (the embedded equivalent of `ServeDir`) when embedded.
+//! (`AXGIT_STATIC_DIR`) or, by default, a copy of `web/dist` baked into the
+//! binary at compile time (docs/DECISIONS.md #74, #88 — the single-binary
+//! deploy path is the standard one). The opt-in `api-only` Cargo feature
+//! drops the baked-in copy for a build with no bundled frontend at all;
+//! `AXGIT_STATIC_DIR` still works either way. `shell.rs` reads page shells
+//! through this module without needing to know which mode it's in;
+//! `routes.rs` additionally uses [`serve_embedded_file`] directly to serve
+//! real files (the embedded equivalent of `ServeDir`) when embedded.
 
 use std::path::{Path, PathBuf};
 
 use axum::extract::Request;
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 use axum::http::HeaderMap;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::Next;
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 use axum::response::IntoResponse;
 use axum::response::Response;
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 use percent_encoding::percent_decode_str;
 
 use crate::handlers::IMMUTABLE_CACHE_CONTROL;
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 use crate::handlers::{if_none_match, not_modified};
 
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 #[derive(rust_embed::Embed)]
 #[folder = "../web/dist"]
 struct WebDist;
@@ -33,24 +35,24 @@ struct WebDist;
 #[derive(Clone)]
 pub enum Assets {
     Dir(PathBuf),
-    #[cfg(feature = "embed-web")]
+    #[cfg(not(feature = "api-only"))]
     Embedded,
 }
 
 impl Assets {
     /// `static_dir` (`AXGIT_STATIC_DIR`) always wins when set, so an
     /// operator can override a baked-in build without rebuilding. `None`
-    /// means "serve no frontend" — only possible when the `embed-web`
-    /// feature is off and no directory was configured.
+    /// means "serve no frontend" — only possible when built with the
+    /// `api-only` feature and no directory was configured.
     pub fn resolve(static_dir: Option<&Path>) -> Option<Self> {
         if let Some(dir) = static_dir {
             return Some(Assets::Dir(dir.to_owned()));
         }
-        #[cfg(feature = "embed-web")]
+        #[cfg(not(feature = "api-only"))]
         {
             Some(Assets::Embedded)
         }
-        #[cfg(not(feature = "embed-web"))]
+        #[cfg(feature = "api-only")]
         {
             None
         }
@@ -60,7 +62,7 @@ impl Assets {
     fn label(&self) -> &'static str {
         match self {
             Assets::Dir(_) => "directory",
-            #[cfg(feature = "embed-web")]
+            #[cfg(not(feature = "api-only"))]
             Assets::Embedded => "embedded",
         }
     }
@@ -75,7 +77,23 @@ impl Assets {
     pub async fn read(&self, relative: &Path) -> Option<Vec<u8>> {
         match self {
             Assets::Dir(dir) => tokio::fs::read(dir.join(relative)).await.ok(),
-            #[cfg(feature = "embed-web")]
+            #[cfg(not(feature = "api-only"))]
+            Assets::Embedded => {
+                let key = relative.to_str()?;
+                WebDist::get(key).map(|file| file.data.into_owned())
+            }
+        }
+    }
+
+    /// Blocking counterpart to [`Self::read`], for the one-time startup read
+    /// (`shell::ShellRoutes::load`) that runs before `build_router` hands
+    /// back a `Router` for `axum::serve` to poll — there's no async runtime
+    /// request-path to `.await` from yet, and a manifest this small blocks
+    /// for a negligible time next to standing up a bound listener.
+    pub fn read_sync(&self, relative: &Path) -> Option<Vec<u8>> {
+        match self {
+            Assets::Dir(dir) => std::fs::read(dir.join(relative)).ok(),
+            #[cfg(not(feature = "api-only"))]
             Assets::Embedded => {
                 let key = relative.to_str()?;
                 WebDist::get(key).map(|file| file.data.into_owned())
@@ -134,7 +152,7 @@ pub(crate) fn log_missing_shell(assets: &Assets, relative: &Path) {
 /// (docs/DECISIONS.md #77); every other embedded file (page shells aren't
 /// served by this function, but e.g. `favicon.svg`/`robots.txt` are) is left
 /// without one, matching `ServeDir`'s own default.
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 pub fn serve_embedded_file(headers: &HeaderMap, uri_path: &str) -> Option<Response> {
     let decoded = percent_decode_str(uri_path.trim_start_matches('/'))
         .decode_utf8()
@@ -154,7 +172,7 @@ pub fn serve_embedded_file(headers: &HeaderMap, uri_path: &str) -> Option<Respon
     )
 }
 
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 mod hex {
     /// Lowercase hex encoding for a sha256 digest — the codebase's other
     /// sha256 `ETag` (`handlers/mod.rs::body_etag`) gets this for free from
@@ -180,13 +198,13 @@ mod tests {
         assert!(matches!(Assets::resolve(Some(dir)), Some(Assets::Dir(d)) if d == dir));
     }
 
-    #[cfg(not(feature = "embed-web"))]
+    #[cfg(feature = "api-only")]
     #[test]
     fn resolve_should_be_none_when_unconfigured_and_not_embedded() {
         assert!(Assets::resolve(None).is_none());
     }
 
-    #[cfg(feature = "embed-web")]
+    #[cfg(not(feature = "api-only"))]
     #[test]
     fn resolve_should_fall_back_to_embedded_when_unconfigured() {
         assert!(matches!(Assets::resolve(None), Some(Assets::Embedded)));
@@ -210,7 +228,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "embed-web")]
+    #[cfg(not(feature = "api-only"))]
     #[test]
     fn hex_encode_should_match_a_known_digest() {
         assert_eq!(hex::encode([0u8; 32]), "0".repeat(64));

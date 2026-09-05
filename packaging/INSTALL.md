@@ -1,7 +1,7 @@
 # Installing axgit (single-binary / systemd)
 
 This tarball is a complete deployment on its own: the `axgit` binary has the frontend baked in
-(the `embed-web` Cargo feature, docs/DECISIONS.md #74), so nothing else from the build needs to be
+(the default cargo build, docs/DECISIONS.md #74, #88), so nothing else from the build needs to be
 copied. A `git` binary must still be on `PATH` — it's used for archive downloads and Smart HTTP
 clone/fetch (docs/ARCHITECTURE.md's hybrid libgit2+exec policy).
 

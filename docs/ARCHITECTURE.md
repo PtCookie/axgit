@@ -171,7 +171,9 @@ render.
 - The container runs as a dedicated non-root user; `/etc/gitconfig` sets `[safe] directory = *`
   since the read-only `/srv/git` mount is owned by the git-server container's uid, which would
   otherwise trip git's/libgit2's ownership check (docs/DECISIONS.md #22).
-- Configuration is via environment variables: `AXGIT_REPO_ROOT`, `AXGIT_STATIC_DIR`,
+- Configuration is via environment variables: `AXGIT_REPO_ROOT`, `AXGIT_STATIC_DIR` (unset by
+  default — the image's binary bakes the frontend in, docs/DECISIONS.md #74, #88; only needed to
+  override it with a different build),
   `AXGIT_LISTEN` (default `0.0.0.0:8080`), `AXGIT_CLONE_URL_BASE` (for displaying clone URLs),
   `AXGIT_CACHE_SCAN_TTL` (repo scan TTL, default 60s), `AXGIT_CACHE_RESPONSE_TTL` (response cache
   TTL, default 300s), `AXGIT_CACHE_RESPONSE_MAX_BYTES` (response cache capacity, default 32 MiB),
@@ -182,14 +184,16 @@ render.
   unset by default).
 - Logs go to stdout/stderr as JSON (`tracing` + `tracing-subscriber`) — collected by the stack's
   fluentd logging driver.
-- **Single-binary alternative** (DECISIONS.md #74): `cargo build --release --features embed-web`
+- **Single-binary build is the default** (DECISIONS.md #74, #88): `cargo build --release`
   (after `pnpm --filter web build`) bakes `web/dist` into the `axgit` executable via `rust-embed`,
   so the binary alone — plus a `git` binary on `PATH`, still a runtime dependency either way — is a
   complete deployment, no `AXGIT_STATIC_DIR`/directory needed. `AXGIT_STATIC_DIR` still overrides
-  the embedded copy when set. The Containerfile is unaffected (the `embed-web` feature is never
-  enabled there); this path targets a bare-metal/systemd install instead.
+  the embedded copy when set. The Containerfile's `api` build stage does the same thing (it copies
+  the `web` stage's `web/dist` in before `cargo build`, rather than the runtime stage copying it in
+  separately and pinning `AXGIT_STATIC_DIR`); the opt-out `api-only` Cargo feature (no bundled
+  frontend, no `web/dist` compile-time dependency) is never enabled in either build.
 - **Single-binary packaging** (DECISIONS.md #75, #79): `scripts/make-release.sh` builds the
-  `embed-web` binary for both `x86_64-unknown-linux-musl` (natively) and
+  default (embedded) binary for both `x86_64-unknown-linux-musl` (natively) and
   `aarch64-unknown-linux-musl` (cross, via a target-specific musl gcc — no Docker either way) and
   stages each with a systemd unit, env-file template, and install docs (`packaging/`) into its own
   release tarball, plus one checksums file covering both. `Jenkinsfile`'s `Release` stage runs it

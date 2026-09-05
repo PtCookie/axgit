@@ -620,13 +620,13 @@ async fn swagger_ui_should_take_precedence_over_the_shell() {
 
 // `router_for` sets no `AXGIT_STATIC_DIR`, so the two builds disagree on
 // what an unmatched-but-shell-shaped path like `/nope` (one segment, the
-// same shape `shell_for` gives `/{repo}`) should do: without `embed-web`,
+// same shape `shell_for` gives `/{repo}`) should do: with `api-only`,
 // `Assets::resolve` finds neither a directory nor an embedded build, so no
-// SPA fallback is installed at all and axum's own 404 applies; with
-// `embed-web`, the binary's embedded `web/dist` copy serves as the fallback
-// even with no directory configured (docs/DECISIONS.md #74) — the entire
-// point of the feature — so the same request now serves the repo shell.
-#[cfg(not(feature = "embed-web"))]
+// SPA fallback is installed at all and axum's own 404 applies; in the
+// default build, the binary's embedded `web/dist` copy serves as the
+// fallback even with no directory configured (docs/DECISIONS.md #74, #88)
+// so the same request instead serves the repo shell.
+#[cfg(feature = "api-only")]
 #[tokio::test]
 async fn without_a_static_dir_unmatched_paths_should_still_404() {
     let repo_root = tempfile::tempdir().expect("failed to create repo root");
@@ -637,7 +637,7 @@ async fn without_a_static_dir_unmatched_paths_should_still_404() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 #[tokio::test]
 async fn without_a_static_dir_the_embedded_build_should_serve_the_shell() {
     let repo_root = tempfile::tempdir().expect("failed to create repo root");

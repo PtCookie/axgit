@@ -58,6 +58,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo fetch --locked
 
 COPY api/ .
+# The default build bakes `web/dist` into the binary (docs/DECISIONS.md #74,
+# #88 — the `api-only` Cargo feature is the opt-out, not used here), so the
+# web stage's output has to land at the same `../web/dist` path `build.rs`
+# looks for relative to this stage's `/app/api` workdir.
+COPY --from=web /app/web/dist /app/web/dist
 # Cache mounts aren't persisted into the image layer, so the binary must be
 # copied out to a normal path within the same RUN that builds it.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -67,7 +72,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp target/release/axgit /axgit
 
 # ---------------------------------------------------------------------------
-# Stage: runtime — alpine + git binary + axgit binary + web/dist
+# Stage: runtime — alpine + git binary + axgit binary (frontend baked in)
 # ---------------------------------------------------------------------------
 FROM ${RUNTIME_IMAGE} AS runtime
 
@@ -94,23 +99,17 @@ RUN printf '[safe]\n\tdirectory = *\n' > /etc/gitconfig
 RUN adduser -D -H -u 10001 axgit
 
 COPY --from=api /axgit /usr/local/bin/axgit
-COPY --from=web /app/web/dist /app/dist
 
-# Only the one setting whose correct value is a fact about *this image* —
-# where the web stage's build was copied to. `AXGIT_REPO_ROOT` and
-# `AXGIT_LISTEN` used to be here too, set to `/srv/git` and `0.0.0.0:8080`;
-# both are byte-identical to the binary's own clap defaults, so pinning them
-# here changed nothing except to make them unsettable from a mounted
-# `/etc/axgit/axgit.toml` — an environment variable beats the config file
-# (docs/DECISIONS.md #87), and an `ENV` line is always "set". Leaving them
-# out is the `${VAR:=default}` semantic: same effective default, but now the
-# config file can have them.
-#
-# `AXGIT_STATIC_DIR` can't be dropped the same way — it has no clap default
-# to fall back to (unset means "serve no frontend" in a non-`embed-web`
-# build, `assets.rs::resolve`), so it stays pinned here and stays the one
-# key a mounted config file cannot set.
-ENV AXGIT_STATIC_DIR=/app/dist
+# `AXGIT_REPO_ROOT`/`AXGIT_LISTEN`/`AXGIT_STATIC_DIR` used to be pinned here
+# too. `AXGIT_STATIC_DIR` in particular had no clap default to fall back
+# to — unset meant "serve no frontend" — so it had to be set unconditionally
+# for this image to serve anything, at the cost of being the one setting a
+# mounted `/etc/axgit/axgit.toml` couldn't override. The `api` stage's
+# binary now bakes the frontend in by default (docs/DECISIONS.md #74, #88),
+# so there's nothing left in this image whose correct value is a fact about
+# *this image* rather than the binary's own default — every setting can now
+# come from the config file, matching `AXGIT_REPO_ROOT`/`AXGIT_LISTEN`'s
+# existing `${VAR:=default}` posture.
 
 EXPOSE 8080
 USER axgit

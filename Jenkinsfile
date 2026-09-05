@@ -7,9 +7,14 @@
 // aarch64 cross musl gcc for the aarch64 leg (musl.cc's aarch64-linux-musl-gcc or
 // messense/macos-cross-toolchains' aarch64-unknown-linux-musl-gcc); and, recommended,
 // the qemu-user-static package so the aarch64 binary's smoke check actually executes
-// instead of shipping unverified. The Embedded build stage (every build,
-// docs/DECISIONS.md #76) builds `embed-web` for the host target only, so it needs none
-// of the above.
+// instead of shipping unverified.
+//
+// The default cargo build bakes `web/dist` into the binary (docs/DECISIONS.md #74, #88),
+// so `Build web` below runs before the `api` branch of the Test stage can compile at
+// all — unlike the old `embed-web` opt-in feature, there's no default build left that
+// skips the frontend. The `api-only` Cargo feature is the now-exceptional opt-out (a
+// pure-API build with no bundled frontend); the `api` branch checks it too, scoped to the
+// bits it actually changes rather than the full integration suite a second time.
 pipeline {
     agent any
 
@@ -18,8 +23,8 @@ pipeline {
         timestamps()
         // Raised from 30 to 45 minutes for docs/DECISIONS.md #79: a v* tag build now pays
         // two full `--release` builds in the Release stage (x86_64 + aarch64, each a
-        // fresh vendored libgit2/xz/zstd/zlib C build) on top of the parallel Test stage
-        // and the Embedded build stage, all sharing this one pipeline-wide timeout.
+        // fresh vendored libgit2/xz/zstd/zlib C build) on top of the Build web and Test
+        // stages, all sharing this one pipeline-wide timeout.
         timeout(time: 45, unit: 'MINUTES')
     }
 
@@ -28,6 +33,19 @@ pipeline {
             steps {
                 sh 'pnpm install --frozen-lockfile'
                 sh 'pnpm --filter web exec playwright install'
+            }
+        }
+
+        // Ahead of the Test stage, not inside its `api` branch: the default cargo build
+        // bakes this output into the binary (docs/DECISIONS.md #74, #88), so every `cargo`
+        // invocation below — including the `api-only` opt-out check, which still needs
+        // `web/dist` to exist for `embedded_assets_test.rs`'s counterpart on the default
+        // build to compile in the same `cargo test` invocation — depends on it existing
+        // first. This is also the only place CI runs the production `astro build`
+        // (Playwright's webServer under the `web` branch uses `pnpm dev` instead).
+        stage('Build web') {
+            steps {
+                sh 'pnpm --filter web build'
             }
         }
 
@@ -53,6 +71,23 @@ pipeline {
                                 sh 'cargo test --manifest-path api/Cargo.toml --all-targets'
                             }
                         }
+                        // The `api-only` feature (docs/DECISIONS.md #88) is the opt-out from
+                        // the default embedded build — a pure-API binary with no bundled
+                        // frontend and no `web/dist` compile-time dependency. Checked here,
+                        // scoped to what the feature actually changes, rather than as a
+                        // separate pipeline stage: clippy --all-targets proves it still
+                        // compiles end to end, and re-running every other test unchanged by
+                        // the feature would just spend the pipeline timeout twice.
+                        stage('api-only clippy') {
+                            steps {
+                                sh 'cargo clippy --manifest-path api/Cargo.toml --features api-only --all-targets -- -D warnings'
+                            }
+                        }
+                        stage('api-only test') {
+                            steps {
+                                sh 'cargo test --manifest-path api/Cargo.toml --features api-only --lib --test static_shell_test'
+                            }
+                        }
                     }
                 }
 
@@ -75,28 +110,6 @@ pipeline {
                         }
                     }
                 }
-            }
-        }
-
-        // The code the release actually ships (docs/DECISIONS.md #74/#76): `embed-web` is off
-        // in the Test stage above, so assets.rs's embedded arms, routes.rs's embedded
-        // fallback, and tests/embedded_assets_test.rs/static_shell_test.rs's embed variants
-        // are compiled out on every ordinary build — without this stage, a v* tag's Release
-        // stage would be the first thing to ever compile them. This is also the only place
-        // CI runs the production `astro build` (Playwright's webServer uses `pnpm dev`
-        // instead), which the feature needs regardless: rust-embed reads web/dist at compile
-        // time. Runs on every build, not just tags, so a break surfaces immediately instead
-        // of at release time.
-        stage('Embedded build') {
-            steps {
-                sh 'pnpm --filter web build'
-                sh 'cargo clippy --manifest-path api/Cargo.toml --features embed-web --all-targets -- -D warnings'
-                // Scoped to the embed-specific targets rather than the full integration
-                // suite: clippy --all-targets above already proves everything compiles under
-                // the feature, and re-running every other test unchanged by embed-web would
-                // just spend the 30-minute pipeline timeout on the parallel Test stage's work
-                // a second time.
-                sh 'cargo test --manifest-path api/Cargo.toml --features embed-web --lib --test embedded_assets_test --test static_shell_test'
             }
         }
 

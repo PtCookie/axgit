@@ -57,11 +57,17 @@ pnpm --filter web build     # static build → web/dist/
 pnpm --filter web test      # vitest
 pnpm --filter web check     # eslint + prettier check (individually: lint / format)
 
-# Backend (api/)
+# Backend (api/) — the default build bakes web/dist into the binary
+# (docs/DECISIONS.md #74, #88), so build it once first
+pnpm --filter web build
 cargo build --manifest-path api/Cargo.toml
 cargo test --manifest-path api/Cargo.toml
 cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path api/Cargo.toml
+
+# Pure-API build: no bundled frontend, no web/dist dependency
+# (AXGIT_STATIC_DIR still serves a directory at runtime either way)
+cargo build --manifest-path api/Cargo.toml --features api-only
 
 # Regenerate the OpenAPI spec (openapi.json) — run in any commit that changes the API
 AXGIT_UPDATE_OPENAPI=1 cargo test --manifest-path api/Cargo.toml --test openapi_test
@@ -70,13 +76,13 @@ pnpm --filter web gen:types # then regenerate web types (openapi-typescript)
 # Generate fixture repositories (4 bare repos, fixed dates for reproducibility)
 ./scripts/make-fixtures.sh
 
-# Local integrated run (api serves web/dist)
+# Local integrated run: AXGIT_STATIC_DIR overrides the binary's baked-in web/dist,
+# handy for iterating on the frontend without a full `cargo build` per change
 cargo run --manifest-path api/Cargo.toml -- --repo-root ./fixtures/repos --static-dir ./web/dist
 
-# Single-binary build: bakes web/dist into the axgit binary (docs/DECISIONS.md #74),
-# no --static-dir needed at runtime (AXGIT_STATIC_DIR still overrides it when set)
+# Single-binary release build (docs/DECISIONS.md #74)
 pnpm --filter web build
-cargo build --release --manifest-path api/Cargo.toml --features embed-web
+cargo build --release --manifest-path api/Cargo.toml
 
 # Container build
 docker build --tag axgit:latest .
@@ -122,8 +128,12 @@ See `docs/ARCHITECTURE.md` for detailed design, `docs/API.md` for the API contra
 - Routing is Astro file-based (`web/src/pages/`). Per-repository pages can't be enumerated at
   build time, so `src/pages/[repo]/*.astro` is prerendered once under a reserved placeholder param
   (`__repo__`) and the server maps request path shapes onto the matching shell (`api/src/shell.rs`,
-  docs/DECISIONS.md #17). **Adding a route means updating three places together**:
-  `web/src/pages/`, `web/src/lib/shell.ts::shellFor`, and `api/src/shell.rs::shell_for`.
+  docs/DECISIONS.md #17). The route-shape table itself lives in one place,
+  `web/src/lib/shell-routes.ts`; the build emits it to `dist/shell-routes.json`, which both
+  `web/src/lib/shell.ts::shellFor` (the `astro dev` middleware) and `api/src/shell.rs::shell_for`
+  read (docs/DECISIONS.md #88). **Adding a route means updating two places together**:
+  `web/src/pages/` and `web/src/lib/shell-routes.ts` — the build fails if a page has no matching
+  table entry, or vice versa.
 - Navigation uses Astro's `<ClientRouter />` (docs/DECISIONS.md #24) — same-origin link clicks swap
   `<body>` client-side instead of a full page load, with a short fade on `<main>`. **Nothing is
   animated by the View Transition API**: every `::view-transition-*(root)` animation is off in

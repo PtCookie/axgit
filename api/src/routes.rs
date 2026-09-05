@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
-#[cfg(feature = "embed-web")]
+#[cfg(not(feature = "api-only"))]
 use axum::http::HeaderMap;
 use axum::http::Uri;
 use axum::middleware;
@@ -92,10 +94,15 @@ pub fn build_router(state: AppState) -> Router {
         .merge(SwaggerUi::new(SWAGGER_UI_PATH).url(OPENAPI_JSON_PATH, ApiDoc::openapi()));
 
     // `Assets::resolve` prefers `AXGIT_STATIC_DIR` when set, else falls back
-    // to the binary's embedded copy of `web/dist` when built with
-    // `embed-web` (docs/DECISIONS.md #74) — `None` (neither configured nor
-    // embedded) serves no frontend at all, today's default-build behaviour.
+    // to the binary's embedded copy of `web/dist` — the default build
+    // (docs/DECISIONS.md #74, #88). `None` (neither configured nor embedded)
+    // serves no frontend at all, which only happens with the opt-in
+    // `api-only` Cargo feature.
     if let Some(assets) = Assets::resolve(state.config.static_dir.as_deref()) {
+        // Read once at startup (docs/DECISIONS.md #88) — the table never
+        // changes without a restart, so every request reuses this `Arc`
+        // rather than re-reading and re-parsing `shell-routes.json`.
+        let routes = Arc::new(shell::ShellRoutes::load(&assets));
         // `clone_url_base` rides along so a `__repo__` shell can get its
         // `rel="vcs-git"` link injected (docs/DECISIONS.md #63); `site`
         // similarly carries `root_title`/`root_desc` into every shell's
@@ -136,9 +143,11 @@ pub fn build_router(state: AppState) -> Router {
                 // matching prerendered page shell — or `404.html` with a
                 // real 404 status.
                 let shell_assets = Assets::Dir(dir.clone());
+                let routes = routes.clone();
                 let shell: MethodRouter<()> = get(move |uri: Uri| {
                     shell::serve_shell_or_redirect(
                         shell_assets.clone(),
+                        routes.clone(),
                         clone_url_base.clone(),
                         site.clone(),
                         uri,
@@ -161,7 +170,7 @@ pub fn build_router(state: AppState) -> Router {
             // The embedded mode's own "serve a real file, else fall through
             // to the shell" ordering, mirroring `ServeDir(...).fallback(shell)`
             // above without depending on the filesystem.
-            #[cfg(feature = "embed-web")]
+            #[cfg(not(feature = "api-only"))]
             Assets::Embedded => {
                 let embedded: MethodRouter<()> =
                     get(move |uri: Uri, headers: HeaderMap| async move {
@@ -170,6 +179,7 @@ pub fn build_router(state: AppState) -> Router {
                             None => {
                                 shell::serve_shell_or_redirect(
                                     Assets::Embedded,
+                                    routes.clone(),
                                     clone_url_base.clone(),
                                     site.clone(),
                                     uri,

@@ -180,10 +180,11 @@ Superseded by #17. One note survives: in axum, routes that are `nest`ed or merge
   rejected: the shell is built with a placeholder param, so a hydrated island would receive
   `"__repo__"` as a prop and have to re-derive the repository in an effect — extra render passes,
   broken component tests, and a hydration-mismatch footgun.
-- **Cost: the mapping table exists three times** — `api/src/shell.rs::shell_for`,
+- **Cost: the mapping table existed three times** — `api/src/shell.rs::shell_for`,
   `web/src/lib/shell.ts::shellFor` (which also drives the `astro dev` middleware), and the
-  `src/pages/` tree. Adding a route means touching all three. Single-sourcing would require SSR,
-  which #3 rules out.
+  `src/pages/` tree. Adding a route meant touching all three. Single-sourcing would require SSR,
+  which #3 rules out — #88 closes most of the gap without one, by emitting the table itself from
+  the build instead of hand-duplicating it in Rust.
 - **A repository literally named `__repo__` is shadowed** — its requests hit the shell files
   directly. Benign today; only a real collision if a future route shape lacks a shell file.
 
@@ -1667,6 +1668,10 @@ palette rather than merely an unverified one.
 
 ## #74 Single-binary build: `embed-web` Cargo feature
 
+*(#88 flips this feature's polarity: embedding is now the default, and the opt-in `embed-web` name
+became the opt-out `api-only`. The mechanics below — the `Assets` enum, `serve_embedded_file`,
+`build.rs`'s rebuild trigger — are unchanged; only which build gets them for free changed.)*
+
 Until now the only way to serve the frontend was `AXGIT_STATIC_DIR` pointing at a `web/dist`
 directory — fine for the container, but a bare-metal install would ship two artifacts whose versions
 must match exactly. `git` exec stays a runtime dependency regardless; this closes only the frontend
@@ -2053,13 +2058,54 @@ variables.
   `repo-root`, and their metadata comes from each bare repo's own `config` — a core invariant, not
   something the site config file should override. TOML has no include of its own, so adding one would
   mean inventing a directive rather than adopting a format's.
-- **The image's `ENV` is `AXGIT_STATIC_DIR` alone.** `AXGIT_REPO_ROOT` and `AXGIT_LISTEN` were
-  byte-identical to the binary's clap defaults, so pinning them bought nothing and only made them
-  unsettable from a mounted config file — an `ENV` line is *always* "set", and env beats file.
-  General rule for this image: **don't restate a default the binary already has.**
-  - `AXGIT_STATIC_DIR` is the exception: it has no clap default (unset means "serve no frontend" in
-    a non-`embed-web` build), and its correct value is a fact about the image, not an operator
-    preference. It remains the one key a mounted config file cannot set. Making it file-settable
-    would mean building the runtime image with `--features embed-web` and dropping the
-    `COPY --from=web` — a deployment-shape change that serializes two build stages independent
-    today.
+- **The image's `ENV` is `AXGIT_STATIC_DIR` alone** *(superseded by #88 — the image no longer sets
+  it at all; kept here for why it was pinned in the first place)*. `AXGIT_REPO_ROOT` and
+  `AXGIT_LISTEN` were byte-identical to the binary's clap defaults, so pinning them bought nothing
+  and only made them unsettable from a mounted config file — an `ENV` line is *always* "set", and
+  env beats file. General rule for this image: **don't restate a default the binary already has.**
+  - `AXGIT_STATIC_DIR` was the exception: it had no clap default (unset meant "serve no frontend" in
+    the then-default, non-`embed-web` build), and its correct value was a fact about the image, not
+    an operator preference. It was the one key a mounted config file couldn't set.
+
+## #88 Shell-route manifest emitted by the build; `embed-web` flipped to `api-only`
+
+Two separate maintenance costs, closed together because the second only became affordable once the
+first removed the reason a non-embedded build existed at all.
+
+- **The route-shape table (#17) is no longer hand-duplicated in Rust.** `web/src/lib/shell-routes.ts`
+  is now the single authored table; `web/src/lib/shell.ts::shellFor` (the `astro dev` middleware)
+  reads it directly, and an Astro integration (`astro.config.mjs`'s `shellRoutes()`) emits it to
+  `dist/shell-routes.json` on `astro:build:done`. `api/src/shell.rs::ShellRoutes::load` deserializes
+  that file instead of matching a hand-written `match` — `shell_for` walks the table in order instead.
+  Adding a route now means touching `src/pages/[repo]/` and `shell-routes.ts`; the same integration
+  hook cross-checks the two (a declared route with no built shell, or a built shell nobody declared,
+  fails the build), closing the gap a silent third drift point would otherwise leave.
+- **`ShellRoutes::load` falls back to `ShellRoutes::fallback()`** — a Rust-literal copy of the same
+  table — when the manifest is missing or fails to parse, rather than failing startup. In practice
+  this only fires for an `AXGIT_STATIC_DIR` pointed at a build predating this file, or at a directory
+  that was never an axgit frontend build at all; every embedded build and every freshly built
+  `AXGIT_STATIC_DIR` carries the real manifest, so the fallback is a safety net, not a maintenance
+  burden — it doesn't need to track a route added only to `shell-routes.ts`.
+- **`embed-web` flipped to `api-only`: embedding is now the default, not opt-in.** The old shape had
+  it backwards for what deployments actually do — every container and release build already turned
+  the feature on, so "opt-in" bought nothing but a Cargo flag everyone had to remember to pass, while
+  the *actual* default (no frontend at all, `cargo build` with no flags) was never shipped anywhere.
+  `rust-embed` is now an unconditional dependency; `cfg(feature = "embed-web")` became
+  `cfg(not(feature = "api-only"))` throughout `assets.rs`/`routes.rs` (mechanically inverted, same
+  branches). `api/build.rs` requires `web/dist` to exist unless `api-only` is set, with an error
+  message naming both fixes (`pnpm --filter web build`, or add the feature).
+- **The Containerfile no longer sets `AXGIT_STATIC_DIR`.** The `api` build stage now copies the
+  `web` stage's `web/dist` in at `../web/dist` (relative to its own `/app/api` workdir) before
+  `cargo build`, and the runtime stage no longer copies `web/dist` in separately or pins the env var
+  — the frontend is already in the binary. This is the deployment-shape change #87 flagged as the
+  cost of making `AXGIT_STATIC_DIR` file-settable: it's no longer set at all, so there's nothing left
+  for a mounted config file to conflict with.
+- **`api-only` stays a real, tested build**, not a vestigial escape hatch: CI's `api` branch
+  (Jenkinsfile) runs `cargo clippy --features api-only --all-targets` and
+  `cargo test --features api-only --lib --test static_shell_test` alongside the default build, so a
+  change that breaks the pure-API path is caught the same run it's introduced.
+- **`scripts/make-release.sh` and the Jenkinsfile's Release stage drop `--features embed-web`** —
+  the tarball build already ran `pnpm --filter web build` first, so the default build now does what
+  the explicit flag used to. The Jenkinsfile's old standalone "Embedded build" stage is gone; its
+  job (proving the frontend-bundled path compiles and its tests pass) is now just what the default
+  `api` branch already does.

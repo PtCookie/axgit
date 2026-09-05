@@ -23,7 +23,7 @@ repo-root = "/srv/git"
 clone-url-base = "https://git.example.com"
 
 # Astro static build (web/dist) to serve at /. Leave unset for the
-# single-binary build (this tarball) — the embed-web feature already bakes
+# single-binary build (this tarball) — the default cargo build already bakes
 # web/dist into the binary. Set only to override the embedded copy without
 # rebuilding.
 # static-dir = "/app/dist"

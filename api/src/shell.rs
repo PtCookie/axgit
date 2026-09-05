@@ -6,21 +6,127 @@
 //! and this module rewrites request paths onto those files
 //! (docs/DECISIONS.md #17).
 //!
-//! Mirrors `web/src/lib/shell.ts::shellFor`, which the Astro dev server uses
-//! for the same purpose. The two must change together.
+//! The route-shape table itself is *not* hand-written here: it's read from
+//! `shell-routes.json`, emitted by the frontend build from
+//! `web/src/lib/shell-routes.ts` (docs/DECISIONS.md #88, refining #17).
+//! `web/src/lib/shell.ts::shellFor` (the `astro dev` middleware) reads the
+//! same table straight from that TypeScript source, so the two match by
+//! construction rather than by two matchers kept in sync by hand.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Redirect, Response};
+use serde::Deserialize;
 
 use crate::assets::{self, Assets};
 use crate::cgit_compat;
 use crate::escape::xml_escape;
 
-/// The reserved `getStaticPaths` param the `/{repo}` shells are built under.
-/// Keep in sync with `web/src/lib/shell.ts::REPO_SHELL_PARAM`.
-pub const REPO_SHELL_PARAM: &str = "__repo__";
+/// The route-shape table shell requests are matched against — the
+/// deserialized form of `shell-routes.json` (docs/DECISIONS.md #88).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellRoutes {
+    /// The reserved `getStaticPaths` param the `/{repo}` shells are built
+    /// under (`web/src/lib/shell-routes.ts::REPO_SHELL_PARAM`).
+    pub repo_shell_param: String,
+    pub routes: Vec<ShellRoute>,
+}
+
+/// One route shape: the literal segment right after `{repo}`, matched in
+/// [`ShellRoutes::routes`] order, first hit wins. See
+/// `web/src/lib/shell-routes.ts` for the meaning of each field — this struct
+/// is only ever produced by deserializing its output.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellRoute {
+    /// `None` for the repository index (`/{repo}` itself).
+    pub segment: Option<String>,
+    /// Directory under `repo_shell_param` holding the built shell; `None`
+    /// for the index shell.
+    pub shell: Option<String>,
+    pub min_extra: usize,
+    pub max_extra: Option<usize>,
+}
+
+impl ShellRoutes {
+    /// The file the frontend build emits the table to, at the root of
+    /// whatever `web/dist` copy is currently active.
+    const MANIFEST_FILE: &'static str = "shell-routes.json";
+
+    /// Loads the route table the given [`Assets`] serves shells from. Called
+    /// once at startup (`routes.rs::build_router`), not per request — the
+    /// table never changes without a restart, whether `Assets` is a
+    /// directory or the binary's own embedded copy.
+    ///
+    /// A missing or malformed manifest falls back to [`Self::fallback`]
+    /// rather than failing the whole server: the default build's embedded
+    /// copy is always produced by the same build that produces the shells
+    /// themselves, so this only actually triggers for an `AXGIT_STATIC_DIR`
+    /// pointed at a build from before this file existed (docs/DECISIONS.md
+    /// #88) or at a directory that was never an axgit frontend build at
+    /// all — both cases where serving *something* beats refusing to start.
+    pub fn load(assets: &Assets) -> Self {
+        match assets
+            .read_sync(Path::new(Self::MANIFEST_FILE))
+            .and_then(|raw| serde_json::from_slice(&raw).ok())
+        {
+            Some(routes) => routes,
+            None => {
+                tracing::warn!(
+                    file = Self::MANIFEST_FILE,
+                    "shell-routes manifest missing or invalid; falling back to the \
+                     built-in route table",
+                );
+                Self::fallback()
+            }
+        }
+    }
+
+    /// The route table this binary was built against, kept only as the
+    /// [`Self::load`] fallback above — every current deployment path
+    /// (embedded or a freshly built `AXGIT_STATIC_DIR`) reads the real
+    /// manifest instead, so this never needs to track a route added there.
+    fn fallback() -> Self {
+        fn route(
+            segment: &str,
+            shell: &str,
+            min_extra: usize,
+            max_extra: Option<usize>,
+        ) -> ShellRoute {
+            ShellRoute {
+                segment: Some(segment.to_owned()),
+                shell: Some(shell.to_owned()),
+                min_extra,
+                max_extra,
+            }
+        }
+        ShellRoutes {
+            repo_shell_param: "__repo__".to_owned(),
+            routes: vec![
+                ShellRoute {
+                    segment: None,
+                    shell: None,
+                    min_extra: 0,
+                    max_extra: Some(0),
+                },
+                route("refs", "refs", 0, Some(0)),
+                route("log", "log", 0, Some(0)),
+                route("search", "search", 0, Some(0)),
+                route("stats", "stats", 0, Some(0)),
+                route("diff", "diff", 0, Some(0)),
+                route("commit", "commit", 1, Some(1)),
+                route("object", "object", 1, Some(1)),
+                route("tree", "tree", 0, None),
+                route("blob", "blob", 1, None),
+                route("blame", "blame", 1, None),
+                route("tag", "tag", 1, None),
+            ],
+        }
+    }
+}
 
 /// Site-wide `<head>` metadata injected into *every* shell — index, repo
 /// pages, and 404 alike — unlike the repo-only `<link>`s below
@@ -67,84 +173,42 @@ pub struct SiteHead {
 ///
 /// Only the *shape* of the path is inspected: the `{repo}` segment is
 /// matched but never used to build a filesystem path, so percent-encoding or
-/// `..` inside it are structurally harmless here.
-fn shell_for(path: &str) -> (PathBuf, StatusCode) {
+/// `..` inside it are structurally harmless here. Walks `routes.routes` in
+/// order, first match wins — mirrors `web/src/lib/shell.ts::shellFor`, which
+/// walks the same table.
+fn shell_for(routes: &ShellRoutes, path: &str) -> (PathBuf, StatusCode) {
     let segments: Vec<&str> = path
         .split('/')
         .filter(|segment| !segment.is_empty())
         .collect();
 
-    match segments.as_slice() {
-        [] => (PathBuf::from("index.html"), StatusCode::OK),
-        [_repo] => (
-            Path::new(REPO_SHELL_PARAM).join("index.html"),
-            StatusCode::OK,
-        ),
-        [_repo, "refs"] => (
-            Path::new(REPO_SHELL_PARAM).join("refs").join("index.html"),
-            StatusCode::OK,
-        ),
-        [_repo, "log"] => (
-            Path::new(REPO_SHELL_PARAM).join("log").join("index.html"),
-            StatusCode::OK,
-        ),
-        [_repo, "search"] => (
-            Path::new(REPO_SHELL_PARAM)
-                .join("search")
-                .join("index.html"),
-            StatusCode::OK,
-        ),
-        [_repo, "stats"] => (
-            Path::new(REPO_SHELL_PARAM).join("stats").join("index.html"),
-            StatusCode::OK,
-        ),
-        // The compare page never carries the revisions in the path (they're
-        // `?from=`/`?to=` query params, since a ref may itself contain `/`)
-        // — a bare 2-segment shape is the whole story, unlike commit's.
-        [_repo, "diff"] => (
-            Path::new(REPO_SHELL_PARAM).join("diff").join("index.html"),
-            StatusCode::OK,
-        ),
-        [_repo, "commit", _sha] => (
-            Path::new(REPO_SHELL_PARAM)
-                .join("commit")
-                .join("index.html"),
-            StatusCode::OK,
-        ),
-        // An oid is a single fixed segment, never containing `/` — same
-        // exactly-3-segment shape as commit.
-        [_repo, "object", _oid] => (
-            Path::new(REPO_SHELL_PARAM)
-                .join("object")
-                .join("index.html"),
-            StatusCode::OK,
-        ),
-        // The path after `/tree/` is optional (empty means the root tree).
-        [_repo, "tree", ..] => (
-            Path::new(REPO_SHELL_PARAM).join("tree").join("index.html"),
-            StatusCode::OK,
-        ),
-        // At least one path segment is required — there's nothing to show
-        // for `/{repo}/blob` itself.
-        [_repo, "blob", _first, ..] => (
-            Path::new(REPO_SHELL_PARAM).join("blob").join("index.html"),
-            StatusCode::OK,
-        ),
-        // Same "at least one path segment" rule as blob — there's nothing to
-        // blame without a file.
-        [_repo, "blame", _first, ..] => (
-            Path::new(REPO_SHELL_PARAM).join("blame").join("index.html"),
-            StatusCode::OK,
-        ),
-        // Same "at least one segment" rule as blob/blame — a tag name may
-        // itself contain `/`, and there's nothing to show for `/{repo}/tag`
-        // itself (the refs page already is the tag listing).
-        [_repo, "tag", _first, ..] => (
-            Path::new(REPO_SHELL_PARAM).join("tag").join("index.html"),
-            StatusCode::OK,
-        ),
-        _ => (PathBuf::from("404.html"), StatusCode::NOT_FOUND),
+    if segments.is_empty() {
+        return (PathBuf::from("index.html"), StatusCode::OK);
     }
+    let rest = &segments[1..];
+
+    let shell_root = Path::new(&routes.repo_shell_param);
+    for route in &routes.routes {
+        let extra_matches = |extra: usize| {
+            extra >= route.min_extra && route.max_extra.is_none_or(|max| extra <= max)
+        };
+        let matched = match &route.segment {
+            None => rest.is_empty(),
+            Some(segment) => {
+                rest.first() == Some(&segment.as_str()) && extra_matches(rest.len() - 1)
+            }
+        };
+        if !matched {
+            continue;
+        }
+        let relative = match &route.shell {
+            None => shell_root.join("index.html"),
+            Some(shell) => shell_root.join(shell).join("index.html"),
+        };
+        return (relative, StatusCode::OK);
+    }
+
+    (PathBuf::from("404.html"), StatusCode::NOT_FOUND)
 }
 
 /// Static-serving fallback, cgit-compatibility redirects included: a
@@ -153,13 +217,14 @@ fn shell_for(path: &str) -> (PathBuf, StatusCode) {
 /// to [`serve_shell`] unchanged.
 pub async fn serve_shell_or_redirect(
     assets: Assets,
+    routes: Arc<ShellRoutes>,
     clone_url_base: Option<String>,
     site: SiteHead,
     uri: Uri,
 ) -> Response {
     match cgit_compat::redirect_for(&uri) {
         Some(location) => Redirect::permanent(&location).into_response(),
-        None => serve_shell(assets, clone_url_base, site, uri).await,
+        None => serve_shell(assets, routes, clone_url_base, site, uri).await,
     }
 }
 
@@ -174,11 +239,12 @@ pub async fn serve_shell_or_redirect(
 /// identically whether the build is on disk or baked into the binary.
 pub async fn serve_shell(
     assets: Assets,
+    routes: Arc<ShellRoutes>,
     clone_url_base: Option<String>,
     site: SiteHead,
     uri: Uri,
 ) -> Response {
-    let (relative, status) = shell_for(uri.path());
+    let (relative, status) = shell_for(&routes, uri.path());
 
     match assets.read(&relative).await {
         Some(body) => {
@@ -188,7 +254,8 @@ pub async fn serve_shell(
                 site.logo.as_deref(),
                 site.logo_link.as_deref(),
             );
-            if let Some(segment) = repo_segment_for(uri.path(), &relative) {
+            if let Some(segment) = repo_segment_for(&routes.repo_shell_param, uri.path(), &relative)
+            {
                 extra.push_str(&repo_head_links(segment, clone_url_base.as_deref()));
             }
             // Only a configured favicon touches the shell's own default
@@ -225,13 +292,13 @@ pub async fn serve_shell(
 }
 
 /// The raw (still percent-encoded) first path segment, when `relative`
-/// resolved to a shell under [`REPO_SHELL_PARAM`] — i.e. the request was for
+/// resolved to a shell under `repo_shell_param` — i.e. the request was for
 /// some `/{repo}/...` shape, not `/`, `/404`, or another top-level route.
 /// Not decoded: the segment is reused as-is to build both an API path and an
 /// external URL, both of which want it percent-encoded exactly as the
 /// browser sent it.
-fn repo_segment_for<'u>(path: &'u str, relative: &Path) -> Option<&'u str> {
-    if !relative.starts_with(REPO_SHELL_PARAM) {
+fn repo_segment_for<'u>(repo_shell_param: &str, path: &'u str, relative: &Path) -> Option<&'u str> {
+    if !relative.starts_with(repo_shell_param) {
         return None;
     }
     path.split('/').find(|segment| !segment.is_empty())
@@ -378,6 +445,22 @@ fn repo_head_links(segment: &str, clone_url_base: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const REPO_SHELL_PARAM: &str = "__repo__";
+
+    /// The case table below predates the manifest (docs/DECISIONS.md #88)
+    /// and exercised `shell_for`/`repo_segment_for` directly against a
+    /// hand-written route list; these two thin wrappers keep every one of
+    /// those call sites unchanged by supplying [`ShellRoutes::fallback`] (the
+    /// same table, now also the [`ShellRoutes::load`] fallback) as the table
+    /// argument the real functions now take.
+    fn shell_for(path: &str) -> (PathBuf, StatusCode) {
+        super::shell_for(&ShellRoutes::fallback(), path)
+    }
+
+    fn repo_segment_for<'u>(path: &'u str, relative: &Path) -> Option<&'u str> {
+        super::repo_segment_for(REPO_SHELL_PARAM, path, relative)
+    }
 
     #[test]
     fn root_maps_to_the_index_shell() {

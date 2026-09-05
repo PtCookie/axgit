@@ -1,9 +1,10 @@
-//! Integration tests for the `embed-web` feature (docs/DECISIONS.md #74) —
-//! runs against the real `web/dist`, so `pnpm --filter web build` must have
-//! produced it before this test binary compiles/runs (same precondition the
-//! feature itself carries). Compiled only when the feature is enabled: the
-//! default build has no `web/dist` to embed at all.
-#![cfg(feature = "embed-web")]
+//! Integration tests for the default (non-`api-only`) embedded-assets build
+//! (docs/DECISIONS.md #74, #88) — runs against the real `web/dist`, so
+//! `pnpm --filter web build` must have produced it before this test binary
+//! compiles/runs (same precondition the default build itself carries).
+//! Compiled only without the `api-only` feature: an `api-only` build has no
+//! `web/dist` to embed at all.
+#![cfg(not(feature = "api-only"))]
 
 mod common;
 

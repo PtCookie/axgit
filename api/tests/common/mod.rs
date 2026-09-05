@@ -85,7 +85,7 @@ pub fn router_with_static_and_site(
 }
 
 /// Like [`router_for`] (no `AXGIT_STATIC_DIR`), plus `root_title`/
-/// `root_desc` — for asserting the `embed-web` feature's embedded shell also
+/// `root_desc` — for asserting the default build's embedded shell also
 /// gets `axgit:site-*` `<meta>`s injected (docs/DECISIONS.md #70, #74), the
 /// same as the directory-backed shell already does.
 pub fn router_with_site(

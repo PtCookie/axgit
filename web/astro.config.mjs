@@ -9,6 +9,7 @@ import react from "@astrojs/react";
 
 import { redirectFor } from "./src/lib/cgit-compat.ts";
 import { shellFor } from "./src/lib/shell.ts";
+import { REPO_SHELL_PARAM, shellRoutesManifest } from "./src/lib/shell-routes.ts";
 
 const PUBLIC_DIR = path.join(fileURLToPath(new URL(".", import.meta.url)), "public");
 
@@ -98,10 +99,66 @@ function shellFallback() {
   };
 }
 
+/**
+ * Emits the route-shape table to `dist/shell-routes.json` so the production
+ * server can read the same mapping the dev middleware uses, instead of
+ * mirroring it in a second hand-written matcher (`api/src/shell.rs`,
+ * docs/DECISIONS.md #88).
+ *
+ * It also cross-checks the table against what was actually built, in both
+ * directions — a declared route with no shell, or a built shell nobody
+ * declared, fails the build. That's what keeps `src/pages/[repo]/` and
+ * `src/lib/shell-routes.ts` from drifting apart: forgetting the table entry
+ * for a new page is a build error, not a 404 discovered later.
+ *
+ * @returns {import("astro").AstroIntegration}
+ */
+function shellRoutes() {
+  return {
+    name: "axgit-shell-routes",
+    hooks: {
+      "astro:build:done": ({ dir, logger }) => {
+        const outDir = fileURLToPath(dir);
+        const manifest = shellRoutesManifest();
+
+        /** Built shell directory for a route, relative to the build root. */
+        const shellFile = (/** @type {string | null} */ shell) =>
+          shell === null ? path.join(REPO_SHELL_PARAM, "index.html") : path.join(REPO_SHELL_PARAM, shell, "index.html");
+
+        const declared = new Set();
+        for (const route of manifest.routes) {
+          const relative = shellFile(route.shell);
+          if (!fs.existsSync(path.join(outDir, relative))) {
+            throw new Error(
+              `shell-routes: route ${JSON.stringify(route.segment)} declares shell ` +
+                `${relative}, which the build did not produce — add the matching page ` +
+                `under src/pages/[repo]/ or drop the entry from src/lib/shell-routes.ts`,
+            );
+          }
+          if (route.shell !== null) declared.add(route.shell);
+        }
+
+        const shellRoot = path.join(outDir, REPO_SHELL_PARAM);
+        for (const entry of fs.readdirSync(shellRoot, { withFileTypes: true })) {
+          if (!entry.isDirectory() || declared.has(entry.name)) continue;
+          throw new Error(
+            `shell-routes: built shell ${path.join(REPO_SHELL_PARAM, entry.name)} is not ` +
+              `declared in src/lib/shell-routes.ts — add an entry for it, or the server ` +
+              `will never route to it`,
+          );
+        }
+
+        fs.writeFileSync(path.join(outDir, "shell-routes.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+        logger.info(`emitted shell-routes.json (${manifest.routes.length} routes)`);
+      },
+    },
+  };
+}
+
 // https://astro.build/config
 export default defineConfig({
   output: "static",
-  integrations: [react()],
+  integrations: [react(), shellRoutes()],
   // `<ClientRouter />` (docs/DECISIONS.md #24) defaults `prefetchAll` to
   // `true`. That's a net loss here: every `/{repo}/blob/*` (etc.) maps to one
   // byte-identical shell served `Cache-Control: no-cache` (`api/src/shell.rs`,

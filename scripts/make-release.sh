@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Packages release tarballs for the single-binary, non-container deploy path
-# (the `embed-web` Cargo feature, docs/DECISIONS.md #74/#75/#79): builds `axgit`
-# with `web/dist` baked in for each target in $TARGETS, then stages each one
+# (the default cargo build bakes `web/dist` in, docs/DECISIONS.md #74/#75/#79/#88):
+# builds `axgit` with `web/dist` baked in for each target in $TARGETS, then stages each one
 # together with the systemd unit, env-file template, and install docs into
 #   release/axgit-$VERSION-$TARGET.tar.gz  (one per target)
 #   release/SHA256SUMS                     (covers every tarball produced)
@@ -269,10 +269,9 @@ mkdir -p "$RELEASE_DIR"
 TARBALLS=""
 
 for t in $TARGETS; do
-  echo "==> Building axgit $VERSION for $t (--features embed-web)"
+  echo "==> Building axgit $VERSION for $t"
   (cd "$ROOT" && cargo build --release --locked \
     --manifest-path api/Cargo.toml \
-    --features embed-web \
     --target "$t")
 
   BINARY="$ROOT/api/target/$t/release/axgit"
