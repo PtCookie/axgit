@@ -19,6 +19,8 @@ const PUBLIC_DIR = path.join(fileURLToPath(new URL(".", import.meta.url)), "publ
  * escaping `public/` (this only decides whether to skip a rewrite, so a
  * false negative just falls through to `shellFor`, not a filesystem read of
  * arbitrary content).
+ *
+ * @param {string} pathname
  */
 function isPublicAsset(pathname) {
   const resolved = path.normalize(path.join(PUBLIC_DIR, pathname));

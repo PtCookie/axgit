@@ -11,6 +11,7 @@ function repo(name: string, desc: string | null = null, lastModified: string | n
     description: desc,
     default_branch: null,
     last_modified: lastModified,
+    homepage: null,
   };
 }
 

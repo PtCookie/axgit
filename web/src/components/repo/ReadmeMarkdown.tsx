@@ -1,4 +1,4 @@
-import { Fragment, isValidElement, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
