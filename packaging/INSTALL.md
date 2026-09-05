@@ -44,6 +44,19 @@ sudo "$EDITOR" /etc/axgit/axgit.env                # set AXGIT_REPO_ROOT, AXGIT_
 Every setting is documented in `axgit.env.example` and in the repo root README's configuration
 table — the two lists match.
 
+If you would rather keep the configuration in one commentable file than in a list of environment
+variables, use `axgit.toml.example` instead — axgit reads `/etc/axgit/axgit.toml` on its own when
+it exists, with no unit change needed:
+
+```sh
+sudo cp axgit.toml.example /etc/axgit/axgit.toml
+sudo "$EDITOR" /etc/axgit/axgit.toml               # set repo-root, clone-url-base, etc.
+```
+
+The two files cover exactly the same settings, and an `AXGIT_*` variable wins over the same
+setting in the TOML file (docs/DECISIONS.md #87) — so set any given value in one file or the
+other, not both.
+
 ## 4. Start it
 
 ```sh

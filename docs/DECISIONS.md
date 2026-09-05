@@ -3542,3 +3542,81 @@ Two independent fixes, needed together to actually change what renders:
   config) wasn't changed the same way, since by the time a response reaches the frontend the API
   has already normalized blank to `null` — a `""` there would test a wire shape the real API no
   longer produces.
+
+## #87 TOML config file (`--config`/`AXGIT_CONFIG`, `/etc/axgit/axgit.toml`)
+
+Until now every setting lived only in `api/src/config.rs`'s clap struct, reachable as a flag or an
+`AXGIT_*` environment variable. That covers both existing deploy shapes — the container bakes
+`AXGIT_*` into its `ENV`, the systemd unit sources `/etc/axgit/axgit.env` — but it has no answer
+for what cgit answers with `cgitrc`: one readable, commentable file holding the whole site
+configuration. Axgit exists to replace cgit, so it should be configurable the way cgit is.
+
+- **TOML, not a cgitrc-style `key=value` parser.** The alternative was reading actual `cgitrc`
+  syntax so an existing file could be pointed at directly, but the parity that buys is shallow:
+  the *keys* are what an operator recognizes, and those carry over regardless of syntax
+  (`root-title`, `root-desc`, `root-readme`, `logo`, `logo-link`, `favicon`, `repository-sort` are
+  already spelled exactly as cgit spells them, and stay that way in the file). What a hand-rolled
+  parser would add is a bespoke escaping/typing story for `listen` addresses and byte counts, in a
+  crate that already has no config-file code to reuse. `toml` is one small parse-only dependency
+  (`default-features = false`, `parse` + `serde` + `std` — axgit never writes TOML back) with
+  types, spans in its errors, and nothing to specify.
+- **Sections are organizational, keys keep cgit's names.** `[site]` groups the branding/index
+  chrome, `[cache]` the cache knobs, and everything left at the top level is the server itself.
+  The keys inside `[site]` are still `root-title`/`root-desc`/`root-readme`/`logo`/`logo-link`/
+  `favicon` rather than the shorter `title`/`description`/… that grouping would otherwise invite:
+  a value copied out of a real `cgitrc` has to be recognizable at a glance, and that matters more
+  than the mild redundancy of `site.root-title`. `[cache]`'s keys are axgit's own
+  (`scan-ttl`/`response-ttl`/`response-max-bytes`) because cgit's `cache-*` options don't map onto
+  them at all.
+- **Precedence is CLI flag > environment variable > config file > default.** The container image
+  sets `AXGIT_REPO_ROOT`/`AXGIT_STATIC_DIR`/`AXGIT_LISTEN` in its own `ENV`
+  (`Containerfile`), so the other order — file over environment — would mean a config file
+  mounted into that image silently reconfiguring a deployment that has always been driven by
+  those variables, including `AXGIT_STATIC_DIR=/app/dist`, which is not an operator preference but
+  a fact about where the image put the frontend. Layering the file *under* the environment keeps
+  every existing deployment byte-for-byte unchanged and makes the file purely additive.
+- **The merge reads clap's `ValueSource`,** rather than restructuring `Config` into layers of
+  `Option`. `Config::load` takes the `ArgMatches` (`Config::command().get_matches()` +
+  `from_arg_matches`) and applies a file value only where `value_source` reports `DefaultValue` or
+  nothing — i.e. where neither the command line nor the environment spoke. That is the whole
+  precedence rule, in one predicate, with the clap struct, its defaults and its `--help` text
+  left exactly as they were. `merge` takes that predicate as an `impl Fn(&str) -> bool` over arg
+  ids rather than an `&ArgMatches`, so the rule is unit-testable without a process environment to
+  stand up. (Arg ids are the derive's field idents — `cache_scan_ttl_secs`, not
+  `cache-response-ttl`; a rename of either without the other is the one way to break this
+  silently, so the ids appear as literals right next to the fields they set.)
+- **Discovery: `--config`/`AXGIT_CONFIG` if given, else `/etc/axgit/axgit.toml` if it exists.** A
+  named-but-missing file aborts startup (the operator asked for it), a missing default one is
+  silent (axgit has never needed a config file and still doesn't). The default path sits beside
+  the unit's existing `/etc/axgit/axgit.env`, and needs no `axgit.service` change since axgit
+  finds it itself.
+- **Unknown keys warn and are ignored,** rather than failing startup as `serde`'s
+  `deny_unknown_fields` would. The point is that a file derived from a real `cgitrc` — carrying
+  `scan-path`, `enable-*`, `snapshots`, `css` and the rest of the ~80 options axgit has no
+  equivalent for — still boots, with a warning line per key naming exactly what was dropped. The
+  known-key list is hand-maintained and exhaustive (`config/file.rs`'s `TOP_LEVEL_KEYS`/
+  `SITE_KEYS`/`CACHE_KEYS`), the same "auditable on its own" stance as
+  `branding.rs::content_type_for_extension`; the scan is split out as `unknown_keys` so tests
+  assert on the list rather than on log output. Cost: the file is parsed twice, once as a
+  `toml::Table` to find stray keys and once into the typed struct, which for a few dozen lines
+  read once at startup is not worth avoiding.
+- **A malformed file *is* fatal**, unlike the branding/readme paths (`site.rs`, `branding.rs`),
+  which degrade to `None` on a bad value. The difference is blast radius: a broken logo path
+  spoils one response, while a config file that can't be parsed means every setting in it is
+  silently absent and the whole deployment is running on values the operator didn't choose. Same
+  for an invalid `repository-sort`, which is validated by the same `parse_repository_sort` the
+  flag's `value_parser` uses, so both surfaces reject it with identical text.
+- `main.rs` now installs the tracing subscriber **before** loading config (it was the other way
+  around), or the unknown-key warnings would be emitted with no subscriber and vanish. The
+  subscriber setup reads no config of its own, so this is a pure reorder. The startup
+  `tracing::info!` gained `config_file`, holding the path actually applied (`null` when none was).
+- **Not adopted: cgit's `repo.*` blocks and `include=`.** Repositories are discovered by scanning
+  `repo-root`, and their metadata comes from each bare repo's own `config` — a core invariant
+  (AGENTS.md), not something the site config file should be able to override. `include=` is a
+  cgitrc feature with no demand behind it here; TOML has no include of its own, so adding one
+  would mean inventing a directive rather than adopting a format's.
+- Docs: README.md's configuration table gained a "Config file key" column plus a precedence
+  paragraph and an example file; `packaging/axgit.toml.example` is the file-shaped sibling of
+  `axgit.env.example` (both now cross-reference each other and say the environment wins), shipped
+  in the release tarball by `scripts/make-release.sh` alongside it; `packaging/axgit.service`'s
+  "the only configuration surface" comment is no longer true and now names both.

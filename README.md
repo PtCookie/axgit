@@ -132,24 +132,53 @@ per target and a single `release/SHA256SUMS` covering all of them — see the ta
 
 ### Configuration
 
-All settings are environment variables (also available as CLI flags — `axgit --help`):
+Every setting is reachable three ways — a CLI flag (`axgit --help`), an `AXGIT_*` environment
+variable, or a key in a TOML config file — and they layer in that order:
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `AXGIT_REPO_ROOT` | `/srv/git` | Directory containing bare repositories (`*.git`) |
-| `AXGIT_STATIC_DIR` | _(unset)_ | Astro static build (`web/dist`) to serve at `/`; set to `/app/dist` inside the image. Overrides an `embed-web`-baked build when both are present |
-| `AXGIT_LISTEN` | `0.0.0.0:8080` | Socket address to listen on |
-| `AXGIT_CLONE_URL_BASE` | _(unset)_ | Base URL used when displaying clone URLs on the summary page |
-| `AXGIT_CACHE_SCAN_TTL` | `60` | Repository scan cache TTL, in seconds |
-| `AXGIT_CACHE_RESPONSE_TTL` | `300` | Response cache TTL, in seconds (a safety net — pushes invalidate entries immediately via the HEAD/agefile validator) |
-| `AXGIT_CACHE_RESPONSE_MAX_BYTES` | `33554432` (32 MiB) | Response cache capacity, in bytes |
-| `AXGIT_REPOSITORY_SORT` | `name` | Default repository index sort order (`name`, `desc`, `owner`, `idle`, `section`, optionally `-`-prefixed); a request's own `?sort=` overrides it |
-| `AXGIT_ROOT_TITLE` | _(unset)_ | Site-wide title, shown as the header brand and falling back to "Axgit" |
-| `AXGIT_ROOT_DESC` | _(unset)_ | Site-wide description, shown on the index page |
-| `AXGIT_ROOT_README` | _(unset)_ | Path to a markdown/reStructuredText/plain-text file rendered on the index page |
-| `AXGIT_LOGO` | _(unset)_ | Site logo, shown beside the header brand. An `http(s)://` URL (used verbatim) or a filesystem path axgit serves itself at `GET /api/v1/site/logo`; unset shows axgit's own mark (`/favicon.svg`), the same one the tab icon defaults to |
-| `AXGIT_LOGO_LINK` | _(unset)_ | Where the logo links to; an `http(s)://` URL or a root-relative path, falling back to `/` |
-| `AXGIT_FAVICON` | _(unset)_ | Site favicon, replacing axgit's own default. Same URL-or-path rule as `AXGIT_LOGO`, served at `GET /api/v1/site/favicon` |
+**CLI flag > environment variable > config file > built-in default.**
+
+The config file is optional. `--config <path>` / `AXGIT_CONFIG` names one explicitly (a path that
+doesn't exist is a startup error); with neither set, `/etc/axgit/axgit.toml` is read if it happens
+to be there, and startup is silent if it isn't. Keys axgit doesn't recognize are logged as a
+warning and ignored, so a `cgitrc` carried over from cgit — with its `scan-path`, `enable-*`,
+`snapshots` keys — still boots.
+
+```toml
+# /etc/axgit/axgit.toml
+repo-root       = "/srv/git"
+listen          = "0.0.0.0:8080"
+clone-url-base  = "https://git.example.com"
+repository-sort = "-idle"
+
+[site]
+root-title = "PtCookie Git"
+root-desc  = "self-hosted git"
+logo       = "/srv/git/logo.svg"
+
+[cache]
+response-ttl = 300
+```
+
+Section names are organizational only; keys keep cgit's own `cgitrc` spelling wherever cgit has
+one, so an existing value can be pasted straight across.
+
+| Variable | Config file key | Default | Description |
+| --- | --- | --- | --- |
+| `AXGIT_CONFIG` | _(n/a)_ | `/etc/axgit/axgit.toml` when it exists | TOML config file holding any of the settings below |
+| `AXGIT_REPO_ROOT` | `repo-root` | `/srv/git` | Directory containing bare repositories (`*.git`) |
+| `AXGIT_STATIC_DIR` | `static-dir` | _(unset)_ | Astro static build (`web/dist`) to serve at `/`; set to `/app/dist` inside the image. Overrides an `embed-web`-baked build when both are present |
+| `AXGIT_LISTEN` | `listen` | `0.0.0.0:8080` | Socket address to listen on |
+| `AXGIT_CLONE_URL_BASE` | `clone-url-base` | _(unset)_ | Base URL used when displaying clone URLs on the summary page |
+| `AXGIT_CACHE_SCAN_TTL` | `cache.scan-ttl` | `60` | Repository scan cache TTL, in seconds |
+| `AXGIT_CACHE_RESPONSE_TTL` | `cache.response-ttl` | `300` | Response cache TTL, in seconds (a safety net — pushes invalidate entries immediately via the HEAD/agefile validator) |
+| `AXGIT_CACHE_RESPONSE_MAX_BYTES` | `cache.response-max-bytes` | `33554432` (32 MiB) | Response cache capacity, in bytes |
+| `AXGIT_REPOSITORY_SORT` | `repository-sort` | `name` | Default repository index sort order (`name`, `desc`, `owner`, `idle`, `section`, optionally `-`-prefixed); a request's own `?sort=` overrides it |
+| `AXGIT_ROOT_TITLE` | `site.root-title` | _(unset)_ | Site-wide title, shown as the header brand and falling back to "Axgit" |
+| `AXGIT_ROOT_DESC` | `site.root-desc` | _(unset)_ | Site-wide description, shown on the index page |
+| `AXGIT_ROOT_README` | `site.root-readme` | _(unset)_ | Path to a markdown/reStructuredText/plain-text file rendered on the index page |
+| `AXGIT_LOGO` | `site.logo` | _(unset)_ | Site logo, shown beside the header brand. An `http(s)://` URL (used verbatim) or a filesystem path axgit serves itself at `GET /api/v1/site/logo`; unset shows axgit's own mark (`/favicon.svg`), the same one the tab icon defaults to |
+| `AXGIT_LOGO_LINK` | `site.logo-link` | _(unset)_ | Where the logo links to; an `http(s)://` URL or a root-relative path, falling back to `/` |
+| `AXGIT_FAVICON` | `site.favicon` | _(unset)_ | Site favicon, replacing axgit's own default. Same URL-or-path rule as `AXGIT_LOGO`, served at `GET /api/v1/site/favicon` |
 
 ### Repository configuration
 

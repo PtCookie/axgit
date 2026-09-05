@@ -45,6 +45,11 @@ sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "process", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["io"] }
+# Parses the optional TOML config file (docs/DECISIONS.md #87). Read-only:
+# axgit never writes TOML back, so the `display` (serializer) and
+# `preserve_order` features stay off — `parse` + `serde` + `std` is the whole
+# surface used.
+toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

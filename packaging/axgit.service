@@ -20,10 +20,15 @@ RestartSec=2
 User=git
 Group=git
 
-# The only configuration surface — every AXGIT_* variable from
-# api/src/config.rs (see axgit.env.example, and README.md's configuration
+# One of the two configuration surfaces — every AXGIT_* variable from
+# api/src/config/ (see axgit.env.example, and README.md's configuration
 # table). The leading '-' makes the file optional: axgit's own defaults
 # apply if it's absent.
+#
+# The other is /etc/axgit/axgit.toml, which axgit reads by itself when it
+# exists (see axgit.toml.example, docs/DECISIONS.md #87) — no unit change
+# needed. A variable set here wins over the same setting in that file, so
+# pick one of the two per setting rather than splitting one across both.
 EnvironmentFile=-/etc/axgit/axgit.env
 
 # Sandboxing. The app never writes anywhere (CLAUDE.md's read-only

@@ -1,0 +1,78 @@
+# Axgit configuration — the config-file alternative to axgit.env
+# (docs/DECISIONS.md #87). Every setting is also available as an AXGIT_*
+# environment variable and as a CLI flag (axgit --help); see
+# api/src/config/ for the source of truth and README.md for the same table
+# this file mirrors.
+#
+# Copy this to /etc/axgit/axgit.toml — the path axgit reads with no
+# --config/AXGIT_CONFIG of its own — and uncomment/edit what you need; axgit
+# runs with sane defaults for everything left commented out.
+#
+# Precedence is CLI flag > environment variable > this file > default, so a
+# value set here is ignored while the matching AXGIT_* variable is also set
+# in /etc/axgit/axgit.env. Pick one of the two files for any given setting.
+#
+# Keys axgit doesn't recognize are logged as a warning and ignored, so a
+# cgitrc-derived file with cgit-only keys still boots.
+
+# Directory containing bare repositories (*.git). Required in practice —
+# the default /srv/git only makes sense inside the container image.
+repo-root = "/srv/git"
+
+# Base URL used when displaying clone URLs on the summary page.
+clone-url-base = "https://git.example.com"
+
+# Astro static build (web/dist) to serve at /. Leave unset for the
+# single-binary build (this tarball) — the embed-web feature already bakes
+# web/dist into the binary. Set only to override the embedded copy without
+# rebuilding.
+# static-dir = "/app/dist"
+
+# Socket address to listen on.
+# listen = "0.0.0.0:8080"
+
+# Default repository index sort order (name, desc, owner, idle, section,
+# optionally '-'-prefixed); a request's own ?sort= overrides it.
+# repository-sort = "name"
+
+# Site-wide branding and index-page chrome. Key names are cgit's own cgitrc
+# spelling, so existing values can be pasted straight across.
+[site]
+
+# Site-wide title, shown as the header brand (falls back to "Axgit").
+# root-title = "PtCookie Git"
+
+# Site-wide description, shown on the index page.
+# root-desc = "self-hosted git"
+
+# Path to a markdown/reStructuredText/plain-text file rendered on the index
+# page.
+# root-readme = "/srv/git/README.md"
+
+# Site logo, shown beside the header brand. An http(s):// URL (used
+# verbatim) or a filesystem path axgit serves itself at
+# GET /api/v1/site/logo. Unset shows axgit's own mark (/favicon.svg), the
+# same one the tab icon defaults to.
+# logo = "/srv/git/logo.svg"
+
+# Where the logo links to; an http(s):// URL or a root-relative path,
+# falling back to /.
+# logo-link = "https://example.com"
+
+# Site favicon, replacing axgit's own default. Same URL-or-path rule as
+# logo, served at GET /api/v1/site/favicon.
+# favicon = "/srv/git/favicon.png"
+
+# Cache knobs. axgit-specific — cgit's own cache-* options don't map onto
+# these.
+[cache]
+
+# Repository scan cache TTL, in seconds.
+# scan-ttl = 60
+
+# Response cache TTL, in seconds (a safety net — pushes invalidate entries
+# immediately via the HEAD/agefile validator).
+# response-ttl = 300
+
+# Response cache capacity, in bytes.
+# response-max-bytes = 33554432

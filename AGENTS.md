@@ -29,6 +29,11 @@ like "what should I do next?", read this file first. When finishing a piece of w
   logic either.
 - **Repositories are bare repos under `/srv/git`**, mounted read-only into the container
   (configured via `AXGIT_REPO_ROOT`).
+- **Settings come from CLI flags, `AXGIT_*` environment variables, and an optional TOML config
+  file, in that precedence order** (`api/src/config/`, docs/DECISIONS.md #87). Adding a setting
+  means touching all of them together: the clap field in `config/mod.rs`, the matching
+  `FileConfig` field *and* known-key list entry in `config/file.rs`, its arm in `merge`, plus
+  README.md's configuration table and `packaging/axgit.toml.example`/`axgit.env.example`.
 - **Repository metadata is read from each repo's `config` file, `[cgit]` section**
   (`section`, `name`, `owner`, `desc`). The git-server's `git-init` script writes this format, so
   **do not break compatibility**. An `[axgit]` section, if present, takes precedence.
@@ -162,6 +167,7 @@ axgit/
     src/
       main.rs         # entry point (thin), lib.rs declares modules
       routes.rs       # router setup + Swagger UI mount
+      config/         # clap Config + the optional TOML config file layered under it
       repo/           # repository scanning, metadata, git2 reads (response structs live here too)
       handlers/        # HTTP handlers (1:1 with API.md, #[utoipa::path] annotations)
       openapi.rs      # #[derive(OpenApi)] — the spec's path/tag listing

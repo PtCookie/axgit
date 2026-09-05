@@ -1457,11 +1457,34 @@ piece of work, update the "Done" section and replace "Next up" with the next tar
     explicit blank value (rather than leaving the key unset) so the blank-vs-absent distinction
     stays exercised end-to-end, not just in unit/integration tests.
 
+- **TOML config file** (`api/src/config/`, `packaging/axgit.toml.example`, DECISIONS #87) — the
+  cgit `cgitrc` equivalent, so a deployment can be described in one commentable file instead of a
+  list of `AXGIT_*` variables. Finalized design:
+  - `config.rs` became a module directory: `config/file.rs` (the `FileConfig` serde structs, the
+    parse, the unknown-key scan) and `config/mod.rs` (the unchanged clap `Config`, plus
+    `Config::load` and `merge`). `axgit::config::Config`'s path is unchanged, so nothing else in
+    the crate or in `tests/common` moved.
+  - **Precedence is CLI flag > env var > config file > default**, implemented by reading clap's
+    `ValueSource`: a file value applies only where `value_source` reports `DefaultValue` or
+    nothing. Chosen over "file beats env" because the container image's own `ENV` (notably
+    `AXGIT_STATIC_DIR=/app/dist`) has to keep winning. `merge` takes the "was this explicit?"
+    predicate as an `impl Fn(&str) -> bool` over clap arg ids so it is testable without a process
+    environment.
+  - Discovery: `--config`/`AXGIT_CONFIG`, else `/etc/axgit/axgit.toml` when it exists. A
+    named-but-missing file aborts startup; a missing default one is silent.
+  - Unknown keys warn and are ignored (so a `cgitrc`-derived file still boots) against a
+    hand-maintained key list; malformed TOML or a bad value *is* fatal, unlike the
+    degrade-to-`None` branding/readme paths. `main.rs` now installs the tracing subscriber before
+    loading config, or those warnings would vanish.
+  - Sections (`[site]`, `[cache]`) are organizational only; keys keep cgit's own spelling wherever
+    cgit has one. No API surface change, so `docs/API.md`/`openapi.json`/`types.ts` are untouched.
+
 ## Next up
 
 No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,
-see the "not planned" notes below), and the single-binary deploy path — feature (#74) and packaging
-(#75) both — is done. Pick a candidate below, or a fresh request.
+see the "not planned" notes below), the single-binary deploy path — feature (#74) and packaging
+(#75) both — is done, and configuration now has a file surface as well as flags/env (#87). Pick a
+candidate below, or a fresh request.
 
 ### Candidates (not urgent, no particular order)
 

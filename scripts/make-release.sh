@@ -292,6 +292,7 @@ for t in $TARGETS; do
   cp "$BINARY" "$STAGE_DIR/axgit"
   cp "$ROOT/packaging/axgit.service" "$STAGE_DIR/"
   cp "$ROOT/packaging/axgit.env.example" "$STAGE_DIR/"
+  cp "$ROOT/packaging/axgit.toml.example" "$STAGE_DIR/"
   cp "$ROOT/packaging/INSTALL.md" "$STAGE_DIR/"
   cp "$ROOT/LICENSE" "$STAGE_DIR/"
 

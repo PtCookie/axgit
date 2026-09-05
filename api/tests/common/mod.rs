@@ -25,6 +25,7 @@ pub const FIXED_DATE: &str = "2026-07-01T12:00:00+09:00";
 /// specific setting (e.g. `clone_url_base`) override the field afterwards.
 pub fn test_config(repo_root: &Path) -> Config {
     Config {
+        config: None,
         repo_root: repo_root.to_owned(),
         static_dir: None,
         listen: "127.0.0.1:0".parse().unwrap(),

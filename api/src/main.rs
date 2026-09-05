@@ -1,5 +1,4 @@
 use anyhow::Context;
-use clap::Parser;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -9,8 +8,9 @@ use axgit::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Config::parse();
-
+    // Before `Config::load` on purpose: reading the config file warns about
+    // unknown keys, and those warnings would go nowhere with no subscriber
+    // installed. The subscriber setup reads no config of its own.
     tracing_subscriber::fmt()
         .json()
         .with_env_filter(
@@ -18,12 +18,23 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    let config = Config::load()?;
+
     let listener = TcpListener::bind(config.listen)
         .await
         .with_context(|| format!("failed to bind {}", config.listen))?;
+    // Rendered before the event so the field is a plain path string rather
+    // than `Some("…")` — this log line is JSON, and an operator grepping it
+    // for which config file actually applied shouldn't have to read Rust
+    // `Debug` output.
+    let config_file = config
+        .config
+        .as_ref()
+        .map(|path| path.display().to_string());
     tracing::info!(
         listen = %config.listen,
         repo_root = %config.repo_root.display(),
+        config_file = config_file.as_deref().unwrap_or("none"),
         "starting axgit"
     );
 
