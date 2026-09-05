@@ -8,12 +8,21 @@ add its decision entry to `docs/DECISIONS.md`, in the same commit.
 
 ## Next up
 
-No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,
-see the "not planned" notes below), the single-binary deploy path — feature (#74) and packaging
-(#75) both — is done, configuration has a file surface as well as flags/env (#87), and the docs
-now live next to the code they describe: the API contract and backend design in `api/README.md`,
-the frontend design in `web/README.md`, deployment in `README.md` (#89, #90). Pick a candidate
-below, or a fresh request.
+**GitHub Actions workflows, replacing the deleted Jenkins pipeline (#91).** The `Jenkinsfile` is
+gone and nothing runs the checks automatically until this lands — lefthook's pre-commit hooks and
+the local commands in AGENTS.md are the only gate right now. What the replacement owes is recorded
+in the entries that specified it, not restated in #91: the parallel `web`/`api` split with
+`--features api-only` alongside the default build (#88), the production `pnpm --filter web build`
+that only CI runs (#76), the release smoke check and its skip-when-not-executable caveat (#76,
+#79), and `v*`-tag-only release artifacts (#75). The self-hosted agent prerequisites that pipeline
+assumed (both musl rustup targets, `musl-tools`, an aarch64 cross musl gcc, `qemu-user-static`)
+have to become explicit workflow steps or a container job.
+
+Beyond that: no cgit-parity gaps remain (single-child directory collapsing was deliberately left
+unimplemented, see the "not planned" notes below), the single-binary deploy path — feature (#74)
+and packaging (#75) both — is done, configuration has a file surface as well as flags/env (#87),
+and the docs now live next to the code they describe: the API contract and backend design in
+`api/README.md`, the frontend design in `web/README.md`, deployment in `README.md` (#89, #90).
 
 ### Candidates (not urgent, no particular order)
 

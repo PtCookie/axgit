@@ -6,8 +6,8 @@
 #   release/axgit-$VERSION-$TARGET.tar.gz  (one per target)
 #   release/SHA256SUMS                     (covers every tarball produced)
 #
-# Assumes `pnpm install` has already run (Jenkins' "Install dependencies"
-# stage does this) — this script does not install JS/Rust dependencies
+# Assumes `pnpm install` has already run (CI does this in its dependency
+# install step) — this script does not install JS/Rust dependencies
 # itself, only builds and packages.
 set -euo pipefail
 
@@ -137,7 +137,7 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-# Jenkins sets TAG_NAME on a tag build (release trigger, docs/DECISIONS.md
+# CI sets TAG_NAME on a tag build (release trigger, docs/DECISIONS.md
 # #75). A mismatch between the pushed tag and the crate version should stop
 # the release rather than ship a mislabelled tarball.
 if [[ -n "${TAG_NAME:-}" && "$TAG_NAME" != "v$VERSION" ]]; then
@@ -303,7 +303,7 @@ for t in $TARGETS; do
       -czf "$TARBALL" "$PKG_NAME"
   else
     # bsdtar (macOS) has no --sort/--mtime/--numeric-owner; used for local
-    # verification only, not the Jenkins release artifact.
+    # verification only, not the CI release artifact.
     tar -C "$RELEASE_DIR" -czf "$TARBALL" "$PKG_NAME"
   fi
   rm -rf "$STAGE_DIR"

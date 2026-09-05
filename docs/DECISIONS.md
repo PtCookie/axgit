@@ -1747,7 +1747,8 @@ half.
 - **Jenkins releases on `v*` tag builds only, via `archiveArtifacts`** — producing and retaining the
   artifact, matching the pipeline's existing "test-only, artifacts archived" posture. The `Release`
   stage runs after `Test`, so a broken build never produces a tagged artifact even if the tag was
-  pushed.
+  pushed *(superseded by #91 — the pipeline is gone; `make-release.sh` and its `TAG_NAME` guard
+  are what a replacement has to drive)*.
 
 ## #76 CI coverage and a binary smoke check for the single-binary release path
 
@@ -2106,7 +2107,8 @@ first removed the reason a non-embedded build existed at all.
 - **`api-only` stays a real, tested build**, not a vestigial escape hatch: CI's `api` branch
   (Jenkinsfile) runs `cargo clippy --features api-only --all-targets` and
   `cargo test --features api-only --lib --test static_shell_test` alongside the default build, so a
-  change that breaks the pure-API path is caught the same run it's introduced.
+  change that breaks the pure-API path is caught the same run it's introduced *(the intent stands,
+  but no CI runs these today — see #91)*.
 - **`scripts/make-release.sh` and the Jenkinsfile's Release stage drop `--features embed-web`** —
   the tarball build already ran `pnpm --filter web build` first, so the default build now does what
   the explicit flag used to. The Jenkinsfile's old standalone "Embedded build" stage is gone; its
@@ -2172,3 +2174,30 @@ section restated README.md's Deployment / Single-binary build / Configuration se
   were repointed at `api/README.md`. `openapi.json` and `web/src/lib/api/types.ts` carry the same
   strings but are **generated**, so they were regenerated rather than edited — the only reason this
   rename touches them at all.
+
+## #91 Jenkins pipeline removed ahead of a GitHub Actions replacement
+
+The `Jenkinsfile` described a pipeline tied to one self-hosted agent and its hand-provisioned
+prerequisites (both musl rustup targets, `musl-tools`, an aarch64 cross musl gcc, `qemu-user-static`,
+a Playwright browser install). CI is moving to GitHub Actions; the Jenkins definition is deleted
+first, in its own commit, so the replacement is written against the current tree rather than ported
+line by line from a file it is meant to supersede.
+
+- **Deleted, not left in place alongside a second definition.** Two pipeline files claiming to be
+  the source of truth for what CI runs is the failure mode worth avoiding — one of them silently
+  rots. **Consequence, stated plainly: between this commit and the GitHub Actions workflows, nothing
+  runs the checks automatically.** Until then they are the local commands in AGENTS.md, backed by
+  lefthook's pre-commit hooks.
+- **What the replacement owes, carried by the entries that specified it** rather than restated here:
+  the `web`/`api` split with `--features api-only` alongside the default build (#88), the production
+  Astro build being CI's only production `pnpm --filter web build` (#76), the release smoke check
+  and its "skipped when the host can't execute `$TARGET`" caveat (#76, #79), and `v*`-tag-only
+  release artifacts (#75).
+- **Nothing outside the `Jenkinsfile` was rewired.** `scripts/make-release.sh` keeps its `TAG_NAME`
+  guard — the variable is a plain CI contract, not a Jenkins one, and a GitHub Actions job sets it
+  from `github.ref_name` just as readily. Comments in `make-release.sh` and `web/vitest.config.ts`
+  that reached for Jenkins to explain *why* (a shared agent running the `web` and `api` jobs
+  concurrently, which is what `retry: process.env.CI ? 2 : 0` exists for) now say "CI", since the
+  reasoning survives the provider change.
+- `api/src/cgit_compat.rs`'s reference to Jenkins is unrelated and stays: it names Jenkins' `cgit`
+  Repository browser as the external producer of cgit-shaped URLs that #35 redirects.
