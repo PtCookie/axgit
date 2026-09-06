@@ -2243,11 +2243,13 @@ pipeline never had.
   push-by-digest images. Deployment stays manual (the git-compose stack pulls and restarts by
   hand), so a stream of per-commit images would have nothing consuming it; tagging follows
   metadata-action's defaults — `X.Y.Z`, `X.Y`, and `latest` withheld from prereleases via
-  `latest=auto`. Two consequences worth writing down: **a GHCR package is private on first publish
-  even for a public repository** and has to be flipped once by hand, and `metadata-action`
-  overwrites the `Containerfile`'s `org.opencontainers.image.source` — pointing at the origin for a
-  local build and at the GitHub mirror here, which is what links the package to a browsable
-  repository. Only the registry layer cache (`type=gha`) is used: BuildKit does **not** persist
+  `latest=auto`. One consequence worth writing down: `metadata-action` overwrites the
+  `Containerfile`'s `org.opencontainers.image.source` — pointing at the origin for a local build
+  and at the GitHub mirror here, which is what links the package to a browsable repository.
+  Publishing from the workflow with `GITHUB_TOKEN` also linked the package to this repository and
+  gave it the repository's own public visibility, with no manual step (the documented "packages are
+  private on first publish" default did not apply). Only the registry layer cache (`type=gha`) is
+  used: BuildKit does **not** persist
   `RUN --mount=type=cache` mounts through it, and those mounts still earn their keep for the
   from-source build on the deployment host, so the `Containerfile` is left alone.
 - **`pnpm --filter web check` gained `astro sync && tsc --noEmit`.** Type checking existed only in
@@ -2260,6 +2262,12 @@ pipeline never had.
   `pnpm-lock.yaml` pnpm 11 emits once an env-lockfile document is present
   (dependabot-core#14919). This repository's lockfile is still single-document, so updates work
   today; if that changes, the `npm` entry gets disabled and the other two stay.
-- **No provenance attestation yet.** `actions/attest` would need the manifest-list digest threaded
-  out of the merge job plus `id-token`/`attestations` permissions, and nothing consuming this image
-  verifies attestations — revisit if that changes rather than carrying the complexity now.
+- **Provenance comes from buildx's own default; no `actions/attest` on top.**
+  `docker/build-push-action` enables `provenance=mode=min` by default under GitHub Actions, so each
+  platform image ships a sibling in-toto manifest carrying an `https://slsa.dev/provenance/v1`
+  predicate. Those are the `unknown/unknown` rows in GHCR's OS/Arch list — an attestation belongs
+  to no platform, and each references its image through `vnd.docker.reference.digest`. They are
+  left on: `docker pull` selects by platform and never sees them, and the build origin is worth
+  recording. What is *not* added is `actions/attest`, whose Sigstore-signed attestation would need
+  the manifest-list digest threaded out of the merge job plus `id-token`/`attestations`
+  permissions — nothing consuming this image verifies those, so revisit if that changes.

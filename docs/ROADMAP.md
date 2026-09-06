@@ -17,12 +17,6 @@ see the "not planned" notes below), the single-binary deploy path — feature (#
 live next to the code they describe: the API contract and backend design in `api/README.md`, the
 frontend design in `web/README.md`, deployment in `README.md` (#89, #90).
 
-Two operational follow-ups belong to whoever cuts the next release rather than to a commit here.
-**A GHCR package is private on first publish even for a public repository**, so it has to be
-flipped to public once by hand or the deployment host can't pull without credentials. And
-`release.yml`/`image.yml` are tag-only, so the next `v*` tag is the first thing that exercises them
-end to end — README.md#deployment describes what the artifacts should look like.
-
 Pick the next piece of work from the candidates below.
 
 ### Candidates (not urgent, no particular order)
