@@ -21,6 +21,9 @@ web/.vitest-attachments
 # Fixture repos (generated locally, not needed to build the image)
 fixtures/repos
 
+# CI definitions (not part of the image build)
+.github
+
 # Editor/agent tooling directories
 .idea
 .claude

@@ -1,0 +1,140 @@
+# Publishes the container image to GHCR on a `v*` tag (docs/DECISIONS.md #92).
+#
+# Tags only, not every push to main: the deployment step is manual (the
+# git-compose stack pulls and restarts by hand), so a stream of untagged
+# images would have nothing pulling it. See README.md#deployment for how the
+# published image is consumed.
+#
+# Built natively per architecture — `ubuntu-latest` for amd64 and
+# `ubuntu-24.04-arm` for arm64 — so no QEMU is involved. Each job pushes an
+# untagged manifest by digest and the `merge` job assembles the two into one
+# multi-platform manifest list, which is what the tags point at.
+name: Image
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  # `github.repository` carries the owner's original casing; registries
+  # accept lowercase only. docker/metadata-action lowercases its `images`
+  # input by itself, but the raw uses below have to do it explicitly — hence
+  # the `IMAGE` variable each job derives in its Prepare step.
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          echo "IMAGE=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+          echo "PLATFORM_SLUG=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # `Dockerfile` is a symlink to `Containerfile`; naming the real file
+      # keeps this working regardless of how the symlink is checked out.
+      #
+      # Layer cache only. The Containerfile's `RUN --mount=type=cache` mounts
+      # (pnpm store, cargo registry, api/target) are NOT persisted by the GHA
+      # cache backend — that limitation is upstream, and the mounts still pay
+      # off for the from-source build on the deployment host, so the
+      # Containerfile is left alone.
+      - uses: docker/build-push-action@v7
+        id: build
+        with:
+          context: .
+          file: ./Containerfile
+          platforms: ${{ matrix.platform }}
+          # Labels come from metadata-action, which overrides the
+          # Containerfile's own OCI labels — notably
+          # `org.opencontainers.image.source`, which points at the origin
+          # (git.ptcookie.net) for a local build and at the GitHub mirror
+          # here. Intentional: on GHCR that label is what links the package
+          # to a browsable repository.
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_SLUG }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_SLUG }}
+      # The digest is the whole payload for the merge job; an empty file named
+      # after it is enough to carry it across.
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ env.PLATFORM_SLUG }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: merge manifests
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+      - name: Prepare
+        run: echo "IMAGE=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v4
+      # `latest` is not listed: metadata-action's default `flavor` is
+      # `latest=auto`, which adds it for a semver tag and correctly withholds
+      # it from a prerelease (e.g. v1.0.0-rc1).
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${IMAGE}@sha256:%s " *)
+      - name: Inspect image
+        run: docker buildx imagetools inspect "${IMAGE}:${{ steps.meta.outputs.version }}"

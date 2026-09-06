@@ -10,7 +10,7 @@
         "gen:favicon": "node scripts/make-favicon.mjs",
         "lint": "eslint",
         "format": "prettier --write .",
-        "check": "pnpm lint && prettier --check .",
+        "check": "astro sync && tsc --noEmit && pnpm lint && prettier --check .",
         "test": "vitest",
         "test:e2e": "playwright test"
     },

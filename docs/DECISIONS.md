@@ -2201,3 +2201,65 @@ line by line from a file it is meant to supersede.
   reasoning survives the provider change.
 - `api/src/cgit_compat.rs`'s reference to Jenkins is unrelated and stays: it names Jenkins' `cgit`
   Repository browser as the external producer of cgit-shaped URLs that #35 redirects.
+
+## #92 GitHub Actions: CI, `v*` release tarballs, and a GHCR image
+
+The replacement for the pipeline #91 deleted, split across `.github/workflows/ci.yml`,
+`release.yml` and `image.yml` plus a `dependabot.yml`. The checks themselves are the same commands
+the Jenkinsfile ran — what changed is where they run, and what happens after they pass: a `v*` tag
+now publishes both the release tarballs and a container image, which is the CD half the old
+pipeline never had.
+
+- **The mirror is what shapes the CI file.** `git.ptcookie.net` is the origin; this GitHub
+  repository is a mirror that git-server's post-receive hook **force**-pushes to. So **no workflow
+  may write to the repository** — a commit pushed by Actions is erased by the next mirror push,
+  which rules out the usual auto-format / commit-the-regenerated-file patterns for `openapi.json`
+  and `types.ts`. CI only checks; lefthook and the author remain the gate. For the same reason an
+  approved PR (Dependabot's, typically) is **pulled locally and pushed to the origin** rather than
+  merged through the GitHub UI: the commits arrive here identical, so GitHub marks the PR merged on
+  its own, whereas a UI merge would create a merge commit the origin has never seen. `push` is
+  scoped to `main` because PR branches live in this same repository and an unscoped trigger would
+  run every PR twice; `concurrency` cancels in-flight runs because a force-pushed rewrite makes
+  them meaningless.
+- **`web-build` is its own job, ahead of `api`.** The default cargo build bakes `web/dist` into the
+  binary (#74, #88) and `api/build.rs` fails outright without it, so the production Astro build
+  can't live inside the `api` job's own steps if the two are to be separable — it runs once and
+  hands `web/dist` over as an artifact. `web` runs in parallel and needs neither that artifact nor
+  a running axgit: the e2e suite mocks `/api` via `page.route` against `astro dev`. `--with-deps`
+  on the Playwright install is new — GitHub's runner image ships none of the webkit/firefox system
+  libraries the old self-hosted agent had.
+- **Release builds go native per architecture** (`ubuntu-latest` + `ubuntu-24.04-arm`, the latter
+  free on public repositories) instead of cross-compiling both targets on one x86_64 machine. This
+  deletes the whole cross-toolchain prerequisite #79 documented — an aarch64 cross musl gcc, the
+  `CC_`/`AR_`/`CARGO_TARGET_*_LINKER` exports, `qemu-user-static` — down to one `musl-tools`
+  install per runner, since `musl-gcc` is `make-release.sh`'s first native candidate. It also
+  turns #76's smoke check from "skipped whenever the host can't execute `$TARGET`" into something
+  that **always** runs: the binary that ships has been executed on its own architecture.
+- **`SHA256SUMS` is written by the `publish` job, not by the build.** `make-release.sh` still emits
+  one, but a matrix job only ever sees its own tarball; the script's contract that the checksum file
+  covers every tarball produced now lives in the job that collects them all. The per-target files
+  are discarded, and the script is otherwise unmodified.
+- **The image publishes on `v*` tags only**, as a manifest list assembled from two natively built,
+  push-by-digest images. Deployment stays manual (the git-compose stack pulls and restarts by
+  hand), so a stream of per-commit images would have nothing consuming it; tagging follows
+  metadata-action's defaults — `X.Y.Z`, `X.Y`, and `latest` withheld from prereleases via
+  `latest=auto`. Two consequences worth writing down: **a GHCR package is private on first publish
+  even for a public repository** and has to be flipped once by hand, and `metadata-action`
+  overwrites the `Containerfile`'s `org.opencontainers.image.source` — pointing at the origin for a
+  local build and at the GitHub mirror here, which is what links the package to a browsable
+  repository. Only the registry layer cache (`type=gha`) is used: BuildKit does **not** persist
+  `RUN --mount=type=cache` mounts through it, and those mounts still earn their keep for the
+  from-source build on the deployment host, so the `Containerfile` is left alone.
+- **`pnpm --filter web check` gained `astro sync && tsc --noEmit`.** Type checking existed only in
+  lefthook's pre-commit hook, which meant it was skipped by anything that didn't commit. Putting it
+  in `check` rather than in a separate CI step keeps the local command and CI running the same
+  thing. `astro sync` is required, not decorative: without `.astro/types.d.ts` — a generated file,
+  present locally but absent in a clean checkout — `tsc` fails on `import.meta.env`.
+- **Dependabot covers `cargo`, `npm` and `github-actions`**, grouped and weekly. Known risk
+  recorded in the file itself: Dependabot's pnpm parser cannot read the multi-document
+  `pnpm-lock.yaml` pnpm 11 emits once an env-lockfile document is present
+  (dependabot-core#14919). This repository's lockfile is still single-document, so updates work
+  today; if that changes, the `npm` entry gets disabled and the other two stay.
+- **No provenance attestation yet.** `actions/attest` would need the manifest-list digest threaded
+  out of the merge job plus `id-token`/`attestations` permissions, and nothing consuming this image
+  verifies attestations — revisit if that changes rather than carrying the complexity now.

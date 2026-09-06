@@ -55,7 +55,8 @@ pnpm install                # all JS dependencies; lefthook's postinstall regist
 pnpm --filter web dev       # Astro dev server (API proxied via AXGIT_API_URL)
 pnpm --filter web build     # static build → web/dist/
 pnpm --filter web test      # vitest
-pnpm --filter web check     # eslint + prettier check (individually: lint / format)
+pnpm --filter web check     # astro sync + tsc --noEmit + eslint + prettier check
+                            # (individually: lint / format)
 
 # Backend (api/) — the default build bakes web/dist into the binary
 # (docs/DECISIONS.md #74, #88), so build it once first
@@ -169,12 +170,21 @@ the code (source comments cite these as `#NN`), and `docs/ROADMAP.md` for what's
   web uses vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`,
   `web/tests/`) + Playwright e2e (`web/e2e/`). Pre-commit hooks are handled by lefthook
   (`lefthook.yml`).
+- **CI/CD**: GitHub Actions (`.github/workflows/`, docs/DECISIONS.md #92) runs the same commands
+  listed above on every push to `main` and on pull requests; `v*` tags additionally publish the
+  release tarballs (`scripts/make-release.sh`) and the GHCR image. **GitHub is a mirror of
+  `git.ptcookie.net`**, which is force-pushed by git-server's post-receive hook — so no workflow
+  may write to the repository (a commit it pushes is erased by the next mirror push), and an
+  approved PR is pulled locally and pushed to the origin rather than merged through the GitHub UI.
 - Docs, code comments, commit messages, and user-facing UI strings are written in English.
 
 ## Repository layout
 
 ```
 axgit/
+  .github/
+    workflows/        # ci.yml (checks), release.yml (v* tarballs), image.yml (v* GHCR image)
+    dependabot.yml    # cargo / npm / github-actions update PRs
   api/                # Rust crate (axum + git2)
     README.md         # backend design + the normative API spec
     src/

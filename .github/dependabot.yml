@@ -1,0 +1,48 @@
+# Dependency update PRs on the GitHub mirror (docs/DECISIONS.md #92).
+#
+# IMPORTANT — how a PR here gets merged: `git.ptcookie.net` is the origin and
+# this GitHub repository is a mirror that git-server's post-receive hook
+# force-pushes to. An approved PR must therefore be pulled locally and pushed
+# to the *origin*; the mirror push brings the identical commits back here and
+# GitHub marks the PR merged on its own. Merging through the GitHub UI instead
+# would create a merge commit the origin has never seen, which the next force
+# push erases.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /api
+    schedule:
+      interval: weekly
+    commit-message:
+      # Conventional Commits, matching the repository's own convention.
+      prefix: "build(api)"
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # The pnpm workspace is rooted here; `web` is its only package.
+  #
+  # Known risk: Dependabot's pnpm parser cannot read the multi-document
+  # `pnpm-lock.yaml` that pnpm 11 emits once an env-lockfile document is
+  # present (dependabot-core#14919). This repository's lockfile is still a
+  # single document, so updates work — if that changes and this ecosystem
+  # starts failing with `dependency_file_not_parseable`, disable this entry
+  # and keep the other two.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build(web)"
+    groups:
+      npm:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

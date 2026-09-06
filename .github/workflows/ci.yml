@@ -1,0 +1,139 @@
+# Replaces the deleted Jenkins pipeline (docs/DECISIONS.md #91, #92).
+#
+# `git.ptcookie.net` is the origin; GitHub is a mirror that git-server's
+# post-receive hook force-pushes to. Three consequences shape this file:
+#
+#   * Nothing here may write to the repository. A commit pushed by a workflow
+#     is erased by the next mirror push, so CI only ever checks — no
+#     auto-format, no committing regenerated files (`openapi.json`,
+#     `web/src/lib/api/types.ts`). Those stay the author's job, backed by
+#     lefthook (`lefthook.yml`).
+#   * `push` is scoped to `main` because pull request branches live in this
+#     same repository (Dependabot's do), so an unscoped `push` trigger would
+#     run every PR twice.
+#   * A force-pushed rewrite makes an in-flight run meaningless, hence the
+#     concurrency cancel.
+#
+# Since the mirror accepts no merges of its own (an approved PR is pulled
+# locally and pushed to the origin, which is what makes its commits arrive
+# here), these checks are after-the-fact rather than a merge gate.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Matches the `engines.node` range in the root package.json and the
+  # Containerfile's node base image.
+  NODE_VERSION: "24"
+
+jobs:
+  # Ahead of the `api` job, not inside it: the default cargo build bakes this
+  # output into the binary (docs/DECISIONS.md #74, #88), so every cargo
+  # invocation below depends on it existing — `api/build.rs` fails the build
+  # outright when it doesn't. This is also the only place CI runs the
+  # *production* Astro build (Playwright's webServer in the `web` job uses
+  # `pnpm dev`), and the build's own `shellRoutes()` integration is what
+  # catches drift between `web/src/pages/[repo]/` and
+  # `web/src/lib/shell-routes.ts` (docs/DECISIONS.md #88).
+  web-build:
+    name: web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # No `version:` — the action reads the root package.json's
+      # `packageManager` field, the same pin corepack uses in the Containerfile.
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+          # Consumed by the `api` job in this same run; nothing keeps it after.
+          retention-days: 1
+
+  # Independent of web-build: the e2e suite mocks `/api` through
+  # `page.route` and runs against `astro dev`, so it needs neither `web/dist`
+  # nor an axgit binary.
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `--with-deps` is required here but wasn't on the old self-hosted
+      # agent: GitHub's runner image ships no webkit/firefox system
+      # libraries. Both the vitest browser-mode suite and the Playwright e2e
+      # suite run all three browsers.
+      - name: Install Playwright browsers
+        run: pnpm --filter web exec playwright install --with-deps chromium firefox webkit
+      # eslint + prettier + `tsc --noEmit` (web/package.json's `check`).
+      - run: pnpm --filter web check
+      - run: pnpm --filter web test --run
+      - run: pnpm --filter web test:e2e
+      - uses: actions/upload-artifact@v7
+        # Uploaded on failure too — that's the case the report is for. Skipped
+        # when the run was cancelled (the concurrency rule above cancels often).
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+  api:
+    name: api
+    runs-on: ubuntu-latest
+    needs: web-build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: api
+      - name: rustfmt
+        run: cargo fmt --manifest-path api/Cargo.toml -- --check
+      - name: clippy
+        run: cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
+      # --all-targets skips doctests (there are none in this crate); the
+      # doctest step links against the system libgit2 in its own rustdoc
+      # invocation and has been flaky on CI.
+      - name: cargo test
+        run: cargo test --manifest-path api/Cargo.toml --all-targets
+      # The `api-only` feature (docs/DECISIONS.md #88) is the opt-out from the
+      # default embedded build — a pure-API binary with no bundled frontend.
+      # Checked scoped to what the feature actually changes: clippy
+      # --all-targets proves every cfg-gated file still compiles end to end,
+      # and re-running the whole integration suite unchanged by the feature
+      # would just spend the run's time twice.
+      - name: api-only clippy
+        run: cargo clippy --manifest-path api/Cargo.toml --features api-only --all-targets -- -D warnings
+      - name: api-only test
+        run: cargo test --manifest-path api/Cargo.toml --features api-only --lib --test static_shell_test

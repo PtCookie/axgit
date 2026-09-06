@@ -88,7 +88,7 @@ cargo test --manifest-path api/Cargo.toml
 cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
 pnpm --filter web test          # vitest
 pnpm --filter web test:e2e      # Playwright e2e
-pnpm --filter web check         # eslint + prettier check
+pnpm --filter web check         # astro sync + tsc --noEmit + eslint + prettier check
 ```
 
 Changing the API means updating `api/README.md`, `openapi.json`, and
@@ -98,10 +98,25 @@ command and `pnpm --filter web gen:types` (both in `AGENTS.md`/`CLAUDE.md`). See
 
 ## Deployment
 
-Build the single-container image (multi-stage: web build → api build → alpine runtime;
-docs/DECISIONS.md #22). The build is defined in `Containerfile`; `Dockerfile` is a committed
-symlink to it, so `docker build` needs no extra flag while `podman`/`buildah` (which look for
-`Containerfile` first) also work unchanged:
+Prebuilt images are published to `ghcr.io/ptcookie/axgit` on every `v*` tag
+(docs/DECISIONS.md #92), as one multi-platform manifest covering `linux/amd64` and
+`linux/arm64`. Three tags move with each release: the full version (`0.4.1`), its
+major.minor prefix (`0.4`), and `latest` — pin a version if a rollback path matters.
+
+```sh
+docker pull ghcr.io/ptcookie/axgit:0.4.1
+docker run --rm -p 8080:8080 -v /srv/git:/srv/git:ro ghcr.io/ptcookie/axgit:0.4.1
+```
+
+**Publishing is where the automation stops.** Nothing pulls the new image or restarts
+anything on the deployment host — that stays a manual `docker compose pull` + `up --detach`
+(or the podman equivalent) on the server.
+
+To build the image yourself instead — which is what the git-compose stack does today, from
+the axgit submodule — use the multi-stage `Containerfile` (web build → api build → alpine
+runtime; docs/DECISIONS.md #22). `Dockerfile` is a committed symlink to it, so `docker build`
+needs no extra flag while `podman`/`buildah` (which look for `Containerfile` first) also work
+unchanged:
 
 ```sh
 docker build --tag axgit:latest .
@@ -168,8 +183,24 @@ cargo build --release --manifest-path api/Cargo.toml
 `AXGIT_STATIC_DIR` still overrides the embedded copy at runtime when set. A pure-API build with no
 bundled frontend at all is `cargo build --release --manifest-path api/Cargo.toml --features
 api-only` — that one does need `AXGIT_STATIC_DIR` (or nothing is served at `/`) and has no
-compile-time dependency on `web/dist`. To package the default build into an installable release
-tarball (binary + systemd unit + env-file template + install docs, docs/DECISIONS.md #75):
+compile-time dependency on `web/dist`.
+
+Each `v*` release attaches prebuilt tarballs — one per target, plus a single `SHA256SUMS`
+covering both — to its [GitHub release](https://github.com/PtCookie/axgit/releases). Each
+tarball holds the statically linked `axgit` binary (frontend baked in) and `LICENSE`, nothing
+else (docs/DECISIONS.md #89):
+
+```sh
+base=https://github.com/PtCookie/axgit/releases/download/v0.4.1
+curl -LO "$base/axgit-0.4.1-x86_64-unknown-linux-musl.tar.gz"   # or -aarch64-unknown-linux-musl
+curl -LO "$base/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+tar -xzf axgit-0.4.1-x86_64-unknown-linux-musl.tar.gz
+```
+
+As with the container image, nothing installs or restarts it for you — see
+[systemd install](#systemd-install) for what to do with the extracted binary. To package the
+default build into that same tarball layout yourself (docs/DECISIONS.md #75):
 
 ```sh
 ./scripts/make-release.sh

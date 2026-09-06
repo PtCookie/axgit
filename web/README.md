@@ -10,7 +10,7 @@ pnpm --filter web dev          # Astro dev server (localhost:4321, /api proxied 
 pnpm --filter web build        # static build → web/dist/
 pnpm --filter web test         # vitest (browser mode)
 pnpm --filter web test:e2e     # Playwright e2e
-pnpm --filter web check        # eslint + prettier check
+pnpm --filter web check        # astro sync + tsc --noEmit + eslint + prettier check
 pnpm --filter web gen:types    # regenerate src/lib/api/types.ts from openapi.json
 ```
 

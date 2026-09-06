@@ -10,9 +10,15 @@
 
 services:
   git-web:
-    image: axgit:latest
-    # build: https://git.ptcookie.net/axgit.git for a from-source build instead of a
-    # pre-built image; see README.md#deployment for the equivalent `docker build` invocation.
+    # Published on every `v*` tag as a linux/amd64 + linux/arm64 manifest list
+    # (docs/DECISIONS.md #92). Pinning a version rather than tracking `latest` is what gives
+    # this service a rollback path. Nothing pulls automatically — `docker compose pull` and a
+    # restart are manual steps on the host.
+    image: ghcr.io/ptcookie/axgit:latest
+    pull_policy: always
+    # The real git-compose stack builds from source instead (the axgit submodule plus
+    # `build: ./axgit`, `image: axgit:latest`, `pull_policy: never`); see
+    # README.md#deployment for both paths.
     restart: unless-stopped
     read_only: true
     volumes:
