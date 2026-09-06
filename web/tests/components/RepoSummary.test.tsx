@@ -40,7 +40,7 @@ describe("RepoSummary", () => {
 
   it("shows the repository summary fields", async () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);
-    render(<RepoSummary repo="git-compose" />);
+    await render(<RepoSummary repo="git-compose" />);
 
     await expect.element(page.getByText("Compose project of Git server")).toBeVisible();
     await expect.element(page.getByText("PtCookie", { exact: true })).toBeVisible();
@@ -49,14 +49,14 @@ describe("RepoSummary", () => {
 
   it("shows an empty-history message when there is no HEAD", async () => {
     mockedGetRepo.mockResolvedValue({ ...SUMMARY, head: null, default_branch: null });
-    render(<RepoSummary repo="scratch" />);
+    await render(<RepoSummary repo="scratch" />);
 
     await expect.element(page.getByText("No commits yet.")).toBeVisible();
   });
 
   it("links to every archive download format and the Atom feed", async () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);
-    render(<RepoSummary repo="git-compose" />);
+    await render(<RepoSummary repo="git-compose" />);
 
     for (const format of ARCHIVE_FORMATS) {
       const link = page.getByRole("link", { name: format });
@@ -73,7 +73,7 @@ describe("RepoSummary", () => {
 
   it("omits archive/feed links for an empty repository", async () => {
     mockedGetRepo.mockResolvedValue({ ...SUMMARY, head: null, default_branch: null });
-    render(<RepoSummary repo="scratch" />);
+    await render(<RepoSummary repo="scratch" />);
 
     await expect.element(page.getByText("No commits yet.")).toBeVisible();
     expect(page.getByRole("link", { name: "tar.gz" }).elements().length).toBe(0);
@@ -83,14 +83,14 @@ describe("RepoSummary", () => {
 
   it("shows an error message when the request fails", async () => {
     mockedGetRepo.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<RepoSummary repo="git-compose" />);
+    await render(<RepoSummary repo="git-compose" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });
 
   it("links branch and tag counts to the refs page", async () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);
-    render(<RepoSummary repo="git-compose" />);
+    await render(<RepoSummary repo="git-compose" />);
 
     const branches = page.getByRole("link", { name: "3 branches" });
     await expect.element(branches).toHaveAttribute("href", "/git-compose/refs");
@@ -101,21 +101,21 @@ describe("RepoSummary", () => {
 
   it("singularizes the branch count", async () => {
     mockedGetRepo.mockResolvedValue({ ...SUMMARY, branch_count: 1 });
-    render(<RepoSummary repo="git-compose" />);
+    await render(<RepoSummary repo="git-compose" />);
 
     await expect.element(page.getByRole("link", { name: "1 branch" })).toBeVisible();
   });
 
   it("shows the clone URL", async () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);
-    render(<RepoSummary repo="git-compose" />);
+    await render(<RepoSummary repo="git-compose" />);
 
     await expect.element(page.getByText("git@git.ptcookie.net:git-compose.git")).toBeVisible();
   });
 
   it("omits the Homepage row when unset", async () => {
     mockedGetRepo.mockResolvedValue(SUMMARY);
-    render(<RepoSummary repo="git-compose" />);
+    await render(<RepoSummary repo="git-compose" />);
 
     await expect.element(page.getByText("Compose project of Git server")).toBeVisible();
     expect(page.getByText("Homepage").elements().length).toBe(0);
@@ -123,7 +123,7 @@ describe("RepoSummary", () => {
 
   it("links the homepage in a new tab when set", async () => {
     mockedGetRepo.mockResolvedValue({ ...SUMMARY, homepage: "https://example.com/git-compose" });
-    render(<RepoSummary repo="git-compose" />);
+    await render(<RepoSummary repo="git-compose" />);
 
     const link = page.getByRole("link", { name: "https://example.com/git-compose" });
     await expect.element(link).toHaveAttribute("href", "https://example.com/git-compose");

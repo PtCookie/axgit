@@ -39,7 +39,7 @@ describe("RepoList", () => {
 
   it("groups repositories by section, unsectioned group first then named sections A–Z", async () => {
     mockedListRepos.mockResolvedValue(fixture);
-    render(<RepoList />);
+    await render(<RepoList />);
 
     const headings = page.getByRole("heading", { level: 2 });
     // The unsectioned group (scratch) has no visible label — its heading exists only for
@@ -54,7 +54,7 @@ describe("RepoList", () => {
 
   it("gives each row a Log and Tree quick link (enable-index-links parity)", async () => {
     mockedListRepos.mockResolvedValue(fixture);
-    render(<RepoList />);
+    await render(<RepoList />);
 
     await expect
       .element(page.getByRole("link", { name: "Log for git-compose" }))
@@ -66,7 +66,7 @@ describe("RepoList", () => {
 
   it("gives a row a Homepage quick link only when the repo has one configured", async () => {
     mockedListRepos.mockResolvedValue(fixture);
-    render(<RepoList />);
+    await render(<RepoList />);
 
     const homepage = page.getByRole("link", { name: "Homepage for git-compose" });
     await expect.element(homepage).toHaveAttribute("href", "https://git.ptcookie.net/git-compose");
@@ -79,21 +79,21 @@ describe("RepoList", () => {
 
   it("shows an empty-state message when there are no repositories", async () => {
     mockedListRepos.mockResolvedValue({ repos: [], sort: "name" });
-    render(<RepoList />);
+    await render(<RepoList />);
 
     await expect.element(page.getByText("No repositories found.")).toBeVisible();
   });
 
   it("shows an error message when the request fails", async () => {
     mockedListRepos.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<RepoList />);
+    await render(<RepoList />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });
 
   it("filters rows by the typed query and mirrors it into the URL's ?q=", async () => {
     mockedListRepos.mockResolvedValue(fixture);
-    render(<RepoList />);
+    await render(<RepoList />);
 
     const input = page.getByRole("searchbox", { name: "Filter repositories" });
     await expect.element(input).toBeVisible();
@@ -107,7 +107,7 @@ describe("RepoList", () => {
 
   it("shows a no-match message instead of an empty table when nothing matches", async () => {
     mockedListRepos.mockResolvedValue(fixture);
-    render(<RepoList />);
+    await render(<RepoList />);
 
     const input = page.getByRole("searchbox", { name: "Filter repositories" });
     await userEvent.type(input, "does-not-exist");
@@ -118,7 +118,7 @@ describe("RepoList", () => {
   it("prefills the query and the filtered list from an existing ?q=", async () => {
     window.history.replaceState(null, "", "?q=axgit");
     mockedListRepos.mockResolvedValue(fixture);
-    render(<RepoList />);
+    await render(<RepoList />);
 
     const input = page.getByRole("searchbox", { name: "Filter repositories" });
     await expect.element(input).toHaveValue("axgit");

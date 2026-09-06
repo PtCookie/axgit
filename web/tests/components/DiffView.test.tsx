@@ -93,7 +93,7 @@ describe("DiffView", () => {
   afterEach(cleanup);
 
   it("prefills `to` with the default branch and names it in the idle message", async () => {
-    render(<DiffView repo="git-compose" />);
+    await render(<DiffView repo="git-compose" />);
 
     await expect.element(page.getByText("Pick a revision to compare against main.")).toBeVisible();
     await expect.element(page.getByLabelText("Compare to revision")).toHaveValue("main");
@@ -102,7 +102,7 @@ describe("DiffView", () => {
 
   it("shows the generic idle message and leaves `to` empty when the default-branch fetch fails", async () => {
     mockedGetRepo.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<DiffView repo="git-compose" />);
+    await render(<DiffView repo="git-compose" />);
 
     await expect.element(page.getByText("Pick two revisions to compare.")).toBeVisible();
     await expect.element(page.getByLabelText("Compare to revision")).toHaveValue("");
@@ -111,7 +111,7 @@ describe("DiffView", () => {
 
   it("does not fetch the default branch once a comparison is already given", async () => {
     mockedGetDiff.mockResolvedValue(REV_DIFF);
-    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
+    await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
 
     await expect.element(page.getByText("one")).toBeVisible();
     await expect.element(page.getByLabelText("Compare to revision")).toHaveValue(TO_SHA);
@@ -120,7 +120,7 @@ describe("DiffView", () => {
 
   it("forwards from/to to the api and renders the resulting diff", async () => {
     mockedGetDiff.mockResolvedValue(REV_DIFF);
-    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
+    await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
 
     await expect.element(page.getByText("one")).toBeVisible();
     await expect.element(page.getByText("two")).toBeVisible();
@@ -134,7 +134,7 @@ describe("DiffView", () => {
 
   it("fetches as soon as only one side is given", async () => {
     mockedGetDiff.mockResolvedValue(REV_DIFF);
-    render(<DiffView repo="git-compose" to={TO_SHA} />);
+    await render(<DiffView repo="git-compose" to={TO_SHA} />);
 
     await expect.element(page.getByText("one")).toBeVisible();
     expect(mockedGetDiff).toHaveBeenCalledWith("git-compose", { from: undefined, to: TO_SHA, path: undefined });
@@ -142,14 +142,14 @@ describe("DiffView", () => {
 
   it("shows a not-found message for an unknown revision", async () => {
     mockedGetDiff.mockRejectedValue(new ApiError("ref_not_found", "ref 'nope' not found", 404));
-    render(<DiffView repo="git-compose" from="nope" to={TO_SHA} />);
+    await render(<DiffView repo="git-compose" from="nope" to={TO_SHA} />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("Revision not found.");
   });
 
   it("shows the api error message for other failures", async () => {
     mockedGetDiff.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
+    await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });
@@ -163,7 +163,7 @@ describe("DiffView", () => {
         { name: "v1.0.0", object: { sha: TO_SHA, type: "commit" }, target: TO_SHA, annotation: null, tagged_at: null },
       ],
     });
-    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
+    await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
 
     await expect.element(page.getByText("one")).toBeVisible();
     const options = document.querySelectorAll("datalist option");
@@ -174,7 +174,7 @@ describe("DiffView", () => {
   it("stays functional (no error) when getRefs fails — decoration only", async () => {
     mockedGetDiff.mockResolvedValue(REV_DIFF);
     mockedGetRefs.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
+    await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
 
     await expect.element(page.getByText("one")).toBeVisible();
     expect(page.getByRole("alert").elements().length).toBe(0);
@@ -182,7 +182,7 @@ describe("DiffView", () => {
 
   it("requests stat=1 without context/ignorews and skips hunk rendering in stat-only mode", async () => {
     mockedGetDiff.mockResolvedValue({ ...REV_DIFF, files: [] });
-    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} view="stat" context={10} ignorews={true} />);
+    await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} view="stat" context={10} ignorews={true} />);
 
     await expect.element(page.getByText("a.txt").first()).toBeVisible();
     expect(mockedGetDiff).toHaveBeenCalledWith("git-compose", {
@@ -196,7 +196,7 @@ describe("DiffView", () => {
 
   it("links a stat row to that file's own single-file comparison", async () => {
     mockedGetDiff.mockResolvedValue({ ...REV_DIFF, files: [] });
-    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} view="stat" />);
+    await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} view="stat" />);
 
     await expect
       .element(page.getByRole("link", { name: "a.txt" }))
@@ -205,7 +205,7 @@ describe("DiffView", () => {
 
   it("shows a path banner with a link back to the full comparison when path is set", async () => {
     mockedGetDiff.mockResolvedValue(REV_DIFF);
-    render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} path="a.txt" />);
+    await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} path="a.txt" />);
 
     await expect.element(page.getByText("Showing only")).toBeVisible();
     await expect

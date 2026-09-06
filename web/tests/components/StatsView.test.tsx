@@ -67,7 +67,7 @@ describe("StatsView", () => {
 
   it("fetches with the resolved period and ref", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
-    render(<StatsView repo="git-compose" period="month" ref="main" />);
+    await render(<StatsView repo="git-compose" period="month" ref="main" />);
 
     await expect.element(page.getByText("Alice")).toBeVisible();
     expect(mockedGetStats).toHaveBeenCalledWith("git-compose", { period: "month", ref: "main" });
@@ -75,7 +75,7 @@ describe("StatsView", () => {
 
   it("defaults to period=month when omitted", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
-    render(<StatsView repo="git-compose" />);
+    await render(<StatsView repo="git-compose" />);
 
     await expect.element(page.getByText("Alice")).toBeVisible();
     expect(mockedGetStats).toHaveBeenCalledWith("git-compose", { period: "month", ref: undefined });
@@ -83,7 +83,7 @@ describe("StatsView", () => {
 
   it("marks the current period link and builds hrefs for the others", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
-    render(<StatsView repo="git-compose" period="quarter" ref="main" />);
+    await render(<StatsView repo="git-compose" period="quarter" ref="main" />);
 
     await expect.element(page.getByText("Alice")).toBeVisible();
     const current = page.getByRole("link", { name: "Quarter" });
@@ -96,7 +96,7 @@ describe("StatsView", () => {
 
   it("fetches with the resolved path and keeps it in every period link", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
-    render(<StatsView repo="git-compose" period="month" ref="main" path="src/main.rs" />);
+    await render(<StatsView repo="git-compose" period="month" ref="main" path="src/main.rs" />);
 
     await expect.element(page.getByText("Alice")).toBeVisible();
     expect(mockedGetStats).toHaveBeenCalledWith("git-compose", {
@@ -111,7 +111,7 @@ describe("StatsView", () => {
 
   it("shows a path-filter banner with a working clear-filter link", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
-    render(<StatsView repo="git-compose" period="month" ref="main" path="src/main.rs" />);
+    await render(<StatsView repo="git-compose" period="month" ref="main" path="src/main.rs" />);
 
     await expect.element(page.getByText("Alice")).toBeVisible();
     await expect.element(page.getByText("src/main.rs")).toBeVisible();
@@ -121,7 +121,7 @@ describe("StatsView", () => {
 
   it("shows no path-filter banner when path is unset", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
-    render(<StatsView repo="git-compose" period="month" ref="main" />);
+    await render(<StatsView repo="git-compose" period="month" ref="main" />);
 
     await expect.element(page.getByText("Alice")).toBeVisible();
     expect(page.getByText(/Filtered by path/).elements().length).toBe(0);
@@ -129,7 +129,7 @@ describe("StatsView", () => {
 
   it("renders the author breakdown with per-bucket columns and a total row", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
-    render(<StatsView repo="git-compose" period="month" />);
+    await render(<StatsView repo="git-compose" period="month" />);
 
     await expect.element(page.getByText("Alice")).toBeVisible();
     await expect.element(page.getByText("Bob")).toBeVisible();
@@ -142,14 +142,14 @@ describe("StatsView", () => {
 
   it("shows a truncation notice when the response is truncated", async () => {
     mockedGetStats.mockResolvedValue({ ...RESULTS, truncated: true });
-    render(<StatsView repo="git-compose" period="month" />);
+    await render(<StatsView repo="git-compose" period="month" />);
 
     await expect.element(page.getByRole("status")).toHaveTextContent("partial result");
   });
 
   it("shows a top-N note when the author list is cut by limit", async () => {
     mockedGetStats.mockResolvedValue({ ...RESULTS, author_count: 5, authors: [RESULTS.authors[0]] });
-    render(<StatsView repo="git-compose" period="month" />);
+    await render(<StatsView repo="git-compose" period="month" />);
 
     await expect.element(page.getByText("Showing top 1 of 5 authors.")).toBeVisible();
   });
@@ -169,7 +169,7 @@ describe("StatsView", () => {
         buckets: monthlyBuckets({ [JULY_START]: 3 }).map((bucket) => bucket.commits),
       },
     });
-    render(<StatsView repo="git-compose" period="month" />);
+    await render(<StatsView repo="git-compose" period="month" />);
 
     await expect.element(page.getByRole("row", { name: /Others \(3\)/ })).toBeVisible();
     // The aggregate is deliberately not an author row — no avatar, no name.
@@ -179,7 +179,7 @@ describe("StatsView", () => {
 
   it("omits the Others row when the limit cut nothing", async () => {
     mockedGetStats.mockResolvedValue(RESULTS);
-    render(<StatsView repo="git-compose" period="month" />);
+    await render(<StatsView repo="git-compose" period="month" />);
 
     await expect.element(page.getByText("Alice")).toBeVisible();
     expect(page.getByRole("row", { name: /Others/ }).elements().length).toBe(0);
@@ -187,21 +187,21 @@ describe("StatsView", () => {
 
   it("shows the empty state for a repository with no commits", async () => {
     mockedGetStats.mockResolvedValue(EMPTY_REPO_RESULTS);
-    render(<StatsView repo="empty" period="month" />);
+    await render(<StatsView repo="empty" period="month" />);
 
     await expect.element(page.getByText("No commits yet.")).toBeVisible();
   });
 
   it("shows an error message when the request fails", async () => {
     mockedGetStats.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<StatsView repo="git-compose" period="month" />);
+    await render(<StatsView repo="git-compose" period="month" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });
 
   it("shows a not-found message for a 404", async () => {
     mockedGetStats.mockRejectedValue(new ApiError("repo_not_found", "nope", 404));
-    render(<StatsView repo="nope" period="month" />);
+    await render(<StatsView repo="nope" period="month" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("Repository not found.");
   });

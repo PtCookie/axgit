@@ -74,7 +74,7 @@ describe("TreeView", () => {
 
   it("lists directory and file entries", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     await expect.element(page.getByText("src/")).toBeVisible();
     await expect.element(page.getByText("README.md")).toBeVisible();
@@ -83,7 +83,7 @@ describe("TreeView", () => {
 
   it("links a directory entry into the tree and a file entry to blob", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     await expect.element(page.getByRole("link", { name: "src/" })).toHaveAttribute("href", "/git-compose/tree/src");
     await expect
@@ -96,7 +96,7 @@ describe("TreeView", () => {
 
   it("shows a symlink's target and links it through the normalized path", async () => {
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, path: "src", entries: [SYMLINK] });
-    render(<TreeView repo="git-compose" path="src" />);
+    await render(<TreeView repo="git-compose" path="src" />);
 
     // Displayed verbatim, linked resolved against the listed directory.
     await expect
@@ -107,7 +107,7 @@ describe("TreeView", () => {
   it("resolves a `..` target against the listed directory, not the entry", async () => {
     const entry = { ...SYMLINK, target: "../README.md" };
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, path: "src/lib", entries: [entry] });
-    render(<TreeView repo="git-compose" path="src/lib" />);
+    await render(<TreeView repo="git-compose" path="src/lib" />);
 
     await expect
       .element(page.getByRole("link", { name: "../README.md" }))
@@ -117,7 +117,7 @@ describe("TreeView", () => {
   it("renders a root-escaping symlink target as plain text, not a link", async () => {
     const entry = { ...SYMLINK, target: "../../outside" };
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, entries: [entry] });
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     await expect.element(page.getByText("../../outside")).toBeVisible();
     expect(page.getByRole("link", { name: "../../outside" }).elements().length).toBe(0);
@@ -125,7 +125,7 @@ describe("TreeView", () => {
 
   it("renders a submodule entry without a name link or any row actions", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     await expect.element(page.getByText("vendor")).toBeVisible();
     expect(page.getByRole("link", { name: "vendor" }).elements().length).toBe(0);
@@ -139,7 +139,7 @@ describe("TreeView", () => {
       module_link: "https://example.com/dep",
     };
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, entries: [vendor] });
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     const link = page.getByRole("link", { name: "vendor" });
     await expect.element(link).toHaveAttribute("href", "https://example.com/dep");
@@ -155,7 +155,7 @@ describe("TreeView", () => {
       module_link: "/git/dep.git/commit/?id=abc",
     };
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, entries: [vendor] });
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     await expect
       .element(page.getByRole("link", { name: "vendor" }))
@@ -164,7 +164,7 @@ describe("TreeView", () => {
 
   it("orders the columns as Mode, Name, Size and shows symbolic modes", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     await expect.element(page.getByText("d---------")).toBeVisible();
     await expect.element(page.getByText("-rw-r--r--")).toBeVisible();
@@ -175,7 +175,7 @@ describe("TreeView", () => {
 
   it("gives a file row Log, Stats, Raw, and Blame quick links", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     await expect
       .element(page.getByRole("link", { name: "Log for README.md" }))
@@ -193,7 +193,7 @@ describe("TreeView", () => {
 
   it("gives a directory row only Log and Stats quick links", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
-    render(<TreeView repo="git-compose" path="" />);
+    await render(<TreeView repo="git-compose" path="" />);
 
     await expect
       .element(page.getByRole("link", { name: "Log for src" }))
@@ -207,7 +207,7 @@ describe("TreeView", () => {
 
   it("carries ref through to the row action links", async () => {
     mockedGetTree.mockResolvedValue(ROOT_TREE);
-    render(<TreeView repo="git-compose" path="" ref="v1.0.0" />);
+    await render(<TreeView repo="git-compose" path="" ref="v1.0.0" />);
 
     await expect
       .element(page.getByRole("link", { name: "Log for README.md" }))
@@ -222,7 +222,7 @@ describe("TreeView", () => {
 
   it("shows a parent-directory link when not at the root", async () => {
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, path: "src" });
-    render(<TreeView repo="git-compose" path="src" />);
+    await render(<TreeView repo="git-compose" path="src" />);
 
     await expect.element(page.getByRole("link", { name: ".." })).toHaveAttribute("href", "/git-compose/tree");
     expect(mockedGetTree).toHaveBeenCalledWith("git-compose", undefined, "src");
@@ -230,7 +230,7 @@ describe("TreeView", () => {
 
   it("passes ref through to the tree link and the request", async () => {
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, path: "src" });
-    render(<TreeView repo="git-compose" path="src" ref="v1.0.0" />);
+    await render(<TreeView repo="git-compose" path="src" ref="v1.0.0" />);
 
     await expect
       .element(page.getByRole("link", { name: ".." }))
@@ -240,21 +240,21 @@ describe("TreeView", () => {
 
   it("shows an empty-repository message at the root", async () => {
     mockedGetTree.mockResolvedValue({ ...ROOT_TREE, entries: [] });
-    render(<TreeView repo="scratch" path="" />);
+    await render(<TreeView repo="scratch" path="" />);
 
     await expect.element(page.getByText("This repository is empty.")).toBeVisible();
   });
 
   it("shows a path-not-found message", async () => {
     mockedGetTree.mockRejectedValue(new ApiError("path_not_found", "path 'nope' not found", 404));
-    render(<TreeView repo="git-compose" path="nope" />);
+    await render(<TreeView repo="git-compose" path="nope" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("Path not found.");
   });
 
   it("shows a repository-not-found message", async () => {
     mockedGetTree.mockRejectedValue(new ApiError("repo_not_found", "repository 'nope' not found", 404));
-    render(<TreeView repo="nope" path="" />);
+    await render(<TreeView repo="nope" path="" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("Repository not found.");
   });

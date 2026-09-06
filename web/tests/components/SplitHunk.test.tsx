@@ -17,7 +17,7 @@ describe("SplitHunk", () => {
       new_lines: 2,
       lines: [{ origin: " ", content: "unchanged", old_lineno: 1, new_lineno: 1 }],
     };
-    render(<SplitHunk hunk={hunk} />);
+    await render(<SplitHunk hunk={hunk} />);
 
     await expect.element(page.getByText("unchanged").first()).toBeVisible();
     const cells = page.getByText("unchanged").elements();
@@ -36,7 +36,7 @@ describe("SplitHunk", () => {
         { origin: "-", content: "removed two", old_lineno: 2, new_lineno: null },
       ],
     };
-    render(<SplitHunk hunk={hunk} />);
+    await render(<SplitHunk hunk={hunk} />);
 
     await expect.element(page.getByText("removed one")).toBeVisible();
     await expect.element(page.getByText("removed two")).toBeVisible();
@@ -60,7 +60,7 @@ describe("SplitHunk", () => {
         { origin: "+", content: "let value = newName;", old_lineno: null, new_lineno: 1 },
       ],
     };
-    render(<SplitHunk hunk={hunk} />);
+    await render(<SplitHunk hunk={hunk} />);
 
     // Common prefix ("let value = ") and suffix ("Name;") are trimmed off by
     // tier 1 before word-diffing ever runs, so the highlighted span is the

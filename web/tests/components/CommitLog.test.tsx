@@ -44,7 +44,7 @@ describe("CommitLog", () => {
 
   it("lists commits", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     await expect.element(page.getByText("Ada Lovelace")).toBeVisible();
@@ -58,7 +58,7 @@ describe("CommitLog", () => {
 
   it("links each summary to the commit page", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     const link = page.getByRole("link", { name: "fix: update readme" });
     await expect.element(link).toHaveAttribute("href", "/git-compose/commit/abc123def456abc123def456abc123def456abc");
@@ -69,28 +69,28 @@ describe("CommitLog", () => {
       commits: [{ ...PAGE.commits[0], summary: null, authored_at: null }],
       next_cursor: null,
     });
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("(no commit message)")).toBeVisible();
   });
 
   it("shows an empty-repository message", async () => {
     mockedListCommits.mockResolvedValue({ commits: [], next_cursor: null });
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("No commits yet.")).toBeVisible();
   });
 
   it("shows an error message when the request fails", async () => {
     mockedListCommits.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });
 
   it("renders an Older link that carries the cursor and preserves ref/path", async () => {
     mockedListCommits.mockResolvedValue({ ...PAGE, next_cursor: "def456" });
-    render(<CommitLog repo="git-compose" ref="main" path="src" />);
+    await render(<CommitLog repo="git-compose" ref="main" path="src" />);
 
     const older = page.getByRole("link", { name: "Older →" });
     await expect.element(older).toBeVisible();
@@ -104,7 +104,7 @@ describe("CommitLog", () => {
 
   it("does not render an Older link on the last page", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByRole("link", { name: "Older →" }).elements().length).toBe(0);
@@ -112,7 +112,7 @@ describe("CommitLog", () => {
 
   it("shows a path filter banner with a clear-filter link", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" path="src/main.rs" />);
+    await render(<CommitLog repo="git-compose" path="src/main.rs" />);
 
     await expect.element(page.getByText("src/main.rs")).toBeVisible();
     const clear = page.getByRole("link", { name: "clear filter" });
@@ -121,7 +121,7 @@ describe("CommitLog", () => {
 
   it("shows no follow-renames toggle without a path filter", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByRole("link", { name: "Follow renames" }).elements().length).toBe(0);
@@ -129,7 +129,7 @@ describe("CommitLog", () => {
 
   it("requests follow=1 only when both path and follow are set", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" path="src/main.rs" follow="1" />);
+    await render(<CommitLog repo="git-compose" path="src/main.rs" follow="1" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(mockedListCommits).toHaveBeenCalledWith("git-compose", {
@@ -143,7 +143,7 @@ describe("CommitLog", () => {
 
   it("ignores follow=1 when no path filter is set (api/README.md's follow rule)", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" follow="1" />);
+    await render(<CommitLog repo="git-compose" follow="1" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(mockedListCommits).toHaveBeenCalledWith("git-compose", {
@@ -158,7 +158,7 @@ describe("CommitLog", () => {
 
   it("shows a Follow renames link that carries follow=1 and preserves ref/path", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" ref="main" path="src" />);
+    await render(<CommitLog repo="git-compose" ref="main" path="src" />);
 
     const followLink = page.getByRole("link", { name: "Follow renames" });
     await expect.element(followLink).toBeVisible();
@@ -172,7 +172,7 @@ describe("CommitLog", () => {
 
   it("shows a Stop following renames link that drops follow and preserves path", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" path="src" follow="1" />);
+    await render(<CommitLog repo="git-compose" path="src" follow="1" />);
 
     const stopLink = page.getByRole("link", { name: "Stop following renames" });
     await expect.element(stopLink).toBeVisible();
@@ -187,7 +187,7 @@ describe("CommitLog", () => {
       commits: [{ ...PAGE.commits[0], renamed_from: "old-name.rs" }],
       next_cursor: null,
     });
-    render(<CommitLog repo="git-compose" path="src/main.rs" follow="1" />);
+    await render(<CommitLog repo="git-compose" path="src/main.rs" follow="1" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     await expect.element(page.getByText("old-name.rs")).toBeVisible();
@@ -195,7 +195,7 @@ describe("CommitLog", () => {
 
   it("keeps the Older link's follow=1 when following renames", async () => {
     mockedListCommits.mockResolvedValue({ ...PAGE, next_cursor: "def456" });
-    render(<CommitLog repo="git-compose" path="src" follow="1" />);
+    await render(<CommitLog repo="git-compose" path="src" follow="1" />);
 
     const older = page.getByRole("link", { name: "Older →" });
     await expect.element(older).toBeVisible();
@@ -220,7 +220,7 @@ describe("CommitLog", () => {
       next_cursor: null,
     };
     mockedListCommits.mockResolvedValue(twoCommits);
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByTestId("commit-graph").elements().length).toBe(2);
@@ -231,7 +231,7 @@ describe("CommitLog", () => {
       commits: [{ ...PAGE.commits[0], parents: ["p1", "p2"] }],
       next_cursor: null,
     });
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByTestId("commit-graph").element().querySelectorAll("[data-merge='true']").length).toBe(1);
@@ -239,7 +239,7 @@ describe("CommitLog", () => {
 
   it("hides the graph column when a path filter is active", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" path="src/main.rs" />);
+    await render(<CommitLog repo="git-compose" path="src/main.rs" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByTestId("commit-graph").elements().length).toBe(0);
@@ -252,7 +252,7 @@ describe("CommitLog", () => {
       remote_branches: [],
       tags: [],
     });
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     const badge = page.getByText("main");
     await expect.element(badge).toBeVisible();
@@ -274,7 +274,7 @@ describe("CommitLog", () => {
         },
       ],
     });
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("v1.0.0")).toBeVisible();
   });
@@ -286,7 +286,7 @@ describe("CommitLog", () => {
       remote_branches: [],
       tags: [],
     });
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByText("main").elements().length).toBe(0);
@@ -304,7 +304,7 @@ describe("CommitLog", () => {
       remote_branches: [],
       tags: [],
     });
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("main")).toBeVisible();
     expect(page.getByText("hotfix").elements().length).toBe(0);
@@ -315,7 +315,7 @@ describe("CommitLog", () => {
   it("renders no badges and no error when the refs request fails", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
     mockedGetRefs.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByRole("alert").elements().length).toBe(0);
@@ -326,7 +326,7 @@ describe("CommitLog", () => {
       commits: [{ ...PAGE.commits[0], body: "with a body" }],
       next_cursor: null,
     });
-    render(<CommitLog repo="git-compose" msg="1" />);
+    await render(<CommitLog repo="git-compose" msg="1" />);
 
     await expect.element(page.getByText("with a body")).toBeVisible();
     expect(mockedListCommits).toHaveBeenCalledWith("git-compose", {
@@ -339,7 +339,7 @@ describe("CommitLog", () => {
 
   it("shows no message row for a commit with no body even when expanded", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" msg="1" />);
+    await render(<CommitLog repo="git-compose" msg="1" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByTestId("commit-graph-spacer").elements().length).toBe(0);
@@ -350,7 +350,7 @@ describe("CommitLog", () => {
       commits: [{ ...PAGE.commits[0], body: "with a body" }],
       next_cursor: null,
     });
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByText("with a body").elements().length).toBe(0);
@@ -358,7 +358,7 @@ describe("CommitLog", () => {
 
   it("shows an Expand messages link that carries msg=1 and preserves ref/path/cursor", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" ref="main" path="src" cursor="abc123.50" />);
+    await render(<CommitLog repo="git-compose" ref="main" path="src" cursor="abc123.50" />);
 
     const expandLink = page.getByRole("link", { name: "Expand messages" });
     await expect.element(expandLink).toBeVisible();
@@ -373,7 +373,7 @@ describe("CommitLog", () => {
 
   it("shows a Collapse messages link that drops msg and preserves ref/path", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" ref="main" path="src" msg="1" />);
+    await render(<CommitLog repo="git-compose" ref="main" path="src" msg="1" />);
 
     const collapseLink = page.getByRole("link", { name: "Collapse messages" });
     await expect.element(collapseLink).toBeVisible();
@@ -399,7 +399,7 @@ describe("CommitLog", () => {
       next_cursor: null,
     };
     mockedListCommits.mockResolvedValue(twoCommits);
-    render(<CommitLog repo="git-compose" msg="1" />);
+    await render(<CommitLog repo="git-compose" msg="1" />);
 
     await expect.element(page.getByText("first body")).toBeVisible();
     expect(page.getByTestId("commit-graph-spacer").elements().length).toBe(1);
@@ -407,7 +407,7 @@ describe("CommitLog", () => {
 
   it("keeps the Older link's msg=1 when expanded", async () => {
     mockedListCommits.mockResolvedValue({ ...PAGE, next_cursor: "def456" });
-    render(<CommitLog repo="git-compose" msg="1" />);
+    await render(<CommitLog repo="git-compose" msg="1" />);
 
     const older = page.getByRole("link", { name: "Older →" });
     await expect.element(older).toBeVisible();
@@ -418,7 +418,7 @@ describe("CommitLog", () => {
 
   it("shows no Files/Lines columns by default", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     expect(page.getByText("Files").elements().length).toBe(0);
@@ -430,7 +430,7 @@ describe("CommitLog", () => {
       commits: [{ ...PAGE.commits[0], stat: { files_changed: 2, additions: 5, deletions: 1 } }],
       next_cursor: null,
     });
-    render(<CommitLog repo="git-compose" stat="1" />);
+    await render(<CommitLog repo="git-compose" stat="1" />);
 
     await expect.element(page.getByText("fix: update readme")).toBeVisible();
     await expect.element(page.getByText("Files")).toBeVisible();
@@ -449,7 +449,7 @@ describe("CommitLog", () => {
 
   it("shows an em dash when a shown commit carries no stat data", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" stat="1" />);
+    await render(<CommitLog repo="git-compose" stat="1" />);
 
     await expect.element(page.getByText("Files")).toBeVisible();
     const row = page.getByRole("row", { name: /fix: update readme/ });
@@ -459,7 +459,7 @@ describe("CommitLog", () => {
 
   it("shows a Show changes link that carries stat=1 and preserves ref/path", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" ref="main" path="src" />);
+    await render(<CommitLog repo="git-compose" ref="main" path="src" />);
 
     const showLink = page.getByRole("link", { name: "Show changes" });
     await expect.element(showLink).toBeVisible();
@@ -472,7 +472,7 @@ describe("CommitLog", () => {
 
   it("shows a Hide changes link that drops stat and preserves ref", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" ref="main" stat="1" />);
+    await render(<CommitLog repo="git-compose" ref="main" stat="1" />);
 
     const hideLink = page.getByRole("link", { name: "Hide changes" });
     await expect.element(hideLink).toBeVisible();
@@ -484,7 +484,7 @@ describe("CommitLog", () => {
 
   it("shows an Atom feed link carrying the current ref and path", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" ref="dev" path="src" />);
+    await render(<CommitLog repo="git-compose" ref="dev" path="src" />);
 
     const feed = page.getByRole("link", { name: "Atom feed" });
     await expect.element(feed).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom?ref=dev&path=src");
@@ -492,7 +492,7 @@ describe("CommitLog", () => {
 
   it("shows a bare Atom feed link when no ref or path is set", async () => {
     mockedListCommits.mockResolvedValue(PAGE);
-    render(<CommitLog repo="git-compose" />);
+    await render(<CommitLog repo="git-compose" />);
 
     const feed = page.getByRole("link", { name: "Atom feed" });
     await expect.element(feed).toHaveAttribute("href", "/api/v1/repos/git-compose/feed.atom");
@@ -500,7 +500,7 @@ describe("CommitLog", () => {
 
   it("keeps the Older link's stat=1 when shown", async () => {
     mockedListCommits.mockResolvedValue({ ...PAGE, next_cursor: "def456" });
-    render(<CommitLog repo="git-compose" stat="1" />);
+    await render(<CommitLog repo="git-compose" stat="1" />);
 
     const older = page.getByRole("link", { name: "Older →" });
     await expect.element(older).toBeVisible();
@@ -520,7 +520,7 @@ describe("CommitLog", () => {
       ],
       next_cursor: null,
     });
-    render(<CommitLog repo="git-compose" msg="1" stat="1" />);
+    await render(<CommitLog repo="git-compose" msg="1" stat="1" />);
 
     await expect.element(page.getByText("with a body")).toBeVisible();
     await expect.element(page.getByText("+1 −0")).toBeVisible();

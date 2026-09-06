@@ -86,7 +86,7 @@ describe("CommitView", () => {
   it("shows the commit header, message, diffstat and diff lines", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
     await expect.element(page.getByText("full body")).toBeVisible();
@@ -106,7 +106,7 @@ describe("CommitView", () => {
       ...DIFF,
       files: [{ ...DIFF.files[0], binary: true, hunks: [] }],
     });
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByText("Binary file not shown.")).toBeVisible();
   });
@@ -117,7 +117,7 @@ describe("CommitView", () => {
       ...DIFF,
       files: [{ ...DIFF.files[0], truncated: true }],
     });
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByText("Diff truncated (1000 lines max).")).toBeVisible();
   });
@@ -128,7 +128,7 @@ describe("CommitView", () => {
       diffstat: { ...DETAIL.diffstat, files_changed: 400 },
     });
     mockedGetCommitDiff.mockResolvedValue({ ...DIFF, truncated: true });
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect
       .element(page.getByText("Some files were omitted (300 files max) — see the table above for the full file list."))
@@ -138,7 +138,7 @@ describe("CommitView", () => {
   it("handles a root commit (no parents, null diff parent)", async () => {
     mockedGetCommit.mockResolvedValue({ ...DETAIL, parents: [] });
     mockedGetCommitDiff.mockResolvedValue({ ...DIFF, parent: null });
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
     expect(page.getByText("Parents").elements().length).toBe(0);
@@ -147,7 +147,7 @@ describe("CommitView", () => {
   it("renders a Notes block when the commit has a git note", async () => {
     mockedGetCommit.mockResolvedValue({ ...DETAIL, note: "Reviewed-by: someone\n\nLGTM" });
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
     await expect.element(page.getByText("Reviewed-by: someone")).toBeVisible();
@@ -157,7 +157,7 @@ describe("CommitView", () => {
   it("shows no Notes block when the commit has no git note", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
     expect(page.getByRole("heading", { name: "Notes" }).elements().length).toBe(0);
@@ -169,7 +169,7 @@ describe("CommitView", () => {
       parents: ["parent1000000000000000000000000000000", "parent2000000000000000000000000000000"],
     });
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect
       .element(
@@ -183,7 +183,7 @@ describe("CommitView", () => {
   it("shows an error message when the request fails", async () => {
     mockedGetCommit.mockRejectedValue(new ApiError("internal", "boom", 500));
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });
@@ -207,7 +207,7 @@ describe("CommitView", () => {
         },
       ],
     });
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByText("main")).toBeVisible();
     await expect.element(page.getByText("dev")).toBeVisible();
@@ -218,7 +218,7 @@ describe("CommitView", () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
     mockedGetCommitDiff.mockResolvedValue(DIFF);
     mockedGetRefs.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
     expect(page.getByRole("alert").elements().length).toBe(0);
@@ -227,7 +227,7 @@ describe("CommitView", () => {
   it("forwards context and ignorews to the diff API", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} context={10} ignorews={true} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} context={10} ignorews={true} />);
 
     await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
     expect(mockedGetCommitDiff).toHaveBeenCalledWith("git-compose", DETAIL.sha, { context: 10, ignorews: 1 });
@@ -236,7 +236,7 @@ describe("CommitView", () => {
   it("links each parent to a (diff) comparison against this commit", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     const parent = DETAIL.parents[0];
     await expect
@@ -247,7 +247,7 @@ describe("CommitView", () => {
   it("links to the tree, raw diff, and patch views for this commit", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect
       .element(page.getByRole("link", { name: "Browse the tree at this commit" }))
@@ -267,7 +267,7 @@ describe("CommitView", () => {
 
   it("skips the diff fetch and hunk rendering entirely in stat-only mode", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} view="stat" />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} view="stat" />);
 
     await expect.element(page.getByText("a.txt").first()).toBeVisible();
     expect(mockedGetCommitDiff).not.toHaveBeenCalled();
@@ -276,7 +276,7 @@ describe("CommitView", () => {
 
   it("links a stat row to that file's own single-file diff", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} view="stat" />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} view="stat" />);
 
     await expect
       .element(page.getByRole("link", { name: "a.txt" }))
@@ -286,7 +286,7 @@ describe("CommitView", () => {
   it("shows a path banner with a link back to the full diff when path is set", async () => {
     mockedGetCommit.mockResolvedValue(DETAIL);
     mockedGetCommitDiff.mockResolvedValue(DIFF);
-    render(<CommitView repo="git-compose" sha={DETAIL.sha} path="a.txt" />);
+    await render(<CommitView repo="git-compose" sha={DETAIL.sha} path="a.txt" />);
 
     await expect.element(page.getByText("Showing only")).toBeVisible();
     await expect.element(page.getByText("a.txt").first()).toBeVisible();

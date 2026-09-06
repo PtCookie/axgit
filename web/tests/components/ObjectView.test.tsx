@@ -104,7 +104,7 @@ describe("ObjectView", () => {
 
   it("lists a tree's entries, linking onward by their own sha except a gitlink", async () => {
     mockedGetObject.mockResolvedValue(TREE);
-    render(<ObjectView repo="git-compose" oid={TREE_SHA} />);
+    await render(<ObjectView repo="git-compose" oid={TREE_SHA} />);
 
     await expect.element(page.getByText("src/")).toBeVisible();
     await expect
@@ -120,7 +120,7 @@ describe("ObjectView", () => {
 
   it("shows a blob's content and a Raw link", async () => {
     mockedGetObject.mockResolvedValue(BLOB);
-    render(<ObjectView repo="git-compose" oid={BLOB_SHA} />);
+    await render(<ObjectView repo="git-compose" oid={BLOB_SHA} />);
 
     await expect.element(page.getByText("hello")).toBeVisible();
     await expect
@@ -134,7 +134,7 @@ describe("ObjectView", () => {
       blob: { size: 3, binary: true, too_large: false, content: null },
     });
     mockedFetchRawBytes.mockResolvedValue(Uint8Array.from([0x89, 0x50, 0x4e]));
-    render(<ObjectView repo="git-compose" oid={BLOB_SHA} />);
+    await render(<ObjectView repo="git-compose" oid={BLOB_SHA} />);
 
     await expect.element(page.getByText("00000000")).toBeVisible();
     await expect.element(page.getByText("89 50 4e")).toBeVisible();
@@ -147,14 +147,14 @@ describe("ObjectView", () => {
       blob: { size: 6, binary: true, too_large: false, content: null },
     });
     mockedFetchRawBytes.mockRejectedValue(new ApiError("internal", "network request failed", 0));
-    render(<ObjectView repo="git-compose" oid={BLOB_SHA} />);
+    await render(<ObjectView repo="git-compose" oid={BLOB_SHA} />);
 
     await expect.element(page.getByText(/Binary file not shown/)).toBeVisible();
   });
 
   it("links a commit oid to the commit page", async () => {
     mockedGetObject.mockResolvedValue(COMMIT);
-    render(<ObjectView repo="git-compose" oid={COMMIT_SHA} />);
+    await render(<ObjectView repo="git-compose" oid={COMMIT_SHA} />);
 
     await expect
       .element(page.getByRole("link", { name: "View commit" }))
@@ -163,7 +163,7 @@ describe("ObjectView", () => {
 
   it("shows a tag's dereference, tagger, and message, linking a non-commit target onward by oid", async () => {
     mockedGetObject.mockResolvedValue(TAG);
-    render(<ObjectView repo="git-compose" oid={TAG_SHA} />);
+    await render(<ObjectView repo="git-compose" oid={TAG_SHA} />);
 
     await expect.element(page.getByText("Ada Lovelace")).toBeVisible();
     await expect.element(page.getByText(/a tree tag/)).toBeVisible();
@@ -185,7 +185,7 @@ describe("ObjectView", () => {
         tagged_at: "2026-07-22T19:00:00+09:00",
       },
     });
-    render(<ObjectView repo="git-compose" oid={TAG_SHA} />);
+    await render(<ObjectView repo="git-compose" oid={TAG_SHA} />);
 
     await expect
       .element(page.getByRole("link", { name: COMMIT_SHA }))
@@ -194,7 +194,7 @@ describe("ObjectView", () => {
 
   it("shows an error message when the object is not found", async () => {
     mockedGetObject.mockRejectedValue(new ApiError("object_not_found", "not found", 404));
-    render(<ObjectView repo="git-compose" oid="deadbeef" />);
+    await render(<ObjectView repo="git-compose" oid="deadbeef" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("Object not found.");
   });

@@ -30,7 +30,7 @@ describe("ReadmeView", () => {
 
   it("renders sanitized markdown with a heading and a link", async () => {
     mockedGetReadme.mockResolvedValue(MARKDOWN_README);
-    render(<ReadmeView repo="git-compose" />);
+    await render(<ReadmeView repo="git-compose" />);
 
     // `ReadmeMarkdown` is lazy-loaded (`ReadmeBody.tsx`), and browser-mode
     // test isolation means this chunk is fetched fresh on every test — under
@@ -43,7 +43,7 @@ describe("ReadmeView", () => {
 
   it("rewrites a relative link to the repo's blob page", async () => {
     mockedGetReadme.mockResolvedValue(MARKDOWN_README);
-    render(<ReadmeView repo="git-compose" />);
+    await render(<ReadmeView repo="git-compose" />);
 
     const link = page.getByRole("link", { name: "docs link" });
     // See the timeout note above — this is the first assertion to wait on
@@ -53,7 +53,7 @@ describe("ReadmeView", () => {
 
   it("rewrites a relative image src through the raw endpoint", async () => {
     mockedGetReadme.mockResolvedValue(MARKDOWN_README);
-    render(<ReadmeView repo="git-compose" />);
+    await render(<ReadmeView repo="git-compose" />);
 
     const img = page.getByRole("img", { name: "logo" });
     // See the timeout note above — this is the first assertion to wait on
@@ -69,7 +69,7 @@ describe("ReadmeView", () => {
       format: "markdown",
       content: "# Axgit\n\n```rust\nfn main() {}\n```\n",
     });
-    render(<ReadmeView repo="git-compose" />);
+    await render(<ReadmeView repo="git-compose" />);
 
     // `MarkdownFence` renders plain text first, then swaps in Shiki's
     // `<span style>` tokens once highlighting resolves — wait for that swap
@@ -94,7 +94,7 @@ describe("ReadmeView", () => {
 
   it("renders plain-text formats (rst/plain) as preformatted text, not markdown", async () => {
     mockedGetReadme.mockResolvedValue({ path: "README", format: "plain", content: "just text\nno markup" });
-    render(<ReadmeView repo="git-compose" />);
+    await render(<ReadmeView repo="git-compose" />);
 
     await expect.element(page.getByText("just text")).toBeVisible();
     // Only the path label (`README`) is a heading — no markdown-derived `h1`.
@@ -113,7 +113,7 @@ describe("ReadmeView", () => {
 
   it("shows an error message for a non-404 failure", async () => {
     mockedGetReadme.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<ReadmeView repo="git-compose" />);
+    await render(<ReadmeView repo="git-compose" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });

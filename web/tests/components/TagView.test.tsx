@@ -38,7 +38,7 @@ describe("TagView", () => {
 
   it("shows the tag object, tagger, message, and a linked commit object", async () => {
     mockedGetTag.mockResolvedValue(ANNOTATED);
-    render(<TagView repo="git-compose" name="v1.0.0" />);
+    await render(<TagView repo="git-compose" name="v1.0.0" />);
 
     await expect.element(page.getByRole("heading", { name: "v1.0.0" })).toBeVisible();
     await expect.element(page.getByText("tagobject0000000000000000000000000000000")).toBeVisible();
@@ -57,7 +57,7 @@ describe("TagView", () => {
 
   it("offers Tree/Log/download links when the tag reaches a commit", async () => {
     mockedGetTag.mockResolvedValue(ANNOTATED);
-    render(<TagView repo="git-compose" name="v1.0.0" />);
+    await render(<TagView repo="git-compose" name="v1.0.0" />);
 
     for (const format of ARCHIVE_FORMATS) {
       await expect
@@ -73,7 +73,7 @@ describe("TagView", () => {
       object: { sha: "innertag00000000000000000000000000000000", type: "tag" },
       target: "commit000000000000000000000000000000000000",
     });
-    render(<TagView repo="git-compose" name="outer" />);
+    await render(<TagView repo="git-compose" name="outer" />);
 
     await expect.element(page.getByText("innertag00000000000000000000000000000000")).toBeVisible();
     const commitLink = page.getByRole("link", { name: "commit000000000000000000000000000000000000" });
@@ -88,7 +88,7 @@ describe("TagView", () => {
       object: { sha: "blob00000000000000000000000000000000000000", type: "blob" },
       target: null,
     });
-    render(<TagView repo="git-compose" name="blob-tag" />);
+    await render(<TagView repo="git-compose" name="blob-tag" />);
 
     await expect
       .element(page.getByRole("link", { name: "blob00000000000000000000000000000000000000" }))
@@ -107,7 +107,7 @@ describe("TagView", () => {
       tagger: null,
       tagged_at: null,
     });
-    render(<TagView repo="git-compose" name="snapshot" />);
+    await render(<TagView repo="git-compose" name="snapshot" />);
 
     await expect.element(page.getByText("Tag object", { exact: true })).not.toBeInTheDocument();
     await expect.element(page.getByText("Tagger", { exact: true })).not.toBeInTheDocument();
@@ -115,7 +115,7 @@ describe("TagView", () => {
 
   it("shows an error message when the tag is not found", async () => {
     mockedGetTag.mockRejectedValue(new ApiError("ref_not_found", "not found", 404));
-    render(<TagView repo="git-compose" name="no-such-tag" />);
+    await render(<TagView repo="git-compose" name="no-such-tag" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("Tag not found.");
   });

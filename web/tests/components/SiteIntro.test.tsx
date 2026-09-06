@@ -38,7 +38,7 @@ describe("SiteIntro", () => {
 
   it("shows the configured title and description", async () => {
     mockedGetSite.mockResolvedValue({ title: "PtCookie Git", description: "Self-hosted repositories", readme: null });
-    render(<SiteIntro />);
+    await render(<SiteIntro />);
 
     await expect.element(page.getByRole("heading", { name: "PtCookie Git", level: 1 })).toBeVisible();
     await expect.element(page.getByText("Self-hosted repositories")).toBeVisible();
@@ -46,7 +46,7 @@ describe("SiteIntro", () => {
 
   it("shows only the title when the description is unset", async () => {
     mockedGetSite.mockResolvedValue({ title: "PtCookie Git", description: null, readme: null });
-    render(<SiteIntro />);
+    await render(<SiteIntro />);
 
     await expect.element(page.getByRole("heading", { name: "PtCookie Git", level: 1 })).toBeVisible();
   });
@@ -57,7 +57,7 @@ describe("SiteIntro", () => {
       description: null,
       readme: { format: "markdown", content: "# Welcome\n\nSee [the guide](./guide.md).\n" },
     });
-    render(<SiteIntro />);
+    await render(<SiteIntro />);
 
     // The <h1> from `getSite`'s own `title` still renders even though it's
     // the default — a readme was configured, so `configured` is true.
@@ -74,14 +74,14 @@ describe("SiteIntro", () => {
       description: null,
       readme: { format: "plain", content: "Just text.\n" },
     });
-    render(<SiteIntro />);
+    await render(<SiteIntro />);
 
     await expect.element(page.getByText("Just text.")).toBeVisible();
   });
 
   it("shows an error message when the request fails", async () => {
     mockedGetSite.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<SiteIntro />);
+    await render(<SiteIntro />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });

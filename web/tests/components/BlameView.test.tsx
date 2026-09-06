@@ -59,7 +59,7 @@ describe("BlameView", () => {
   it("renders content with a per-range gutter", async () => {
     mockedGetBlame.mockResolvedValue(BLAME);
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);
-    render(<BlameView repo="git-compose" path="README.md" />);
+    await render(<BlameView repo="git-compose" path="README.md" />);
 
     await expect.element(page.getByText("# Axgit")).toBeVisible();
     await expect.element(page.getByText("Hello")).toBeVisible();
@@ -71,7 +71,7 @@ describe("BlameView", () => {
   it("links the gutter's short sha to the commit page", async () => {
     mockedGetBlame.mockResolvedValue(BLAME);
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);
-    render(<BlameView repo="git-compose" path="README.md" />);
+    await render(<BlameView repo="git-compose" path="README.md" />);
 
     await expect
       .element(page.getByRole("link", { name: FULL_SHA.slice(0, 7) }))
@@ -81,7 +81,7 @@ describe("BlameView", () => {
   it("links to the raw endpoint, the file view, and the path-filtered log", async () => {
     mockedGetBlame.mockResolvedValue(BLAME);
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);
-    render(<BlameView repo="git-compose" path="README.md" />);
+    await render(<BlameView repo="git-compose" path="README.md" />);
 
     await expect
       .element(page.getByRole("link", { name: "Raw" }))
@@ -100,7 +100,7 @@ describe("BlameView", () => {
       ranges: [{ ...BLAME.ranges[0], orig_path: "old/README.md" }],
     });
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);
-    render(<BlameView repo="git-compose" path="README.md" />);
+    await render(<BlameView repo="git-compose" path="README.md" />);
 
     await expect
       .element(page.getByRole("link", { name: "Renamed from old/README.md" }))
@@ -110,7 +110,7 @@ describe("BlameView", () => {
   it("shows no rename marker when orig_path is unset", async () => {
     mockedGetBlame.mockResolvedValue(BLAME);
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);
-    render(<BlameView repo="git-compose" path="README.md" />);
+    await render(<BlameView repo="git-compose" path="README.md" />);
 
     await expect.element(page.getByText("# Axgit")).toBeVisible();
     expect(page.getByRole("link", { name: /^Renamed from/ }).elements()).toHaveLength(0);
@@ -119,7 +119,7 @@ describe("BlameView", () => {
   it("shows a binary-file message instead of a gutter", async () => {
     mockedGetBlame.mockResolvedValue({ ...BLAME, binary: true, lines: 0, ranges: [] });
     mockedGetBlob.mockResolvedValue({ ...TEXT_BLOB, binary: true, content: null });
-    render(<BlameView repo="git-compose" path="image.png" />);
+    await render(<BlameView repo="git-compose" path="image.png" />);
 
     await expect.element(page.getByText("Binary file — blame not shown.")).toBeVisible();
   });
@@ -127,7 +127,7 @@ describe("BlameView", () => {
   it("shows a too-large message instead of a gutter", async () => {
     mockedGetBlame.mockResolvedValue({ ...BLAME, too_large: true, lines: 0, ranges: [] });
     mockedGetBlob.mockResolvedValue({ ...TEXT_BLOB, too_large: true, content: null });
-    render(<BlameView repo="git-compose" path="huge.bin" />);
+    await render(<BlameView repo="git-compose" path="huge.bin" />);
 
     await expect.element(page.getByText("File too large — blame not shown.")).toBeVisible();
   });
@@ -135,7 +135,7 @@ describe("BlameView", () => {
   it("shows an empty-file message when there are no ranges", async () => {
     mockedGetBlame.mockResolvedValue({ ...BLAME, lines: 0, ranges: [] });
     mockedGetBlob.mockResolvedValue({ ...TEXT_BLOB, content: "" });
-    render(<BlameView repo="git-compose" path="empty.txt" />);
+    await render(<BlameView repo="git-compose" path="empty.txt" />);
 
     await expect.element(page.getByText("This file is empty.")).toBeVisible();
   });
@@ -143,7 +143,7 @@ describe("BlameView", () => {
   it("shows a path-not-found message", async () => {
     mockedGetBlame.mockRejectedValue(new ApiError("path_not_found", "path 'nope' not found", 404));
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);
-    render(<BlameView repo="git-compose" path="nope" />);
+    await render(<BlameView repo="git-compose" path="nope" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("Path not found.");
   });

@@ -63,7 +63,7 @@ describe("RefsView", () => {
 
   it("lists branches and tags", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect.element(page.getByText("main")).toBeVisible();
     await expect.element(page.getByText("v1.0.0")).toBeVisible();
@@ -72,7 +72,7 @@ describe("RefsView", () => {
 
   it("links a commit-typed tag object to the commit page", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect
       .element(page.getByRole("link", { name: REFS.tags[0].object.sha.slice(0, 12) }))
@@ -81,7 +81,7 @@ describe("RefsView", () => {
 
   it("shows empty-state messages when there are no branches or tags", async () => {
     mockedGetRefs.mockResolvedValue({ branches: [], remote_branches: [], tags: [] });
-    render(<RefsView repo="scratch" />);
+    await render(<RefsView repo="scratch" />);
 
     await expect.element(page.getByText("No branches.")).toBeVisible();
     await expect.element(page.getByText("No tags.")).toBeVisible();
@@ -89,14 +89,14 @@ describe("RefsView", () => {
 
   it("shows an error message when the request fails", async () => {
     mockedGetRefs.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
   });
 
   it("links a non-default branch's Compare cell to the default branch, but not the default branch's own row", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     const compareLink = page.getByRole("link", { name: "Compare main with feature-x" });
     await expect.element(compareLink).toHaveAttribute("href", "/git-compose/diff?from=main&to=feature-x");
@@ -108,7 +108,7 @@ describe("RefsView", () => {
 
   it("links a tag's Compare cell from the tag to the default branch (reversed direction from branches)", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     const compareLink = page.getByRole("link", { name: "Compare v1.0.0 with main" });
     await expect.element(compareLink).toHaveAttribute("href", "/git-compose/diff?from=v1.0.0&to=main");
@@ -117,7 +117,7 @@ describe("RefsView", () => {
   it("renders the table without a Compare link when the default-branch fetch fails", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
     mockedGetRepo.mockRejectedValue(new ApiError("internal", "boom", 500));
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect.element(page.getByText("feature-x")).toBeVisible();
     await expect.element(page.getByRole("link", { name: "Compare main with feature-x" })).not.toBeInTheDocument();
@@ -125,7 +125,7 @@ describe("RefsView", () => {
 
   it("offers every archive format for a tag", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     for (const format of ARCHIVE_FORMATS) {
       await expect
@@ -149,7 +149,7 @@ describe("RefsView", () => {
         ...REFS.tags,
       ],
     });
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect
       .element(page.getByRole("link", { name: "Download release/1.0 as tar.gz" }))
@@ -158,7 +158,7 @@ describe("RefsView", () => {
 
   it("does not offer downloads for branches", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect.element(page.getByRole("link", { name: "Download main as tar.gz" })).not.toBeInTheDocument();
   });
@@ -177,7 +177,7 @@ describe("RefsView", () => {
         },
       ],
     });
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect.element(page.getByText("(blob)")).toBeVisible();
     await expect.element(page.getByRole("link", { name: "Compare readme-blob with main" })).not.toBeInTheDocument();
@@ -189,7 +189,7 @@ describe("RefsView", () => {
 
   it("links a tag name to its tag detail page", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect
       .element(page.getByRole("link", { name: "v1.0.0", exact: true }))
@@ -211,7 +211,7 @@ describe("RefsView", () => {
         ...REFS.tags,
       ],
     });
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect
       .element(page.getByRole("link", { name: "release/1.0", exact: true }))
@@ -220,7 +220,7 @@ describe("RefsView", () => {
 
   it("renders no Remote branches section when there are none", async () => {
     mockedGetRefs.mockResolvedValue(REFS);
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect.element(page.getByText("main")).toBeVisible(); // wait for data to render
     await expect.element(page.getByRole("heading", { name: "Remote branches" })).not.toBeInTheDocument();
@@ -231,7 +231,7 @@ describe("RefsView", () => {
       ...REFS,
       remote_branches: [{ name: "origin/main", target: "abc123def456", committed_at: "2026-07-24T13:06:00+09:00" }],
     });
-    render(<RefsView repo="git-compose" />);
+    await render(<RefsView repo="git-compose" />);
 
     await expect.element(page.getByRole("heading", { name: "Remote branches" })).toBeVisible();
     await expect.element(page.getByText("origin/main")).toBeVisible();
