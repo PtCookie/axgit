@@ -6,8 +6,8 @@ fcgiwrap setup.
 - **api/** — Rust (axum + libgit2). Read-only JSON API, Smart HTTP clone, static file serving.
 - **web/** — Astro + React + shadcn/ui. Static build.
 
-Deployed either as a single container (see [Deployment](#deployment)) or as a single binary (see
-[Single-binary build](#single-binary-build)); push is handled by the existing git-server (SSH).
+Runs either as a single container or as a single binary — see [Usage](#usage) for both; push is
+handled by the existing git-server (SSH).
 The API is self-documenting at `/swagger-ui` (raw spec at `/api/v1/openapi.json`).
 
 Docs: [api/README.md](api/README.md) (backend design + the normative API spec) ·
@@ -42,6 +42,137 @@ differences), plus a few things cgit doesn't have:
 
 **The app is strictly read-only** — no auth, no write endpoints; every mutation happens over SSH
 against the git-server directly.
+
+## Usage
+
+Axgit needs two things at runtime: a directory of bare repositories to read
+(`--repo-root`/`AXGIT_REPO_ROOT` — mount it read-only, axgit never writes to a repository) and a
+`git` binary on `PATH`, used for archive downloads and Smart HTTP clone (api/README.md's hybrid
+libgit2+exec policy). Both distributions below carry the frontend inside them
+(docs/DECISIONS.md #74, #88), so there is nothing else to deploy alongside them.
+
+### Container image
+
+Published to `ghcr.io/ptcookie/axgit` on every `v*` tag (docs/DECISIONS.md #92) as one
+multi-platform manifest covering `linux/amd64` and `linux/arm64`. Three tags move with each
+release — the full version (`0.5.0`), its major.minor prefix (`0.5`), and `latest`; pin a version
+if a rollback path matters.
+
+```sh
+docker pull ghcr.io/ptcookie/axgit:0.5.0
+```
+
+```sh
+docker run --rm -p 8080:8080 -v /srv/git:/srv/git:ro ghcr.io/ptcookie/axgit:0.5.0
+```
+
+The registry's OS/Arch list also shows `unknown/unknown` rows next to the two platforms: those are
+the SLSA provenance attestations buildx attaches by default, not platforms, and `docker pull` never
+resolves them.
+
+In the git-compose stack this image replaces the `git-web` service — see
+[compose.yaml](compose.yaml) for an illustrative service definition (the real change is tracked in
+the separate git-compose.git repository). **Nothing pulls or restarts automatically**: rolling out
+a new image is a manual `docker compose pull` + `up --detach` (or the podman equivalent) on the
+host.
+
+### Release binary
+
+Each `v*` release attaches one statically linked tarball per target — plus a single `SHA256SUMS`
+covering both — to its [GitHub release](https://github.com/PtCookie/axgit/releases). A tarball
+holds the `axgit` binary and `LICENSE`, nothing else (docs/DECISIONS.md #89). Releases ship one
+tarball per CPU architecture and the filename is the only place that's recorded, so check
+`uname -m` first — `x86_64` or `aarch64` (arm64 on Linux) picks the target triple.
+
+```sh
+base=https://github.com/PtCookie/axgit/releases/download/v0.5.0
+curl -LO "$base/axgit-0.5.0-x86_64-unknown-linux-musl.tar.gz"   # or -aarch64-unknown-linux-musl
+curl -LO "$base/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+tar -xzf axgit-0.5.0-x86_64-unknown-linux-musl.tar.gz
+./axgit-0.5.0-x86_64-unknown-linux-musl/axgit --repo-root /srv/git
+```
+
+That is already a complete deployment. To run it as a service — which user to run it as, the unit
+file, and how upgrades work — see [systemd install](#systemd-install). Building either artifact
+yourself is under [Deployment](#deployment).
+
+### Configuration
+
+Every setting is reachable three ways — a CLI flag (`axgit --help`), an `AXGIT_*` environment
+variable, or a key in a TOML config file — and they layer in that order:
+
+**CLI flag > environment variable > config file > built-in default.**
+
+The config file is optional. `--config <path>` / `AXGIT_CONFIG` names one explicitly (a path that
+doesn't exist is a startup error); with neither set, `/etc/axgit/axgit.toml` is read if it happens
+to be there, and startup is silent if it isn't. Keys axgit doesn't recognize are logged as a
+warning and ignored, so a `cgitrc` carried over from cgit — with its `scan-path`, `enable-*`,
+`snapshots` keys — still boots.
+
+```toml
+# /etc/axgit/axgit.toml
+repo-root       = "/srv/git"
+listen          = "0.0.0.0:8080"
+clone-url-base  = "https://git.example.com"
+repository-sort = "-idle"
+
+[site]
+root-title = "PtCookie Git"
+root-desc  = "self-hosted git"
+logo       = "/srv/git/logo.svg"
+
+[cache]
+response-ttl = 300
+```
+
+Section names are organizational only; keys keep cgit's own `cgitrc` spelling wherever cgit has
+one, so an existing value can be pasted straight across.
+
+The container image sets no `ENV` of its own (docs/DECISIONS.md #88 — the frontend is baked into
+the binary, so there's nothing left for `AXGIT_STATIC_DIR` to point at), so every setting below,
+including it, is the config file's to set, as long as the same setting isn't also passed as an
+environment variable.
+
+| Variable | Config file key | Default | Description |
+| --- | --- | --- | --- |
+| `AXGIT_CONFIG` | _(n/a)_ | `/etc/axgit/axgit.toml` when it exists | TOML config file holding any of the settings below |
+| `AXGIT_REPO_ROOT` | `repo-root` | `/srv/git` | Directory containing bare repositories (`*.git`) |
+| `AXGIT_STATIC_DIR` | `static-dir` | _(unset)_ | Astro static build (`web/dist`) to serve at `/`, overriding the binary's own baked-in copy. Only way to serve a frontend at all with the `api-only` Cargo feature |
+| `AXGIT_LISTEN` | `listen` | `0.0.0.0:8080` | Socket address to listen on |
+| `AXGIT_CLONE_URL_BASE` | `clone-url-base` | _(unset)_ | Base URL used when displaying clone URLs on the summary page |
+| `AXGIT_CACHE_SCAN_TTL` | `cache.scan-ttl` | `60` | Repository scan cache TTL, in seconds |
+| `AXGIT_CACHE_RESPONSE_TTL` | `cache.response-ttl` | `300` | Response cache TTL, in seconds (a safety net — pushes invalidate entries immediately via the HEAD/agefile validator) |
+| `AXGIT_CACHE_RESPONSE_MAX_BYTES` | `cache.response-max-bytes` | `33554432` (32 MiB) | Response cache capacity, in bytes |
+| `AXGIT_REPOSITORY_SORT` | `repository-sort` | `name` | Default repository index sort order (`name`, `desc`, `owner`, `idle`, `section`, optionally `-`-prefixed); a request's own `?sort=` overrides it |
+| `AXGIT_ROOT_TITLE` | `site.root-title` | _(unset)_ | Site-wide title, shown as the header brand and falling back to "Axgit" |
+| `AXGIT_ROOT_DESC` | `site.root-desc` | _(unset)_ | Site-wide description, shown on the index page |
+| `AXGIT_ROOT_README` | `site.root-readme` | _(unset)_ | Path to a markdown/reStructuredText/plain-text file rendered on the index page |
+| `AXGIT_LOGO` | `site.logo` | _(unset)_ | Site logo, shown beside the header brand. An `http(s)://` URL (used verbatim) or a filesystem path axgit serves itself at `GET /api/v1/site/logo`; unset shows axgit's own mark (`/favicon.svg`), the same one the tab icon defaults to |
+| `AXGIT_LOGO_LINK` | `site.logo-link` | _(unset)_ | Where the logo links to; an `http(s)://` URL or a root-relative path, falling back to `/` |
+| `AXGIT_FAVICON` | `site.favicon` | _(unset)_ | Site favicon, replacing axgit's own default. Same URL-or-path rule as `AXGIT_LOGO`, served at `GET /api/v1/site/favicon` |
+
+### Repository configuration
+
+Per-repository settings are read from each bare repo's own `config` file, `[cgit]` section (the
+git-server's `git-init` script writes this format). An `[axgit]` section, if present, takes
+precedence key-by-key.
+
+| Key | Description |
+| --- | --- |
+| `section` | Group heading on the repository index |
+| `owner` | Shown on the index and summary page |
+| `desc` | Shown on the index and summary page |
+| `homepage` | External homepage link (only `http://`/`https://` are honoured; anything else is treated as unset) |
+| `defbranch` | Default branch for ref-less requests, when it names an existing local branch |
+| `hide` | Boolean — drops the repository from the index, but it stays reachable by direct path |
+| `ignore` | Boolean — the repository is unreachable entirely (every per-repo route and Smart HTTP 404) |
+| `module-link`, `<path>.module-link` | Submodule link template (`%s` substituted with the gitlink's path and sha) |
+
+`hide`/`ignore` accept the same boolean spellings git itself does (`true`/`false`, `yes`/`no`,
+`on`/`off`, `1`/`0`). A submodule with no `module-link` key falls back to `.gitmodules`'s own
+`url`. Last-activity timestamps come from the agefile (`info/web/last-modified`, updated by the
+git-server's post-receive hook), falling back to the HEAD commit's authordate when it's missing.
 
 ## Architecture
 
@@ -98,25 +229,15 @@ command and `pnpm --filter web gen:types` (both in `AGENTS.md`/`CLAUDE.md`). See
 
 ## Deployment
 
-Prebuilt images are published to `ghcr.io/ptcookie/axgit` on every `v*` tag
-(docs/DECISIONS.md #92), as one multi-platform manifest covering `linux/amd64` and
-`linux/arm64`. Three tags move with each release: the full version (`0.4.1`), its
-major.minor prefix (`0.4`), and `latest` — pin a version if a rollback path matters.
+Both artifacts under [Usage](#usage) are produced by CI from a `v*` tag. This section is for
+building them yourself, and for installing the binary as a service.
 
-```sh
-docker pull ghcr.io/ptcookie/axgit:0.4.1
-docker run --rm -p 8080:8080 -v /srv/git:/srv/git:ro ghcr.io/ptcookie/axgit:0.4.1
-```
+### Building the container image
 
-**Publishing is where the automation stops.** Nothing pulls the new image or restarts
-anything on the deployment host — that stays a manual `docker compose pull` + `up --detach`
-(or the podman equivalent) on the server.
-
-To build the image yourself instead — which is what the git-compose stack does today, from
-the axgit submodule — use the multi-stage `Containerfile` (web build → api build → alpine
-runtime; docs/DECISIONS.md #22). `Dockerfile` is a committed symlink to it, so `docker build`
-needs no extra flag while `podman`/`buildah` (which look for `Containerfile` first) also work
-unchanged:
+The multi-stage `Containerfile` (web build → api build → alpine runtime; docs/DECISIONS.md #22)
+is also what the git-compose stack builds today, from the axgit submodule. `Dockerfile` is a
+committed symlink to it, so `docker build` needs no extra flag while `podman`/`buildah` (which
+look for `Containerfile` first) also work unchanged:
 
 ```sh
 docker build --tag axgit:latest .
@@ -133,17 +254,13 @@ The build produces an image for the host's own architecture. If the deployment t
 docker build --platform linux/amd64 --tag axgit:latest .
 ```
 
-Run it against a repository root (`--repo-root`/`AXGIT_REPO_ROOT`, mounted read-only — axgit never
-writes to a repository):
+Check the result against a repository root the same way [Usage](#container-image) runs the
+published image — the fixture repositories are enough:
 
 ```sh
 ./scripts/make-fixtures.sh   # or point at a real /srv/git
 docker run --rm -p 8080:8080 -v "$PWD/fixtures/repos:/srv/git:ro" axgit:latest
 ```
-
-In the actual git-compose stack, this image replaces the `git-web` service — see
-[compose.yaml](compose.yaml) for an illustrative service definition
-(the real change is tracked in the separate git-compose.git repository).
 
 What the image is made of:
 
@@ -185,22 +302,7 @@ bundled frontend at all is `cargo build --release --manifest-path api/Cargo.toml
 api-only` — that one does need `AXGIT_STATIC_DIR` (or nothing is served at `/`) and has no
 compile-time dependency on `web/dist`.
 
-Each `v*` release attaches prebuilt tarballs — one per target, plus a single `SHA256SUMS`
-covering both — to its [GitHub release](https://github.com/PtCookie/axgit/releases). Each
-tarball holds the statically linked `axgit` binary (frontend baked in) and `LICENSE`, nothing
-else (docs/DECISIONS.md #89):
-
-```sh
-base=https://github.com/PtCookie/axgit/releases/download/v0.4.1
-curl -LO "$base/axgit-0.4.1-x86_64-unknown-linux-musl.tar.gz"   # or -aarch64-unknown-linux-musl
-curl -LO "$base/SHA256SUMS"
-sha256sum --check --ignore-missing SHA256SUMS
-tar -xzf axgit-0.4.1-x86_64-unknown-linux-musl.tar.gz
-```
-
-As with the container image, nothing installs or restarts it for you — see
-[systemd install](#systemd-install) for what to do with the extracted binary. To package the
-default build into that same tarball layout yourself (docs/DECISIONS.md #75):
+To package that build into the same tarball layout CI publishes (docs/DECISIONS.md #75):
 
 ```sh
 ./scripts/make-release.sh
@@ -313,7 +415,8 @@ WantedBy=multi-user.target
 
 **4. Configure it**
 
-Both surfaces below are documented in [Configuration](#configuration); axgit runs on sane defaults
+Both surfaces — the env file and the TOML file — are documented under
+[Configuration](#configuration); axgit runs on sane defaults
 for anything left unset, but `AXGIT_REPO_ROOT` is required in practice (the `/srv/git` default only
 makes sense inside the container image).
 
@@ -357,83 +460,6 @@ sudo systemctl stop axgit.service
 sudo install -m 755 axgit /usr/local/bin/axgit   # from a newer release tarball
 sudo systemctl start axgit.service
 ```
-
-### Configuration
-
-Every setting is reachable three ways — a CLI flag (`axgit --help`), an `AXGIT_*` environment
-variable, or a key in a TOML config file — and they layer in that order:
-
-**CLI flag > environment variable > config file > built-in default.**
-
-The config file is optional. `--config <path>` / `AXGIT_CONFIG` names one explicitly (a path that
-doesn't exist is a startup error); with neither set, `/etc/axgit/axgit.toml` is read if it happens
-to be there, and startup is silent if it isn't. Keys axgit doesn't recognize are logged as a
-warning and ignored, so a `cgitrc` carried over from cgit — with its `scan-path`, `enable-*`,
-`snapshots` keys — still boots.
-
-```toml
-# /etc/axgit/axgit.toml
-repo-root       = "/srv/git"
-listen          = "0.0.0.0:8080"
-clone-url-base  = "https://git.example.com"
-repository-sort = "-idle"
-
-[site]
-root-title = "PtCookie Git"
-root-desc  = "self-hosted git"
-logo       = "/srv/git/logo.svg"
-
-[cache]
-response-ttl = 300
-```
-
-Section names are organizational only; keys keep cgit's own `cgitrc` spelling wherever cgit has
-one, so an existing value can be pasted straight across.
-
-The container image sets no `ENV` of its own (docs/DECISIONS.md #88 — the frontend is baked into
-the binary, so there's nothing left for `AXGIT_STATIC_DIR` to point at), so every setting below,
-including it, is the config file's to set, as long as the same setting isn't also passed as an
-environment variable.
-
-| Variable | Config file key | Default | Description |
-| --- | --- | --- | --- |
-| `AXGIT_CONFIG` | _(n/a)_ | `/etc/axgit/axgit.toml` when it exists | TOML config file holding any of the settings below |
-| `AXGIT_REPO_ROOT` | `repo-root` | `/srv/git` | Directory containing bare repositories (`*.git`) |
-| `AXGIT_STATIC_DIR` | `static-dir` | _(unset)_ | Astro static build (`web/dist`) to serve at `/`, overriding the binary's own baked-in copy. Only way to serve a frontend at all with the `api-only` Cargo feature |
-| `AXGIT_LISTEN` | `listen` | `0.0.0.0:8080` | Socket address to listen on |
-| `AXGIT_CLONE_URL_BASE` | `clone-url-base` | _(unset)_ | Base URL used when displaying clone URLs on the summary page |
-| `AXGIT_CACHE_SCAN_TTL` | `cache.scan-ttl` | `60` | Repository scan cache TTL, in seconds |
-| `AXGIT_CACHE_RESPONSE_TTL` | `cache.response-ttl` | `300` | Response cache TTL, in seconds (a safety net — pushes invalidate entries immediately via the HEAD/agefile validator) |
-| `AXGIT_CACHE_RESPONSE_MAX_BYTES` | `cache.response-max-bytes` | `33554432` (32 MiB) | Response cache capacity, in bytes |
-| `AXGIT_REPOSITORY_SORT` | `repository-sort` | `name` | Default repository index sort order (`name`, `desc`, `owner`, `idle`, `section`, optionally `-`-prefixed); a request's own `?sort=` overrides it |
-| `AXGIT_ROOT_TITLE` | `site.root-title` | _(unset)_ | Site-wide title, shown as the header brand and falling back to "Axgit" |
-| `AXGIT_ROOT_DESC` | `site.root-desc` | _(unset)_ | Site-wide description, shown on the index page |
-| `AXGIT_ROOT_README` | `site.root-readme` | _(unset)_ | Path to a markdown/reStructuredText/plain-text file rendered on the index page |
-| `AXGIT_LOGO` | `site.logo` | _(unset)_ | Site logo, shown beside the header brand. An `http(s)://` URL (used verbatim) or a filesystem path axgit serves itself at `GET /api/v1/site/logo`; unset shows axgit's own mark (`/favicon.svg`), the same one the tab icon defaults to |
-| `AXGIT_LOGO_LINK` | `site.logo-link` | _(unset)_ | Where the logo links to; an `http(s)://` URL or a root-relative path, falling back to `/` |
-| `AXGIT_FAVICON` | `site.favicon` | _(unset)_ | Site favicon, replacing axgit's own default. Same URL-or-path rule as `AXGIT_LOGO`, served at `GET /api/v1/site/favicon` |
-
-### Repository configuration
-
-Per-repository settings are read from each bare repo's own `config` file, `[cgit]` section (the
-git-server's `git-init` script writes this format). An `[axgit]` section, if present, takes
-precedence key-by-key.
-
-| Key | Description |
-| --- | --- |
-| `section` | Group heading on the repository index |
-| `owner` | Shown on the index and summary page |
-| `desc` | Shown on the index and summary page |
-| `homepage` | External homepage link (only `http://`/`https://` are honoured; anything else is treated as unset) |
-| `defbranch` | Default branch for ref-less requests, when it names an existing local branch |
-| `hide` | Boolean — drops the repository from the index, but it stays reachable by direct path |
-| `ignore` | Boolean — the repository is unreachable entirely (every per-repo route and Smart HTTP 404) |
-| `module-link`, `<path>.module-link` | Submodule link template (`%s` substituted with the gitlink's path and sha) |
-
-`hide`/`ignore` accept the same boolean spellings git itself does (`true`/`false`, `yes`/`no`,
-`on`/`off`, `1`/`0`). A submodule with no `module-link` key falls back to `.gitmodules`'s own
-`url`. Last-activity timestamps come from the agefile (`info/web/last-modified`, updated by the
-git-server's post-receive hook), falling back to the HEAD commit's authordate when it's missing.
 
 ## License
 
