@@ -2000,7 +2000,8 @@ bucket, so `Some("")` formed its own group, sorted among the named ones, with an
   layer means `GET /repos`, `GET /repos/{repo}` and the Atom feed all agree on what "no section
   configured" means, instead of the frontend reinterpreting a wire value the contract never promised
   was meaningful.
-- **The unsectioned group sorts first, and named groups sort A–Z.** The original design put
+- **The unsectioned group sorts first, and named groups sort A–Z** *(the A–Z half superseded by
+  #93 — named groups now sort by their own most recent activity)*. The original design put
   unsectioned last, on the assumption most repositories would eventually get a category; in practice
   a large plurality never will, and burying them at the bottom of a long page is worse than
   surfacing them ahead of deliberately curated categories. The group keeps an `sr-only` `<h2>` so the
@@ -2271,3 +2272,42 @@ pipeline never had.
   recording. What is *not* added is `actions/attest`, whose Sigstore-signed attestation would need
   the manifest-list digest threaded out of the merge job plus `id-token`/`attestations`
   permissions — nothing consuming this image verifies those, so revisit if that changes.
+
+## #93 Repository index groups ordered by category activity, not alphabetically
+
+#86 pinned the unsectioned group to the top and sorted the named categories A–Z. Alphabetical order
+carries no information: a category untouched for two years sat above the one that received a push
+this morning, and on an index with more than a handful of categories the reader has to scan every
+group heading to find where the work is happening.
+
+- **A category's last activity is its most recently active repository**, and named groups sort by
+  that, newest first. This is the only definition that needs no new API surface — `RepoInfo`'s
+  `last_modified` (agefile, else HEAD authordate) is already in the response the index fetches, so
+  grouping stays entirely client-side and `GET /repos` is unchanged.
+- **The unsectioned group stays pinned first**, for #86's reason unchanged — those repositories have
+  no group of their own to land in, and position alone communicates it (still an `sr-only` `<h2>`).
+- **Group order is still independent of `?sort=`**, including `idle`/`-idle`. `-idle` reorders rows
+  *within* a category to oldest-first but leaves the newest category on top: the sort control is
+  about the columns of a table, and reinterpreting it as a second, differently-scoped ordering rule
+  would make "sort by owner" silently imply a group order too. This supersedes #86's "named groups
+  sort A–Z" bullet; the rest of #86 (blank config values reading as unset, unsectioned first)
+  stands.
+- **Nulls last, then A–Z.** A category whose every repository lacks a `last_modified` (an empty repo
+  with no agefile) has no activity to compare and sorts last among the named groups, mirroring the
+  nulls-last rule `repo-sort.ts` and `api/src/repo/sort.rs` already apply to every other key. Ties —
+  equal recency, or two activity-less categories — break by section name ascending, still plain
+  code-point comparison rather than `localeCompare` (#86's reasoning: don't let the frontend's
+  ordering drift from the API's `str::cmp`).
+- **`groupBySection` moved out of `RepoList.tsx` into `web/src/lib/repo-group.ts`**, joining
+  `repo-filter.ts`/`repo-sort.ts`. The ordering rule now has enough edge cases (recency, nulls,
+  ties) to deserve unit tests that don't have to mount a component and read the DOM.
+- **`repo-sort.ts` exports `idleTime`**, extracted from `compareIdle`'s inner closure. Grouping and
+  the `idle` column sort now share one definition of when a repository was last active — including
+  "compare parsed instants, never the formatted string", which matters as much for a group's
+  maximum as it does for a row comparison.
+- **The mocked-response fixture's `dotfiles` timestamp moved to 2026-08-05**, past infra's newest
+  repository. Under the old data the recency order happened to coincide with A–Z, so every existing
+  group-order assertion in `RepoList.test.tsx` and `e2e/repos.spec.ts` would have kept passing
+  without exercising the new rule. `scripts/make-fixtures.sh` needed no such change — its real
+  repositories already put `tools` (2026-07-28) ahead of `infra` (2026-07-24), so a local run shows
+  the new order too.

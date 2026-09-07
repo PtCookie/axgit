@@ -19,9 +19,9 @@ Docs: [api/README.md](api/README.md) (backend design + the normative API spec) �
 Full parity with cgit's own feature set (see `docs/ROADMAP.md` for the audit and the deliberate
 differences), plus a few things cgit doesn't have:
 
-- **Repository index** — section grouping, sortable columns (`?sort=`,
-  `AXGIT_REPOSITORY_SORT`), a client-side name/description/owner filter (`?q=`), and an optional
-  site-wide title/description/readme/logo/favicon.
+- **Repository index** — section grouping (most recently active section first), sortable columns
+  (`?sort=`, `AXGIT_REPOSITORY_SORT`), a client-side name/description/owner filter (`?q=`), and an
+  optional site-wide title/description/readme/logo/favicon.
 - **Repository pages** — a summary page (rendered README + metadata sidebar) and a refs page
   (local/remote branches, tags with their own detail page, per-tag archive downloads, and
   "Compare" entry points).

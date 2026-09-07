@@ -304,9 +304,10 @@ Repository list. Equivalent to cgit's index.
   param is absent; any other value is `400 invalid_param`. The response's own `sort` field echoes
   the order actually applied — the request's `?sort=` if given, else the configured default —
   so a client that never sent `?sort=` still learns which order it got. The web list's own section
-  grouping (`RepoList.tsx`) always orders *groups* itself (unsectioned first, then sections A–Z)
-  regardless of `sort` — `sort=section` only affects the order of repositories within a group,
-  which collapses to the `name` tiebreak since every repo in a group shares the same section.
+  grouping (`RepoList.tsx`) always orders *groups* itself (unsectioned first, then named sections by
+  their own most recently active repository, newest first — docs/DECISIONS.md #93) regardless of
+  `sort` — `sort=section` only affects the order of repositories within a group, which collapses to
+  the `name` tiebreak since every repo in a group shares the same section.
   - Every key except `idle` sorts ascending by default; `idle` sorts **descending** (most recently
     active first) by default, matching cgit's own `idle` sort. A leading `-` always flips a key's
     own default direction — `-idle` is ascending (oldest first), not "always descending".

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import fixture from "../tests/fixtures/repos.json" with { type: "json" };
 
-test("shows repositories grouped by section, unsectioned first then A–Z", async ({ page }) => {
+test("shows repositories grouped by section, unsectioned first then most recently active", async ({ page }) => {
   await page.route("**/api/v1/repos", async (route) => {
     await route.fulfill({ json: fixture });
   });
@@ -101,11 +101,12 @@ test("deep-links a sorted list from ?sort=", async ({ page }) => {
     "aria-sort",
     "ascending",
   );
-  // Group order is fixed (unsectioned first, then sections A–Z): scratch leads regardless of
-  // the active sort. "-idle" flips idle's descending default to ascending within each group —
-  // visible here in infra, where git-compose (2026-07-24) now precedes axgit (2026-07-30).
+  // Group order is fixed (unsectioned first, then most recently active first): scratch leads,
+  // then tools (dotfiles, 2026-08-05) ahead of infra (axgit, 2026-07-30), regardless of the active
+  // sort. "-idle" flips idle's descending default to ascending within each group — visible here
+  // in infra, where git-compose (2026-07-24) now precedes axgit (2026-07-30).
   const names = await page.locator("table tbody a").allTextContents();
-  expect(names.filter((name) => name.trim() !== "")).toEqual(["scratch", "git-compose", "axgit", "dotfiles"]);
+  expect(names.filter((name) => name.trim() !== "")).toEqual(["scratch", "dotfiles", "git-compose", "axgit"]);
 });
 
 // robots.txt is a real static file (`web/public/robots.txt`), served ahead of

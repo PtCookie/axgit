@@ -38,7 +38,8 @@ excluded from eslint). When the API changes, regenerate it with `pnpm --filter w
   page chrome (heading, tab nav, `<title>`) is static HTML; only the data regions are client-fetched
   React islands (`client:only="react"`, with a static `slot="fallback"` skeleton).
 - Route layout — each is a real file under `src/pages/`:
-  - `/` repository list (grouped by section, equivalent to cgit's index)
+  - `/` repository list (grouped by section, most recently active section first — equivalent to
+    cgit's index)
   - `/{repo}/` summary · `/{repo}/refs` · `/{repo}/log` · `/{repo}/commit/{sha}` · `/{repo}/diff`
   - `/{repo}/tree/[...path]` · `/{repo}/blob/[...path]` · `/{repo}/blame/[...path]`
   - `/{repo}/tag/{name}` · `/{repo}/object/{oid}` · `/{repo}/search` · `/{repo}/stats`

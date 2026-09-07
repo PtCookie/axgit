@@ -11,6 +11,7 @@ import { listRepos } from "@/lib/api/repos";
 import type { RepoInfo } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { filterRepos } from "@/lib/repo-filter";
+import { groupBySection } from "@/lib/repo-group";
 import { paramFromSearch } from "@/lib/repo-param";
 import { logHref, treeHref } from "@/lib/repo-href";
 import { defaultOrder, orderToParam, parseOrder, sortRepos, type RepoOrder, type RepoSortKey } from "@/lib/repo-sort";
@@ -32,9 +33,9 @@ const SORT_PARAM = "sort";
 /** Sortable columns, in header order. `section` has no header button — it's
  *  the group heading (`groupBySection`), not a column — but stays reachable
  *  via `?sort=section` or `AXGIT_REPOSITORY_SORT`. Since `groupBySection`
- *  always orders groups itself (unsectioned first, then alphabetically),
- *  `sort=section` only affects the within-group order (which, since every
- *  repo in a group shares the same section, collapses to the `name`
+ *  always orders groups itself (unsectioned first, then most recently active
+ *  first), `sort=section` only affects the within-group order (which, since
+ *  every repo in a group shares the same section, collapses to the `name`
  *  tiebreak) — not which group comes first. */
 const SORT_COLUMNS: readonly { key: RepoSortKey; label: string }[] = [
   { key: "name", label: "Name" },
@@ -42,36 +43,6 @@ const SORT_COLUMNS: readonly { key: RepoSortKey; label: string }[] = [
   { key: "owner", label: "Owner" },
   { key: "idle", label: "Last activity" },
 ];
-
-interface RepoGroup {
-  section: string | null;
-  repos: RepoInfo[];
-}
-
-function groupBySection(repos: RepoInfo[]): RepoGroup[] {
-  const groups: RepoGroup[] = [];
-
-  for (const repo of repos) {
-    const existing = groups.find((group) => group.section === repo.section);
-    if (existing) {
-      existing.repos.push(repo);
-    } else {
-      groups.push({ section: repo.section, repos: [repo] });
-    }
-  }
-
-  // section: null (unsectioned) always sorts first — those repos have no group of their own to
-  // land in, so surfacing them ahead of every named section keeps them from getting lost between
-  // alphabetically-nearby sections. Named groups sort A–Z; comparison mirrors repo-sort.ts's
-  // `compareOptStr` (plain code-point comparison, not `localeCompare`) to match the API's own
-  // `str::cmp`-based ordering (api/src/repo/sort.rs).
-  groups.sort((a, b) => {
-    if (a.section === null) return b.section === null ? 0 : -1;
-    if (b.section === null) return 1;
-    return a.section < b.section ? -1 : a.section > b.section ? 1 : 0;
-  });
-  return groups;
-}
 
 type State =
   { status: "loading" } | { status: "error"; error: ApiError } | { status: "data"; repos: RepoInfo[]; sort: string };

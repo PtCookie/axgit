@@ -82,19 +82,23 @@ function compareOptStr(a: string | null, b: string | null, reverse: boolean): nu
   return 0;
 }
 
-/** Compares parsed instants, not the formatted `last_modified` string —
- *  matches `api/src/repo/sort.rs::compare_idle`'s reasoning: two repositories
- *  recorded under different UTC offsets would otherwise compare wrong. An
- *  unparseable value (shouldn't happen — the API only ever emits RFC 3339 or
- *  `null`) is treated the same as `null`. */
+/** `repo`'s last activity as epoch milliseconds, or `null` when it has none.
+ *  Parsed rather than compared as text — matches
+ *  `api/src/repo/sort.rs::compare_idle`'s reasoning: two repositories recorded
+ *  under different UTC offsets would otherwise compare wrong. An unparseable
+ *  value (shouldn't happen — the API only ever emits RFC 3339 or `null`) is
+ *  treated the same as `null`. Shared with `repo-group.ts`, so the index's
+ *  group ordering and its `idle` column sort agree on when a repository was
+ *  last active. */
+export function idleTime(repo: RepoInfo): number | null {
+  if (repo.last_modified === null) return null;
+  const ms = Date.parse(repo.last_modified);
+  return Number.isNaN(ms) ? null : ms;
+}
+
 function compareIdle(a: RepoInfo, b: RepoInfo, reverse: boolean): number {
-  const parse = (repo: RepoInfo): number | null => {
-    if (repo.last_modified === null) return null;
-    const ms = Date.parse(repo.last_modified);
-    return Number.isNaN(ms) ? null : ms;
-  };
-  const aTime = parse(a);
-  const bTime = parse(b);
+  const aTime = idleTime(a);
+  const bTime = idleTime(b);
   if (aTime !== null && bTime !== null) {
     const cmp = aTime < bTime ? -1 : aTime > bTime ? 1 : 0;
     return reverse ? -cmp : cmp;
