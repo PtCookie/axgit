@@ -158,7 +158,7 @@ pub fn serve_embedded_file(headers: &HeaderMap, uri_path: &str) -> Option<Respon
         .decode_utf8()
         .ok()?;
     let file = WebDist::get(&decoded)?;
-    let etag = format!("\"{}\"", hex::encode(file.metadata.sha256_hash()));
+    let etag = format!("\"{}\"", crate::hex::encode(&file.metadata.sha256_hash()));
     if if_none_match(headers, &etag) {
         return Some(not_modified(&etag));
     }
@@ -170,22 +170,6 @@ pub fn serve_embedded_file(headers: &HeaderMap, uri_path: &str) -> Option<Respon
         )
             .into_response(),
     )
-}
-
-#[cfg(not(feature = "api-only"))]
-mod hex {
-    /// Lowercase hex encoding for a sha256 digest — the codebase's other
-    /// sha256 `ETag` (`handlers/mod.rs::body_etag`) gets this for free from
-    /// `sha2`'s `{:x}` `Digest` formatting, which isn't available for a
-    /// plain `[u8; 32]`.
-    pub(super) fn encode(bytes: [u8; 32]) -> String {
-        use std::fmt::Write;
-        let mut out = String::with_capacity(bytes.len() * 2);
-        for byte in bytes {
-            write!(out, "{byte:02x}").expect("writing to a String never fails");
-        }
-        out
-    }
 }
 
 #[cfg(test)]
@@ -226,12 +210,5 @@ mod tests {
             assets.read(Path::new("index.html")).await,
             Some(b"<html></html>".to_vec())
         );
-    }
-
-    #[cfg(not(feature = "api-only"))]
-    #[test]
-    fn hex_encode_should_match_a_known_digest() {
-        assert_eq!(hex::encode([0u8; 32]), "0".repeat(64));
-        assert_eq!(hex::encode([0xab; 32]), "ab".repeat(32));
     }
 }

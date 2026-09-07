@@ -400,7 +400,7 @@ fn first_parent_lacks_path(commit: &Commit, path: &Path) -> bool {
 /// case/whitespace variants of the same address.
 fn email_hash(email: &[u8]) -> String {
     let normalized = String::from_utf8_lossy(email).trim().to_lowercase();
-    format!("{:x}", Sha256::digest(normalized.as_bytes()))
+    crate::hex::encode(&Sha256::digest(normalized.as_bytes()))
 }
 
 #[cfg(test)]

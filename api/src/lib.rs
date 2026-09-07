@@ -6,6 +6,7 @@ pub mod config;
 pub mod error;
 mod escape;
 pub mod handlers;
+mod hex;
 pub mod openapi;
 pub mod repo;
 pub mod routes;
