@@ -79,7 +79,7 @@ fn ref_shorthands(repo: &Repository) -> Result<std::collections::HashSet<String>
     let mut names = std::collections::HashSet::new();
     for reference in repo.references()? {
         let Ok(reference) = reference else { continue };
-        let Some(name) = reference.name() else {
+        let Ok(name) = reference.name() else {
             continue; // non-utf8 ref name
         };
         if let Some(short) = name

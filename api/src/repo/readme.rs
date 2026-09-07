@@ -43,7 +43,7 @@ pub fn find_readme(repo: &Repository, commit: &Commit) -> Result<ReadmeInfo, Api
     let tree = commit.tree()?;
     for (candidate, format) in CANDIDATES {
         for entry in tree.iter() {
-            let Some(name) = entry.name() else {
+            let Ok(name) = entry.name() else {
                 continue; // non-utf8 entry name
             };
             if !name.eq_ignore_ascii_case(candidate) || entry.filemode() == MODE_LINK {

@@ -155,7 +155,7 @@ pub fn detail(repo: &Repository, name: &str) -> Result<TagDetail, ApiError> {
 
     let message = tag
         .as_ref()
-        .and_then(|tag| tag.message())
+        .and_then(|tag| tag.message().ok().flatten())
         .map(str::trim_end)
         .filter(|message| !message.trim().is_empty())
         .map(str::to_owned);
