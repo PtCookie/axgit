@@ -1,13 +1,15 @@
 # Axgit
 
-Web frontend for a self-hosted Git server (git-compose stack). Replaces the Cgit + Nginx +
-fcgiwrap setup.
+Read-only web frontend for bare Git repositories: point it at a directory of `*.git` repos and it
+serves a browsable UI plus clone-over-HTTP. A drop-in replacement for a Cgit + Nginx + fcgiwrap
+setup.
 
 - **api/** — Rust (axum + libgit2). Read-only JSON API, Smart HTTP clone, static file serving.
 - **web/** — Astro + React + shadcn/ui. Static build.
 
-Runs either as a single container or as a single binary — see [Usage](#usage) for both; push is
-handled by the existing git-server (SSH).
+Runs either as a single container or as a single binary — see [Usage](#usage) for both. Axgit
+never writes, so pushes keep going wherever they already go (typically SSH to the host that owns
+the repositories).
 The API is self-documenting at `/swagger-ui` (raw spec at `/api/v1/openapi.json`).
 
 Docs: [api/README.md](api/README.md) (backend design + the normative API spec) ·
@@ -40,8 +42,8 @@ differences), plus a few things cgit doesn't have:
   formats (`tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `zip`), an Atom feed (`ref`/`path`/`all`)
   with `<head>` auto-discovery, cgit URL compatibility redirects, and a System/Light/Dark theme.
 
-**The app is strictly read-only** — no auth, no write endpoints; every mutation happens over SSH
-against the git-server directly.
+**The app is strictly read-only** — no auth, no write endpoints, nothing about pushing. Writes
+stay with the Git server that hosts the repositories, over SSH.
 
 ## Usage
 
@@ -70,11 +72,11 @@ The registry's OS/Arch list also shows `unknown/unknown` rows next to the two pl
 the SLSA provenance attestations buildx attaches by default, not platforms, and `docker pull` never
 resolves them.
 
-In the git-compose stack this image replaces the `git-web` service — see
-[compose.yaml](compose.yaml) for an illustrative service definition (the real change is tracked in
-the separate git-compose.git repository). **Nothing pulls or restarts automatically**: rolling out
-a new image is a manual `docker compose pull` + `up --detach` (or the podman equivalent) on the
-host.
+[compose.yaml](compose.yaml) is an illustrative Compose service definition — the repository
+directory mounted read-only, the settings worth overriding, a healthcheck — for running the image
+next to whatever already hosts the repositories. It is an example to copy, not wired into any
+deploy process here. **Nothing pulls or restarts automatically**: rolling out a new image is a
+manual `docker compose pull` + `up --detach` (or the podman equivalent) on the host.
 
 ### Release binary
 
@@ -154,9 +156,13 @@ environment variable.
 
 ### Repository configuration
 
-Per-repository settings are read from each bare repo's own `config` file, `[cgit]` section (the
-git-server's `git-init` script writes this format). An `[axgit]` section, if present, takes
-precedence key-by-key.
+Per-repository settings are read from each bare repo's own `config` file, `[cgit]` section — the
+same place cgit reads them, so repositories coming from a cgit deployment need no migration. An
+`[axgit]` section, if present, takes precedence key-by-key. Both are ordinary git config:
+
+```sh
+git --git-dir /srv/git/example.git config cgit.desc 'One-line description'
+```
 
 | Key | Description |
 | --- | --- |
@@ -171,13 +177,27 @@ precedence key-by-key.
 
 `hide`/`ignore` accept the same boolean spellings git itself does (`true`/`false`, `yes`/`no`,
 `on`/`off`, `1`/`0`). A submodule with no `module-link` key falls back to `.gitmodules`'s own
-`url`. Last-activity timestamps come from the agefile (`info/web/last-modified`, updated by the
-git-server's post-receive hook), falling back to the HEAD commit's authordate when it's missing.
+`url`.
+
+Last-activity timestamps come from cgit's agefile, `info/web/last-modified` inside the bare repo:
+its contents when they parse as a date (RFC 3339, or the `2026-07-24 13:06:00 +0900` shape that
+`git for-each-ref` prints), otherwise the file's own mtime. The file is optional — without it axgit
+falls back to the HEAD commit's authordate, which only misreports repositories pushed with older
+commits. A `post-receive` hook keeps it exact:
+
+```sh
+#!/bin/sh
+# <repo>.git/hooks/post-receive
+dir=$(git rev-parse --git-dir)
+mkdir -p "$dir/info/web"
+git for-each-ref --sort=-committerdate --count=1 \
+  --format='%(committerdate:iso)' refs/heads > "$dir/info/web/last-modified"
+```
 
 ## Architecture
 
-Axgit replaces the `git-web` service (Cgit + Nginx + fcgiwrap) in the existing git-compose stack.
-The requirements came out of analyzing Cgit:
+Axgit was written to replace a Cgit + Nginx + fcgiwrap deployment, and its requirements came out
+of analyzing Cgit:
 
 - Cgit is a C CGI program linked against git's internal libraries, executed via
   nginx → fcgiwrap → cgit.cgi, with a disk cache (`cache-root`) offsetting CGI execution cost.
@@ -189,15 +209,15 @@ The requirements came out of analyzing Cgit:
   blame, stats, snapshot, Atom feed.
 
 ```
-Browser ──→ Axgit container (single)
+Browser ──→ Axgit (one container, or one binary)
               ├─ /              → Astro static build output (web/dist)
               ├─ /api/v1/*      → axum JSON API ──→ git2 / git exec ──→ /srv/git (ro)
               └─ /{repo}.git/*  → Smart HTTP (git upload-pack --stateless-rpc)
-git push ──→ SSH 2222 → git-server container (unchanged, existing)
+git push ──→ SSH → the Git server owning /srv/git (untouched by axgit)
 ```
 
-TLS is terminated by a separate reverse proxy container added to the git-compose stack (the
-certbot volume moves there too). Axgit serves HTTP only (docs/DECISIONS.md #10).
+Axgit serves HTTP only and has no TLS of its own (docs/DECISIONS.md #10) — a public deployment
+puts a reverse proxy in front of it, which is also where certificates live.
 
 Per-component design — the backend's caching, scanning, search and Smart HTTP layers, and the
 frontend's shell/island split — lives in [api/README.md](api/README.md#design) and
@@ -235,9 +255,9 @@ building them yourself, and for installing the binary as a service.
 ### Building the container image
 
 The multi-stage `Containerfile` (web build → api build → alpine runtime; docs/DECISIONS.md #22)
-is also what the git-compose stack builds today, from the axgit submodule. `Dockerfile` is a
-committed symlink to it, so `docker build` needs no extra flag while `podman`/`buildah` (which
-look for `Containerfile` first) also work unchanged:
+builds the same image CI publishes, from a source checkout — useful for a local patch or a
+platform CI doesn't publish. `Dockerfile` is a committed symlink to it, so `docker build` needs no
+extra flag while `podman`/`buildah` (which look for `Containerfile` first) also work unchanged:
 
 ```sh
 docker build --tag axgit:latest .
@@ -280,11 +300,12 @@ What the image is made of:
   fixed offsets read from git commits, never the system tzdb), and neither are `bzip2`/`xz`/`zstd`
   — those archive formats are encoded in-process (docs/DECISIONS.md #54).
 - The container runs as a dedicated non-root user, and `/etc/gitconfig` sets `[safe] directory = *`
-  since the read-only `/srv/git` mount is owned by the git-server container's uid, which would
-  otherwise trip git's/libgit2's ownership check (docs/DECISIONS.md #22). The systemd deployment
-  below avoids this by running as the repository-owning user instead.
-- Logs go to stdout/stderr as JSON (`tracing` + `tracing-subscriber`), collected by the stack's
-  fluentd logging driver.
+  since the read-only `/srv/git` mount is normally owned by some other uid — the account or
+  container that hosts the repositories — which would otherwise trip git's/libgit2's ownership
+  check (docs/DECISIONS.md #22). The systemd deployment below avoids this by running as the
+  repository-owning user instead.
+- Logs go to stdout/stderr as JSON (`tracing` + `tracing-subscriber`), so whatever log driver the
+  host uses collects them as-is.
 
 ### Single-binary build
 

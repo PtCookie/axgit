@@ -213,7 +213,7 @@ axgit/
   lefthook.yml
   openapi.json        # generated OpenAPI spec (see the regeneration command above)
   axgit.toml          # commented example config file (every key; dev values active)
-  compose.yaml        # illustrative git-compose service definition
+  compose.yaml        # illustrative standalone Compose service definition
   Containerfile       # web build → api build → runtime (single image)
   Dockerfile          # symlink -> Containerfile (for docker build compatibility)
 ```

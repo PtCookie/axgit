@@ -1,30 +1,28 @@
-# Illustrative example of how the `axgit` image slots into the git-compose stack
-# (https://git.ptcookie.net/git-compose.git) as a replacement for its `git-web` service
-# (Cgit + Nginx + fcgiwrap). This file is NOT wired into any deploy process here — it exists to
-# show the shape of the change. The actual git-compose.git service definition is tracked and
-# changed in that separate repository.
+# Illustrative example of running the `axgit` image with Compose — copy it into your own stack
+# and adjust. This file is NOT wired into any deploy process here; it exists to show the shape of
+# a deployment.
 #
-# Assumes a `git-repository` named volume already populated by the git-server container (the
-# same volume `git-web` used to mount) and an external reverse proxy handling TLS termination
+# Assumes a directory of bare repositories that something else (a Git server over SSH, or plain
+# `git init --bare`) writes to, and an external reverse proxy handling TLS termination
 # (docs/DECISIONS.md #10) that forwards to this service's 8080.
 
 services:
-  git-web:
+  axgit:
     # Published on every `v*` tag as a linux/amd64 + linux/arm64 manifest list
     # (docs/DECISIONS.md #92). Pinning a version rather than tracking `latest` is what gives
     # this service a rollback path. Nothing pulls automatically — `docker compose pull` and a
     # restart are manual steps on the host.
     image: ghcr.io/ptcookie/axgit:latest
     pull_policy: always
-    # The real git-compose stack builds from source instead (the axgit submodule plus
-    # `build: ./axgit`, `image: axgit:latest`, `pull_policy: never`); see
-    # README.md#deployment for both paths.
+    # To build from a source checkout instead of pulling, swap the two lines above for
+    # `build: .` + `image: axgit:latest` + `pull_policy: never`; see README.md#deployment.
     restart: unless-stopped
     read_only: true
     volumes:
-      # Read-only: axgit never writes to a repository (CLAUDE.md's core invariant). Push is
-      # SSH-only, handled entirely by the git-server container.
-      - git-repository:/srv/git:ro
+      # Read-only: axgit never writes to a repository (CLAUDE.md's core invariant). Pushes are
+      # handled entirely by whatever owns the repositories, over SSH. A named volume shared with
+      # that container works the same way — see the commented block at the bottom of this file.
+      - /srv/git:/srv/git:ro
       # Optional: the TOML config file (docs/DECISIONS.md #87), an alternative to the
       # `environment:` block below — axgit reads /etc/axgit/axgit.toml by itself when it
       # exists. See this repository's own axgit.toml for every key.
@@ -63,10 +61,14 @@ services:
       interval: 30s
       timeout: 3s
       retries: 3
-    logging:
-      # Matches README.md's "logs go to stdout/stderr as JSON, collected by fluentd" note.
-      driver: fluentd
+    # Logs go to stdout/stderr as JSON (README.md#building-the-container-image), so any log
+    # driver collects them as-is. Uncomment to ship them somewhere specific:
+    # logging:
+    #   driver: fluentd
 
-volumes:
-  git-repository:
-    external: true
+# If the repositories live in a volume owned by another container rather than a host directory,
+# mount that volume instead of the bind mount above:
+#
+# volumes:
+#   git-repository:
+#     external: true
