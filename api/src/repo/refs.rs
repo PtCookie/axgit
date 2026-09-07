@@ -102,7 +102,14 @@ fn branches_of_kind(repo: &Repository, kind: BranchType) -> anyhow::Result<Vec<B
 
 fn tags(repo: &Repository) -> anyhow::Result<Vec<TagRef>> {
     let mut tags = Vec::new();
-    for name in repo.tag_names(None)?.iter().flatten() {
+    // git2 0.21's `StringArray` iterator yields `Result<Option<&str>, Error>`
+    // — `Err` for a non-utf8 name, `None` for an absent slot. Both are skipped,
+    // exactly as flattening the plain `Option` did before.
+    for name in repo
+        .tag_names(None)?
+        .iter()
+        .filter_map(|name| name.ok().flatten())
+    {
         let reference = repo.find_reference(&format!("refs/tags/{name}"))?;
         // `Some` only for annotated tags; lightweight tags have no tag object.
         let tag = reference.peel_to_tag().ok();
@@ -119,7 +126,7 @@ fn tags(repo: &Repository) -> anyhow::Result<Vec<TagRef>> {
         };
         let annotation = tag
             .as_ref()
-            .and_then(|tag| tag.message())
+            .and_then(|tag| tag.message().ok().flatten())
             .and_then(first_line);
         let tagged_at = tag
             .as_ref()

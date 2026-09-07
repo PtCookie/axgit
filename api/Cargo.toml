@@ -14,7 +14,7 @@ clap = { version = "4.5", features = ["derive", "env"] }
 # Inflating gzip-compressed Smart HTTP request bodies.
 flate2 = "1"
 # Read-only access to local bare repositories — no ssh/https transports needed.
-git2 = { version = "0.20", default-features = false }
+git2 = { version = "0.21", default-features = false }
 jiff = "0.2"
 # Not called directly. `liblzma-sys` (pulled in by async-compression's `xz`
 # feature) otherwise pkg-config-probes for a system liblzma and links it

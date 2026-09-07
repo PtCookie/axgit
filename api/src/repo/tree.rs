@@ -95,7 +95,7 @@ pub(crate) fn entries_of(
     let odb = repo.odb()?;
     let mut entries = Vec::new();
     for entry in tree.iter() {
-        let Some(name) = entry.name() else {
+        let Ok(name) = entry.name() else {
             continue; // non-utf8 entry name
         };
         let mode = entry.filemode();

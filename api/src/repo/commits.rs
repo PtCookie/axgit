@@ -134,8 +134,8 @@ pub struct CommitDetail {
 pub fn detail(repo: &Repository, commit: &Commit) -> Result<CommitDetail, ApiError> {
     Ok(CommitDetail {
         sha: commit.id().to_string(),
-        summary: commit.summary().map(str::to_owned),
-        message: commit.message().map(str::to_owned),
+        summary: commit.summary().ok().flatten().map(str::to_owned),
+        message: commit.message().ok().map(str::to_owned),
         note: note(repo, commit),
         author: signature_info(&commit.author()),
         committer: signature_info(&commit.committer()),
@@ -154,7 +154,7 @@ pub fn detail(repo: &Repository, commit: &Commit) -> Result<CommitDetail, ApiErr
 /// `None`, same treatment as an empty commit message.
 fn note(repo: &Repository, commit: &Commit) -> Option<String> {
     let note = repo.find_note(None, commit.id()).ok()?;
-    let message = note.message()?.trim_end();
+    let message = note.message().ok()?.trim_end();
     (!message.trim().is_empty()).then(|| message.to_owned())
 }
 
@@ -317,7 +317,7 @@ fn collect(
 pub(crate) fn commit_info(commit: &Commit) -> CommitInfo {
     CommitInfo {
         sha: commit.id().to_string(),
-        summary: commit.summary().map(str::to_owned),
+        summary: commit.summary().ok().flatten().map(str::to_owned),
         body: None,
         author: signature_info(&commit.author()),
         authored_at: time_rfc3339(commit.author().when()),
@@ -330,8 +330,23 @@ pub(crate) fn commit_info(commit: &Commit) -> CommitInfo {
 /// [`commit_info`] plus the message body (`?msg=1` on `GET /commits`).
 pub(crate) fn commit_info_with_body(commit: &Commit) -> CommitInfo {
     CommitInfo {
-        body: commit.body().map(str::to_owned),
+        body: commit.body().ok().flatten().map(str::to_owned),
         ..commit_info(commit)
+    }
+}
+
+/// [`signature_info`] over an optional signature. git2 0.21 made blame hunks
+/// hand back `Option<Signature>` — libgit2 leaves the pointer null when it has
+/// no signature for the hunk — and blame's own fallback path must still yield
+/// an author rather than fail the response, so a missing signature degrades to
+/// the same shape an empty one would produce.
+pub(crate) fn signature_info_opt(signature: Option<&git2::Signature>) -> CommitAuthor {
+    match signature {
+        Some(signature) => signature_info(signature),
+        None => CommitAuthor {
+            name: String::new(),
+            email_hash: email_hash(b""),
+        },
     }
 }
 

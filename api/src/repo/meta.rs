@@ -136,7 +136,8 @@ pub fn is_ignored(repo: &Repository) -> bool {
 /// The configured `defbranch` wins over HEAD's own shorthand
 /// (docs/DECISIONS.md #68) — cgit's own `defbranch`.
 fn default_branch(repo: &Repository) -> Option<String> {
-    configured_default_branch(repo).or_else(|| repo.head().ok()?.shorthand().map(str::to_owned))
+    configured_default_branch(repo)
+        .or_else(|| repo.head().ok()?.shorthand().ok().map(str::to_owned))
 }
 
 /// The repo's `defbranch` config value, if set and if it names an existing

@@ -161,7 +161,7 @@ fn scan_blobs(commit: &Commit) -> Result<(Vec<BlobEntry>, bool), ApiError> {
         if entry.kind() != Some(ObjectType::Blob) {
             return TreeWalkResult::Ok;
         }
-        let Some(name) = entry.name() else {
+        let Ok(name) = entry.name() else {
             return TreeWalkResult::Ok;
         };
         entries.push((format!("{root}{name}"), entry.id(), entry.filemode()));
@@ -299,7 +299,7 @@ fn search_messages(
         let oid = oid?;
         let found = repo.find_commit(oid)?;
         // Non-utf8 messages can't match a text query; skip rather than error.
-        if let Some(message) = found.message()
+        if let Ok(message) = found.message()
             && contains_ignore_case(message, query_lower)
         {
             commits.push(commits::commit_info(&found));
@@ -347,7 +347,7 @@ fn search_signatures(
         };
         // Non-utf8 names can't match a text query; skip rather than error —
         // same treatment `search_messages` gives a non-utf8 message.
-        if let Some(name) = signature.name()
+        if let Ok(name) = signature.name()
             && contains_ignore_case(name, query_lower)
         {
             commits.push(commits::commit_info(&found));

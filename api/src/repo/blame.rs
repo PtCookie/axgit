@@ -8,7 +8,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use super::blob;
-use super::commits::{CommitAuthor, signature_info, time_rfc3339};
+use super::commits::{CommitAuthor, signature_info, signature_info_opt, time_rfc3339};
 use crate::error::ApiError;
 
 /// One contiguous run of lines attributed to the same commit (api/README.md).
@@ -95,15 +95,21 @@ pub fn blame_file(repo: &Repository, commit: &Commit, path: &str) -> Result<Blam
                 // fall back to the hunk's own signature on the rare miss.
                 match repo.find_commit(oid) {
                     Ok(commit) => (
-                        commit.summary().map(str::to_owned),
+                        commit.summary().ok().flatten().map(str::to_owned),
                         signature_info(&commit.author()),
                         time_rfc3339(commit.author().when()),
                     ),
-                    Err(_) => (
-                        None,
-                        signature_info(&hunk.final_signature()),
-                        time_rfc3339(hunk.final_signature().when()),
-                    ),
+                    Err(_) => {
+                        // Since git2 0.21 the hunk's own signature is optional
+                        // (libgit2 may leave it unset), so this last-resort
+                        // author degrades to an empty one rather than panicking.
+                        let signature = hunk.final_signature();
+                        (
+                            None,
+                            signature_info_opt(signature.as_ref()),
+                            signature.and_then(|signature| time_rfc3339(signature.when())),
+                        )
+                    }
                 }
             })
             .clone();

@@ -144,6 +144,8 @@ pub fn read_object(repo: &Repository, oid: Oid) -> Result<ObjectDetail, ApiError
             let (object, target) = tag::dereference_object(&tag_obj, not_found)?;
             let message = tag_obj
                 .message()
+                .ok()
+                .flatten()
                 .map(str::trim_end)
                 .filter(|message| !message.trim().is_empty())
                 .map(str::to_owned);
