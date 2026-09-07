@@ -77,6 +77,6 @@ async-compression = { version = "0.4", features = ["tokio", "bzip2", "xz", "zstd
 flate2 = "1"
 http-body-util = "0.1"
 # Atom feed well-formedness checks in tests only — production XML is built by hand.
-quick-xml = "0.37"
+quick-xml = "0.42"
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }

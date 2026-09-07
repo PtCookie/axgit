@@ -128,7 +128,7 @@ fn assert_well_formed_and_count_entries(xml: &str) -> usize {
     loop {
         match reader.read_event() {
             Ok(quick_xml::events::Event::Eof) => break,
-            Ok(quick_xml::events::Event::Start(start)) if start.name().as_ref() == b"entry" => {
+            Ok(quick_xml::events::Event::Start(start)) if start.name().as_ref() == "entry" => {
                 entries += 1;
             }
             Ok(_) => {}
