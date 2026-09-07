@@ -1,3 +1,4 @@
+# https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 # Dependency update PRs on the GitHub mirror (docs/DECISIONS.md #92).
 #
 # IMPORTANT — how a PR here gets merged: `git.ptcookie.net` is the origin and
@@ -14,12 +15,20 @@ updates:
     schedule:
       interval: weekly
     commit-message:
-      # Conventional Commits, matching the repository's own convention.
-      prefix: "build(api)"
+      prefix: "chore(deps-api)"
+      prefix-development: "chore(deps-dev-api)"
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+      semver-minor-days: 5
+      semver-patch-days: 3
     groups:
       cargo:
-        patterns: ["*"]
-        update-types: [minor, patch]
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   # The pnpm workspace is rooted here; `web` is its only package.
   #
@@ -34,11 +43,24 @@ updates:
     schedule:
       interval: weekly
     commit-message:
-      prefix: "build(web)"
+      prefix: "chore(deps-web)"
+      prefix-development: "chore(deps-dev-web)"
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+      semver-minor-days: 5
+      semver-patch-days: 3
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
     groups:
       npm:
-        patterns: ["*"]
-        update-types: [minor, patch]
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: github-actions
     directory: /
