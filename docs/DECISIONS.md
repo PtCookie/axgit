@@ -198,11 +198,13 @@ Superseded by #17. One note survives: in axum, routes that are `nest`ed or merge
 - **Log pagination is a plain anchor (`Older →`), not client state** — consistent with having no
   client-side router. Only a forward link is rendered; the cursor is one-directional and the browser
   back button covers the rest, matching cgit's own pager UX.
-- **Avatars: `@dicebear/collection`'s `identicon` style**, seeded from `email_hash`, rendered as a
-  `toDataUri()` `<img>`. `@dicebear/core` is pinned to `^9.4.3`, not `^10`: `@dicebear/collection`
-  declares a peer range of `^9.0.0` and several bundled style packages import an `escape` helper v10
-  no longer exports, which breaks Vite's dependency pre-bundling. Revisit once `@dicebear/collection`
-  publishes a v10-compatible release.
+- **Avatars: DiceBear's `identicon` style**, seeded from `email_hash`, rendered as a `toDataUri()`
+  `<img>`. On `@dicebear/core` v10 the style ships as a plain JSON definition from
+  `@dicebear/styles` — v10 dropped `createAvatar()` for `new Avatar(style, options)`, and
+  `@dicebear/collection`, whose bundled style packages imported an `escape` helper v10 no longer
+  exports, has no v10 release at all. The `new Style(...)` wrapper validates and decomposes the
+  definition on construction, so `AuthorAvatar` builds it once at module scope rather than per
+  render.
 
 ## #19 `/{repo}/tree` + `/{repo}/blob` pages, Shiki highlighting
 
