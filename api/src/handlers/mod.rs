@@ -255,7 +255,7 @@ pub(crate) fn validator_etag(validator: &Validator) -> String {
 /// backing repository (the repos list).
 pub(crate) fn body_etag(body: &[u8]) -> String {
     use sha2::{Digest, Sha256};
-    format!("\"{:x}\"", Sha256::digest(body))
+    format!("\"{}\"", crate::hex::encode(&Sha256::digest(body)))
 }
 
 /// Whether `If-None-Match` matches `etag`, using the weak comparison RFC 9110
