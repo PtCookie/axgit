@@ -114,8 +114,8 @@ them. Grouped by why the difference exists.
 
 - Commit GPG signatures: cgit doesn't display or verify them either
   (`parsing.c::cgit_parse_commit` discards the `gpgsig` header). Snapshot `.asc` notes
-  (`refs/notes/signatures/<fmt>`) are an unrelated feature and git-compose doesn't produce them, so
-  this stays unplanned too.
+  (`refs/notes/signatures/<fmt>`) are an unrelated feature, written only by a separate
+  snapshot-signing setup that nothing in a normal push path runs, so this stays unplanned too.
 - File-content search: cgit doesn't have it. axgit's `/search?type=content` is ahead here.
 - Stats graphs: cgit's stats page is a plain numbers table, with no commits-vs-lines toggle either.
 - Octopus-merge diffs: cgit shows no diff at all once a commit has 3+ parents.

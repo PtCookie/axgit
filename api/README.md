@@ -370,12 +370,11 @@ branch/tag counts, and the clone URL.
   (RFC 3339).
 - `remote_branches`: remote-tracking branches (`refs/remotes/*`), same shape as `branches`
   (`name` is the full shorthand including the remote, e.g. `origin/main` — git has no API to split
-  the remote name back out). **`[]` on essentially every repository axgit serves**: neither axgit
-  nor the git-compose stack that populates it ever runs `git remote add`/`git fetch` against a
-  served bare repository (pushes arrive over SSH only). This field exists for the rare case of a
-  repository configured that way by hand, not for anything axgit itself produces. A remote's own
-  symbolic `HEAD` (e.g. `origin/HEAD`) is omitted — it's an alias for another row, not a branch of
-  its own.
+  the remote name back out). **`[]` on essentially every repository axgit serves**: a bare
+  repository that receives pushes has no remotes of its own unless someone added them, and axgit
+  never runs `git remote add`/`git fetch` itself. This field exists for the rare repository
+  configured that way by hand, not for anything axgit produces. A remote's own symbolic `HEAD`
+  (e.g. `origin/HEAD`) is omitted — it's an alias for another row, not a branch of its own.
 - `tags[].object`: the tag's one-level dereference — same shape and meaning as `GET /tags/{name}`'s
   `object` below (`sha` + `type`, one of `commit`/`tree`/`blob`/`tag`). For a tag that reaches a
   commit this is that commit, same as `target`; for a tag on a tree or blob (or a nested tag) it's

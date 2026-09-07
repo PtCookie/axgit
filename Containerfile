@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Multi-stage build: web (Astro static build) -> api (Rust binary) -> runtime.
-# See docs/ARCHITECTURE.md#Build/deploy and docs/DECISIONS.md #22 for the design rationale.
+# See README.md#building-the-container-image and docs/DECISIONS.md #22 for the design rationale.
 #
 # Base images are pinned to their minor version for build reproducibility (docs/DECISIONS.md
 # #22) — bump these deliberately in their own commit, not implicitly via a floating tag. The
@@ -81,17 +81,18 @@ LABEL org.opencontainers.image.title="axgit" \
       org.opencontainers.image.source="https://git.ptcookie.net/axgit.git" \
       org.opencontainers.image.licenses="MIT"
 
-# `git` is required for archive/upload-pack exec (docs/ARCHITECTURE.md's
-# hybrid libgit2+exec policy). ca-certificates covers TLS trust roots if a
-# future outbound call needs it; tzdata is intentionally omitted — jiff only
-# uses UTC/fixed offsets recorded in git commits, never the system tzdb.
+# `git` is required for archive/upload-pack exec (api/README.md's hybrid
+# libgit2+exec policy). ca-certificates covers TLS trust roots if a future
+# outbound call needs it; tzdata is intentionally omitted — jiff only uses
+# UTC/fixed offsets recorded in git commits, never the system tzdb.
 RUN apk add --no-cache git ca-certificates
 
-# `/srv/git` is a read-only mount owned by the git-server container (a
-# different uid), which trips git's/libgit2's "dubious ownership" ownership
-# check. Trusting every directory here is scoped to this single-purpose,
-# read-only container (docs/DECISIONS.md #22) — this config applies to both
-# the `git` exec calls and libgit2, which both read the system gitconfig.
+# `/srv/git` is a read-only mount, normally owned by whichever uid hosts the
+# repositories rather than this container's user, which trips git's/libgit2's
+# "dubious ownership" check. Trusting every directory here is scoped to this
+# single-purpose, read-only container (docs/DECISIONS.md #22) — this config
+# applies to both the `git` exec calls and libgit2, which both read the system
+# gitconfig.
 RUN printf '[safe]\n\tdirectory = *\n' > /etc/gitconfig
 
 # The app never needs write access anywhere (CLAUDE.md's read-only

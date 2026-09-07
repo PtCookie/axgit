@@ -26,9 +26,9 @@ cited from source comments as `docs/DECISIONS.md #NN`. When finishing a piece of
 
 ## Core invariants
 
-- **The web app is strictly read-only.** Writes (push, repository creation) happen only via SSH
-  to the git-server container. Do not add mutation endpoints to the API. There is no auth/authz
-  logic either.
+- **The web app is strictly read-only.** Writes (push, repository creation) happen only via SSH,
+  against whatever hosts the repositories — in the reference deployment, git-compose's git-server
+  container. Do not add mutation endpoints to the API. There is no auth/authz logic either.
 - **Repositories are bare repos under `/srv/git`**, mounted read-only into the container
   (configured via `AXGIT_REPO_ROOT`).
 - **Settings come from CLI flags, `AXGIT_*` environment variables, and an optional TOML config
@@ -37,11 +37,12 @@ cited from source comments as `docs/DECISIONS.md #NN`. When finishing a piece of
   `FileConfig` field *and* known-key list entry in `config/file.rs`, its arm in `merge`, plus
   README.md's configuration table and the `axgit.toml` example at the repository root.
 - **Repository metadata is read from each repo's `config` file, `[cgit]` section**
-  (`section`, `name`, `owner`, `desc`). The git-server's `git-init` script writes this format, so
-  **do not break compatibility**. An `[axgit]` section, if present, takes precedence.
-- **Last-activity timestamps come from the agefile** (`info/web/last-modified`), updated by
-  git-server's post-receive hook. Falls back to the HEAD commit's authordate if the agefile is
-  missing.
+  (`section`, `name`, `owner`, `desc`) — cgit's own location, which existing repositories and
+  provisioning scripts (git-compose's `git-init`) already write, so **do not break compatibility**.
+  An `[axgit]` section, if present, takes precedence.
+- **Last-activity timestamps come from the agefile** (`info/web/last-modified`), cgit's convention,
+  written by a post-receive hook on the server. Falls back to the HEAD commit's authordate if the
+  agefile is missing.
 - Smart HTTP supports **upload-pack (fetch/clone) only**. `git-receive-pack` requests are rejected
   with 403.
 
