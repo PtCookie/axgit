@@ -7,15 +7,15 @@
 # #22) — bump these deliberately in their own commit, not implicitly via a floating tag. The
 # registry is spelled out (docker.io/library/...) rather than left as a short name: podman/buildah
 # resolve short names via an interactive registry prompt, which fails outright in a non-TTY build
-# (CI, scripts) — see docs/DECISIONS.md #80.
-ARG NODE_IMAGE=docker.io/library/node:24.11-alpine3.22
-ARG RUST_IMAGE=docker.io/library/rust:1.97-alpine3.22
-ARG RUNTIME_IMAGE=docker.io/library/alpine:3.22
+# (CI, scripts) — see docs/DECISIONS.md #80. Each tag is inlined directly into its `FROM` instead
+# of collected into an `ARG` at the top: Dependabot's docker parser matches `FROM` lines with a
+# plain regex and never resolves `ARG` substitution, so `FROM ${...}` was invisible to it and no
+# image ever got a version-update PR (docs/DECISIONS.md #94).
 
 # ---------------------------------------------------------------------------
 # Stage: web — pnpm --filter web build -> web/dist
 # ---------------------------------------------------------------------------
-FROM ${NODE_IMAGE} AS web
+FROM docker.io/library/node:24.20-alpine3.24 AS web
 
 # The root package.json pins packageManager to an exact pnpm version; corepack
 # reads that field instead of fetching whatever pnpm is latest.
@@ -38,7 +38,7 @@ RUN pnpm --filter web build
 # ---------------------------------------------------------------------------
 # Stage: api — cargo build --release -> /axgit
 # ---------------------------------------------------------------------------
-FROM ${RUST_IMAGE} AS api
+FROM docker.io/library/rust:1.98-alpine3.24 AS api
 
 # musl-dev: libgit2-sys's build.rs falls back to building vendored libgit2
 # (via `cc`) since alpine has no system libgit2 to find via pkg-config — this
@@ -74,7 +74,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # ---------------------------------------------------------------------------
 # Stage: runtime — alpine + git binary + axgit binary (frontend baked in)
 # ---------------------------------------------------------------------------
-FROM ${RUNTIME_IMAGE} AS runtime
+FROM docker.io/library/alpine:3.24 AS runtime
 
 LABEL org.opencontainers.image.title="axgit" \
       org.opencontainers.image.description="Read-only web frontend for bare Git repositories" \

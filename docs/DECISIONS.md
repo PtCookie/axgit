@@ -298,12 +298,12 @@ Superseded by #17. One note survives: in axum, routes that are `nest`ed or merge
 - **BuildKit cache mounts** for pnpm's store and cargo's registry + `api/target`. Cache mount
   contents don't persist into the image layer, so the release binary is `cp`'d out to `/axgit`
   inside the same `RUN` that builds it.
-- **Base images are pinned to a minor version** and collected into `ARG`s at the top of the file; a
-  floating tag would let the image drift on every rebuild. `apk` packages aren't individually pinned
-  (an alpine minor's repository only receives patches), pnpm is pinned by the root `package.json`'s
-  `packageManager`, and crates by `Cargo.lock` + `--locked`. Digest pinning is deliberately not
-  used — bumping the minor tags is a deliberate, separate commit either way. The `ARG` refs were
-  later registry-qualified and the file renamed to `Containerfile`; see #80.
+- **Base images are pinned to a minor version**; a floating tag would let the image drift on every
+  rebuild. `apk` packages aren't individually pinned (an alpine minor's repository only receives
+  patches), pnpm is pinned by the root `package.json`'s `packageManager`, and crates by
+  `Cargo.lock` + `--locked`. Digest pinning is deliberately not used — bumping the minor tags is a
+  deliberate, separate commit either way. The refs were later registry-qualified and the file
+  renamed to `Containerfile` (#80), then un-collected from `ARG`s back to inline `FROM` tags (#94).
 
 ## #23 3-way theme selector (System / Light / Dark)
 
@@ -2313,3 +2313,21 @@ group heading to find where the work is happening.
   without exercising the new rule. `scripts/make-fixtures.sh` needed no such change — its real
   repositories already put `tools` (2026-07-28) ahead of `infra` (2026-07-24), so a local run shows
   the new order too.
+
+## #94 Base-image tags inlined into `FROM`, no longer collected into `ARG`s
+
+The `docker` Dependabot entry added alongside #92's CI migration never opened a version-update PR
+for any of the three base images. Dependabot's docker ecosystem parser matches each `FROM` line
+against a regex expecting a literal `registry/image:tag`; it does not track `ARG` declarations or
+substitute their values, so `FROM ${NODE_IMAGE}` (etc., #22/#80's grouped-`ARG` layout) never
+matched and was silently invisible to it — a long-standing upstream gap
+(dependabot/dependabot-core#2057, #4597, #10190), not something fixable from this repository's
+side.
+
+- **Each tag now sits directly on its own `FROM` line**, registry still spelled out
+  (`docker.io/library/...`, #80's reasoning unchanged). Every `ARG` was used by exactly one `FROM`
+  anyway, so nothing about "bump deliberately, in one place" is lost — the one place is now the
+  `FROM` line itself instead of a separate `ARG` block above it.
+- **Bumped node 24.11→24.20, rust 1.97→1.98, alpine 3.22→3.24 in the same commit** while here —
+  latest minor on each as of 2026-09, staying on node's Active LTS line (24; 26 doesn't reach LTS
+  until 2026-10) and matching alpine minors across all three stages as before.
