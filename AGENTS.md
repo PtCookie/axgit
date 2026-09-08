@@ -32,10 +32,8 @@ cited from source comments as `docs/DECISIONS.md #NN`. When finishing a piece of
 - **Repositories are bare repos under `/srv/git`**, mounted read-only into the container
   (configured via `AXGIT_REPO_ROOT`).
 - **Settings come from CLI flags, `AXGIT_*` environment variables, and an optional TOML config
-  file, in that precedence order** (`api/src/config/`, docs/DECISIONS.md #87). Adding a setting
-  means touching all of them together: the clap field in `config/mod.rs`, the matching
-  `FileConfig` field *and* known-key list entry in `config/file.rs`, its arm in `merge`, plus
-  README.md's configuration table and the `axgit.toml` example at the repository root.
+  file, in that precedence order** (`api/src/config/`, docs/DECISIONS.md #87). Adding one means
+  touching every layer and both docs in the same commit; `contract-sync-reviewer` has the list.
 - **Repository metadata is read from each repo's `config` file, `[cgit]` section**
   (`section`, `name`, `owner`, `desc`) — cgit's own location, which existing repositories and
   provisioning scripts (git-compose's `git-init`) already write, so **do not break compatibility**.
@@ -96,15 +94,13 @@ See `api/README.md` for the backend design and the API contract, `web/README.md`
 design, `README.md` for the deployment shape, `docs/DECISIONS.md` for the standing decisions behind
 the code (source comments cite these as `#NN`), and `docs/ROADMAP.md` for what's next.
 
-**When changing the API, update all three of the following in the same commit**:
-
-1. `api/README.md`'s `API (v1)` section — the **normative definition** of the contract. Semantic
-   rules the spec can't express (limits, ref matching, `null` conditions) live here.
-2. `openapi.json` — the spec **generated** from utoipa annotations (do not edit directly, use
-   the regeneration command above). Adding an endpoint means updating `#[utoipa::path]`,
-   `paths(...)` in `api/src/openapi.rs`, and `EXPECTED_OPERATIONS` in `tests/openapi_test.rs` for
-   the tests to pass.
-3. `web/src/lib/api/types.ts` — TS types **generated** from openapi.json (do not edit directly).
+`api/README.md`'s `API (v1)` section is the **normative definition** of the API contract — semantic
+rules the spec can't express (limits, ref matching, `null` conditions) live there. `openapi.json`
+is generated from the utoipa annotations and `web/src/lib/api/types.ts` from `openapi.json`; never
+edit either by hand, use the regeneration commands above. An API change, a new setting and a new
+route each have to touch several more files in the same commit — the `contract-sync-reviewer` agent
+(`.claude/agents/contract-sync-reviewer.md`) holds those checklists. Read it before making one of
+those changes, run it before committing one.
 
 ### Backend notes
 
@@ -133,9 +129,8 @@ the code (source comments cite these as `#NN`), and `docs/ROADMAP.md` for what's
   docs/DECISIONS.md #17). The route-shape table itself lives in one place,
   `web/src/lib/shell-routes.ts`; the build emits it to `dist/shell-routes.json`, which both
   `web/src/lib/shell.ts::shellFor` (the `astro dev` middleware) and `api/src/shell.rs::shell_for`
-  read (docs/DECISIONS.md #88). **Adding a route means updating two places together**:
-  `web/src/pages/` and `web/src/lib/shell-routes.ts` — the build fails if a page has no matching
-  table entry, or vice versa.
+  read (docs/DECISIONS.md #88). **Adding a route means updating `web/src/pages/` and
+  `web/src/lib/shell-routes.ts` together** — the build fails if the two disagree.
 - Navigation uses Astro's `<ClientRouter />` (docs/DECISIONS.md #24) — same-origin link clicks swap
   `<body>` client-side instead of a full page load, with a short fade on `<main>`. **Nothing is
   animated by the View Transition API**: every `::view-transition-*(root)` animation is off in
