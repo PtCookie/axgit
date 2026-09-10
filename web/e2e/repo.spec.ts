@@ -330,6 +330,10 @@ test("shows a not-found page for unsupported sub-routes", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
   await page.getByRole("link", { name: "Back to repository list" }).click();
   await expect(page).toHaveURL("/");
+
+  // Await the landing page's islands to finish mounting and resolving their stubbed
+  // requests before the test exits and tears down the page routes.
+  await expect(page.getByText("No repositories found.")).toBeVisible();
 });
 
 // A link click navigating via `<ClientRouter />` (docs/DECISIONS.md #24) never

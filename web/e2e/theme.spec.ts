@@ -154,6 +154,10 @@ test("an explicit Dark choice survives a client-side navigation", async ({ page 
 
   expect(await preference(page)).toBe("dark");
   expect(await isDark(page)).toBe(true);
+
+  // Await the landing page's islands to finish mounting and resolving their stubbed
+  // requests before the test exits and tears down the page routes.
+  await expect(page.getByText("No repositories found.")).toBeVisible();
 });
 
 // No-flash guard. There is no API that observes "the class was set before
