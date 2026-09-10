@@ -23,4 +23,26 @@ export default defineConfig([
   pluginAstro.configs.recommended,
   { files: ["**/*.{jsx,tsx}"], ...pluginReact.configs.strict },
   { files: ["tests/**"], ...pluginVitest.configs.recommended },
+  // Every e2e spec has to go through `e2e/fixtures.ts` (docs/DECISIONS.md
+  // #96): importing `test` straight from `@playwright/test` would skip the
+  // guard that fails a test whose page requested an API endpoint it never
+  // stubbed. Type-only imports are fine — they carry no runtime behaviour.
+  {
+    files: ["e2e/**/*.ts"],
+    ignores: ["e2e/fixtures.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@playwright/test",
+              allowTypeImports: true,
+              message: "Import `test`/`expect` from ./fixtures so the unstubbed-API guard applies.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);

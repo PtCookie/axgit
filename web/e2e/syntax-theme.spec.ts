@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+import { expect, test } from "./fixtures";
 
 /**
  * `AXGIT_SYNTAX_THEME_LIGHT`/`_DARK` reach the frontend as `<meta>`s injected

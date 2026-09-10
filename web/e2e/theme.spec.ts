@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // `/{repo}/blob` with no path segment is an unmatched route shape
 // (`lib/shell.ts::shellFor` — there's nothing to show for a bare blob URL),

@@ -171,21 +171,10 @@ export default defineConfig({
     plugins: [tailwindcss(), shellFallback()],
     server: {
       proxy: {
-        "/api": {
-          target: process.env.AXGIT_API_URL ?? "http://127.0.0.1:8080",
-          configure: (proxy) => {
-            // docs/DECISIONS.md #92: Playwright e2e runs against `astro dev` without
-            // a running Rust API backend. If any unhandled `/api` request leaks through
-            // (e.g. during page teardown races), gracefully return 502 rather than
-            // letting http-proxy dump ECONNREFUSED stack traces to stdout/stderr.
-            proxy.on("error", (_err, _req, res) => {
-              if (res && "writeHead" in res && typeof res.writeHead === "function" && !res.headersSent) {
-                res.writeHead(502, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ error: { code: "unavailable", message: "api server unavailable" } }));
-              }
-            });
-          },
-        },
+        // Only `astro dev` uses this; the production binary serves `/api` itself.
+        // The Playwright suite never reaches it — `e2e/fixtures.ts` answers every
+        // unstubbed `/api` request itself (docs/DECISIONS.md #96).
+        "/api": process.env.AXGIT_API_URL ?? "http://127.0.0.1:8080",
       },
     },
   },

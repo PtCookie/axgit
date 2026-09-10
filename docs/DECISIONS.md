@@ -2367,3 +2367,42 @@ their flags and a new `[syntax]` config-file section) now set them.
   container, and tints rows by add/remove) on the app surface and visibly out of step.
 - Both themes are still tokenized in one pass into `color` + `--shiki-dark`, so the theme toggle
   remains a pure CSS switch with no re-highlight, whatever the two configured themes are.
+## #96 e2e: unstubbed `/api` requests fail the test instead of leaking to the dev proxy
+
+The e2e suite runs against `astro dev` with no axgit behind it and stubs `/api` per test with
+`page.route` (#92). Nothing enforced that. A spec that forgot a stub sent the request through
+vite's `/api` proxy to `127.0.0.1:8080`, where nothing listens — CI's log filled with
+`http proxy error … ECONNREFUSED` stack traces while the run still reported 123 passed, because
+the island rendered its error fallback and no assertion looked at that data. Two rounds of adding
+the missing stubs by hand fixed the specs that were noisy that week without closing the hole;
+`web/e2e/fixtures.ts` closes it structurally.
+
+- **A catch-all `page.route` installed by an auto fixture** answers every request no spec claimed
+  with a 503 and fails the test, naming the URLs. It is the *last* resort, not the first:
+  `page.route` registers with `_routes.unshift(...)`, so the most recently registered route matches
+  first, and an auto fixture is set up before `beforeEach` and the test body — every existing stub
+  keeps winning without knowing the guard exists.
+- **It matches with a URL predicate (`url.pathname.startsWith("/api/")`), not a glob.** A
+  double-star glob around `/api/` reads as the same thing and is not: `astro dev` serves the app's
+  unbundled source, so it also matches `/src/lib/api/client.ts` — the first run of this guard
+  answered the app's own modules with 503 and left every page unhydrated.
+- **Requests that arrive after the test body are answered but not counted.** The fixture flips a
+  flag after `await use()`, which runs after the `afterEach` hooks and before the `page` fixture
+  disposes. A fetch still in flight when a test ends is a teardown race, not a missing stub —
+  awaiting the landing page's islands before a navigation test returns (which the specs now do)
+  is the fix for those, and the guard doesn't turn them into failures.
+- **Failing, not warning.** The alternative — answer 503 quietly and report the URL in the report —
+  removes the log noise but keeps the real defect: a test whose assertions ran against an error
+  state, passing for a reason its own source never states.
+- **The dev proxy's error handler is gone again.** It was added to silence the ECONNREFUSED stacks
+  and could never do that: vite's `proxyMiddleware` calls `configure` *first* and only then
+  registers its own `error` listener, which logs the stack unconditionally. All it changed was the
+  502 body. With the guard in place nothing reaches the proxy from a test run at all, so
+  `astro.config.mjs` is back to the one-line `"/api": target` form.
+- **It also makes a local run mean the same thing as CI's.** e2e is not in lefthook, so it runs
+  mostly on CI — but a developer who happens to have axgit serving `fixtures/repos` on 8080 used
+  to have those same unstubbed requests answered with *real* data. Now both environments see the
+  guard's 503 and fail identically.
+- **`eslint.config.js` forbids importing `@playwright/test` under `e2e/`** (type-only imports
+  excepted). The guard is only as good as its coverage, and a new spec importing `test` directly
+  would opt out of it silently.

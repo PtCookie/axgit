@@ -71,4 +71,8 @@ excluded from eslint). When the API changes, regenerate it with `pnpm --filter w
 - Avatars: generated locally with **DiceBear**, seeded from a hash of the committer's email
   address (no external requests). Commit message linkification uses regex-based linkify.
 - vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`) + Playwright e2e.
-  The API client is tested with fetch mocking, components with fixture JSON.
+  The API client is tested with fetch mocking, components with fixture JSON. The e2e suite runs
+  against `astro dev` with **no API behind it**: each spec stubs the endpoints its page needs with
+  `page.route`, and `e2e/fixtures.ts` answers anything it missed with a 503 and fails the test
+  (docs/DECISIONS.md #96) — so import `test`/`expect` from `./fixtures`, never from
+  `@playwright/test` (eslint enforces it).

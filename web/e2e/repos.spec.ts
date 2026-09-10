@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import fixture from "../tests/fixtures/repos.json" with { type: "json" };
 
