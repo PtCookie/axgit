@@ -96,7 +96,7 @@ test("shows a path-filter banner and sends path to the api", async ({ page }) =>
 
   await expect(page.getByText("Filtered by path")).toBeVisible();
   await expect(page.getByText("src/main.rs")).toBeVisible();
-  expect(requestedUrl).toBeDefined();
+  await expect.poll(() => requestedUrl).toBeDefined();
   expect(new URL(requestedUrl ?? "").searchParams.get("path")).toBe("src/main.rs");
 
   // The clear-filter link carries the resolved period forward (same as every

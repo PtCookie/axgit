@@ -132,8 +132,16 @@ test("the served shell carries no theme of its own", async ({ page }) => {
 // below), so a same-shell navigation resets the theme unless
 // `Layout.astro`'s theme script re-applies it from `astro:after-swap`. This
 // page (`PAGE`, the 404 shell) has a "Back to repository list" link to `/`
-// to navigate with, with no API stub needed for either endpoint.
+// to navigate with; the landing `/` shell mounts RepoList and SiteIntro, so
+// their endpoints are stubbed to prevent dev-server proxy leaks.
 test("an explicit Dark choice survives a client-side navigation", async ({ page }) => {
+  await page.route("**/api/v1/repos", async (route) => {
+    await route.fulfill({ json: { repos: [], sort: "name" } });
+  });
+  await page.route("**/api/v1/site", async (route) => {
+    await route.fulfill({ json: { title: "Axgit", description: null, readme: null } });
+  });
+
   await page.goto(PAGE);
   await choose(page, "Dark");
   // Selecting a radio item doesn't close the menu (DECISIONS.md #23's

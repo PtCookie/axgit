@@ -2,6 +2,14 @@ import { expect, test } from "@playwright/test";
 
 import fixture from "../tests/fixtures/repos.json" with { type: "json" };
 
+const UNCONFIGURED_SITE = { title: "Axgit", description: null, readme: null };
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/site", async (route) => {
+    await route.fulfill({ json: UNCONFIGURED_SITE });
+  });
+});
+
 test("shows repositories grouped by section, unsectioned first then most recently active", async ({ page }) => {
   await page.route("**/api/v1/repos", async (route) => {
     await route.fulfill({ json: fixture });
