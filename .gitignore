@@ -1,9 +1,6 @@
 # Node
 node_modules/
 
-# pnpm falls back to a project-local store when it cannot use the shared one
-.pnpm-store/
-
 # Rust
 api/target/
 
