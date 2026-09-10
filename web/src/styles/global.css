@@ -185,7 +185,13 @@
  * pattern for shipping both themes without picking one at render time; the
  * `!important` here is required by that pattern to win over the inline
  * `color` the light theme already set. `var(...)` with no fallback is a
- * no-op on a token that has no `--shiki-dark` set (whitespace, etc.).
+ * no-op on a token that has no `--shiki-dark` set (whitespace, etc.), which
+ * also covers the diff view's intra-line segment spans — they carry a
+ * background tint and no color of their own, and keep inheriting one.
+ *
+ * Every container rendering tokens needs this class: `CodeBlock`,
+ * `ReadmeMarkdown`, and both diff hunk tables. Line numbers and origin
+ * markers are `<td>`s rather than spans, so none of them are caught by it.
  */
 .dark .shiki-code span {
     color: var(--shiki-dark) !important;

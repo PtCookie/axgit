@@ -166,6 +166,12 @@ pub struct SiteHead {
     /// resolves it once, from the configured path or URL, before `href`
     /// throws that extension away).
     pub favicon_type: Option<&'static str>,
+    /// Shiki theme ids for the two color modes (docs/DECISIONS.md #95),
+    /// carried as `<meta>`s the way the logo is. Read straight out of the
+    /// document by `web/src/lib/format/highlight.ts` rather than by
+    /// `fillSiteChrome`, since nothing in the header chrome uses them.
+    pub syntax_theme_light: Option<String>,
+    pub syntax_theme_dark: Option<String>,
 }
 
 /// Resolves a request path to its shell file (relative to the static build
@@ -248,12 +254,7 @@ pub async fn serve_shell(
 
     match assets.read(&relative).await {
         Some(body) => {
-            let mut extra = site_head_meta(
-                site.title.as_deref(),
-                site.description.as_deref(),
-                site.logo.as_deref(),
-                site.logo_link.as_deref(),
-            );
+            let mut extra = site_head_meta(&site);
             if let Some(segment) = repo_segment_for(&routes.repo_shell_param, uri.path(), &relative)
             {
                 extra.push_str(&repo_head_links(segment, clone_url_base.as_deref()));
@@ -336,40 +337,31 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 /// Builds the `axgit:site-title`/`axgit:site-desc`/`axgit:logo`/
-/// `axgit:logo-link` `<meta>`s (docs/DECISIONS.md #70, #81) — each omitted
-/// when its config value is unset, so an unconfigured deployment injects
-/// nothing at all. The favicon has no `<meta>` counterpart here: see
-/// [`favicon_head_link`].
-fn site_head_meta(
-    title: Option<&str>,
-    description: Option<&str>,
-    logo: Option<&str>,
-    logo_link: Option<&str>,
-) -> String {
+/// `axgit:logo-link`/`axgit:syntax-theme-*` `<meta>`s (docs/DECISIONS.md #70,
+/// #81, #95) — each omitted when its config value is unset, so an
+/// unconfigured deployment injects nothing at all. Takes the whole
+/// [`SiteHead`] rather than one `Option<&str>` per field: they are all the
+/// same type, and past four of them a transposed pair of arguments is a bug
+/// no compiler or test would catch. The favicon is the one field this skips —
+/// it has no `<meta>` form, see [`favicon_head_link`].
+fn site_head_meta(site: &SiteHead) -> String {
+    let fields = [
+        ("axgit:site-title", &site.title),
+        ("axgit:site-desc", &site.description),
+        ("axgit:logo", &site.logo),
+        ("axgit:logo-link", &site.logo_link),
+        ("axgit:syntax-theme-light", &site.syntax_theme_light),
+        ("axgit:syntax-theme-dark", &site.syntax_theme_dark),
+    ];
+
     let mut meta = String::new();
-    if let Some(title) = title {
-        meta.push_str(&format!(
-            "<meta name=\"axgit:site-title\" content=\"{}\">",
-            xml_escape(title)
-        ));
-    }
-    if let Some(description) = description {
-        meta.push_str(&format!(
-            "<meta name=\"axgit:site-desc\" content=\"{}\">",
-            xml_escape(description)
-        ));
-    }
-    if let Some(logo) = logo {
-        meta.push_str(&format!(
-            "<meta name=\"axgit:logo\" content=\"{}\">",
-            xml_escape(logo)
-        ));
-    }
-    if let Some(logo_link) = logo_link {
-        meta.push_str(&format!(
-            "<meta name=\"axgit:logo-link\" content=\"{}\">",
-            xml_escape(logo_link)
-        ));
+    for (name, value) in fields {
+        if let Some(value) = value {
+            meta.push_str(&format!(
+                "<meta name=\"{name}\" content=\"{}\">",
+                xml_escape(value)
+            ));
+        }
     }
     meta
 }
@@ -778,29 +770,41 @@ mod tests {
     }
 
     #[test]
-    fn site_head_meta_should_omit_all_four_when_unset() {
-        assert_eq!(site_head_meta(None, None, None, None), "");
+    fn site_head_meta_should_omit_every_field_when_unset() {
+        assert_eq!(site_head_meta(&SiteHead::default()), "");
     }
 
     #[test]
     fn site_head_meta_should_include_only_the_configured_fields() {
-        let title_only = site_head_meta(Some("PtCookie Git"), None, None, None);
+        let title_only = site_head_meta(&SiteHead {
+            title: Some("PtCookie Git".to_owned()),
+            ..SiteHead::default()
+        });
         assert!(title_only.contains("<meta name=\"axgit:site-title\" content=\"PtCookie Git\">"));
         assert!(!title_only.contains("site-desc"));
         assert!(!title_only.contains("axgit:logo"));
 
-        let desc_only = site_head_meta(None, Some("Self-hosted repositories"), None, None);
+        let desc_only = site_head_meta(&SiteHead {
+            description: Some("Self-hosted repositories".to_owned()),
+            ..SiteHead::default()
+        });
         assert!(!desc_only.contains("site-title"));
         assert!(
             desc_only
                 .contains("<meta name=\"axgit:site-desc\" content=\"Self-hosted repositories\">")
         );
 
-        let logo_only = site_head_meta(None, None, Some("/api/v1/site/logo"), None);
+        let logo_only = site_head_meta(&SiteHead {
+            logo: Some("/api/v1/site/logo".to_owned()),
+            ..SiteHead::default()
+        });
         assert!(logo_only.contains("<meta name=\"axgit:logo\" content=\"/api/v1/site/logo\">"));
         assert!(!logo_only.contains("logo-link"));
 
-        let logo_link_only = site_head_meta(None, None, None, Some("https://example.net"));
+        let logo_link_only = site_head_meta(&SiteHead {
+            logo_link: Some("https://example.net".to_owned()),
+            ..SiteHead::default()
+        });
         assert!(!logo_link_only.contains("axgit:logo\""));
         assert!(
             logo_link_only
@@ -809,18 +813,44 @@ mod tests {
     }
 
     #[test]
-    fn site_head_meta_should_escape_all_fields() {
-        let meta = site_head_meta(
-            Some(r#"a"b"#),
-            Some(r#"c"d"#),
-            Some(r#"e"f"#),
-            Some(r#"g"h"#),
+    fn site_head_meta_should_include_each_syntax_theme_on_its_own() {
+        let light_only = site_head_meta(&SiteHead {
+            syntax_theme_light: Some("one-light".to_owned()),
+            ..SiteHead::default()
+        });
+        assert_eq!(
+            light_only,
+            "<meta name=\"axgit:syntax-theme-light\" content=\"one-light\">"
         );
+
+        let dark_only = site_head_meta(&SiteHead {
+            syntax_theme_dark: Some("dracula".to_owned()),
+            ..SiteHead::default()
+        });
+        assert_eq!(
+            dark_only,
+            "<meta name=\"axgit:syntax-theme-dark\" content=\"dracula\">"
+        );
+    }
+
+    #[test]
+    fn site_head_meta_should_escape_all_fields() {
+        let meta = site_head_meta(&SiteHead {
+            title: Some(r#"a"b"#.to_owned()),
+            description: Some(r#"c"d"#.to_owned()),
+            logo: Some(r#"e"f"#.to_owned()),
+            logo_link: Some(r#"g"h"#.to_owned()),
+            syntax_theme_light: Some(r#"i"j"#.to_owned()),
+            syntax_theme_dark: Some(r#"k"l"#.to_owned()),
+            ..SiteHead::default()
+        });
         assert!(!meta.contains(r#""a"b""#));
         assert!(meta.contains("a&quot;b"));
         assert!(meta.contains("c&quot;d"));
         assert!(meta.contains("e&quot;f"));
         assert!(meta.contains("g&quot;h"));
+        assert!(meta.contains("i&quot;j"));
+        assert!(meta.contains("k&quot;l"));
     }
 
     #[test]

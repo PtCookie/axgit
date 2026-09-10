@@ -38,6 +38,8 @@ pub struct FileConfig {
     #[serde(default)]
     pub site: SiteSection,
     #[serde(default)]
+    pub syntax: SyntaxSection,
+    #[serde(default)]
     pub cache: CacheSection,
 }
 
@@ -52,6 +54,17 @@ pub struct SiteSection {
     pub logo: Option<String>,
     pub logo_link: Option<String>,
     pub favicon: Option<String>,
+}
+
+/// `[syntax]` — the Shiki highlighting themes (docs/DECISIONS.md #95).
+/// axgit-specific, like `[cache]`: cgit highlights through an external
+/// `source-filter` script and has no theme setting to borrow a name from.
+/// Left as raw strings — the theme ids are the frontend's to know.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct SyntaxSection {
+    pub theme_light: Option<String>,
+    pub theme_dark: Option<String>,
 }
 
 /// `[cache]` — the cache knobs (`cache.rs`). axgit-specific; cgit's own
@@ -86,6 +99,7 @@ const SITE_KEYS: &[&str] = &[
     "logo-link",
     "favicon",
 ];
+const SYNTAX_KEYS: &[&str] = &["theme-light", "theme-dark"];
 const CACHE_KEYS: &[&str] = &["scan-ttl", "response-ttl", "response-max-bytes"];
 
 /// Reads and parses `path`. Both failure modes — unreadable file, malformed
@@ -121,6 +135,7 @@ fn unknown_keys(table: &toml::Table) -> Vec<String> {
     for (key, value) in table {
         let section_keys = match key.as_str() {
             "site" => SITE_KEYS,
+            "syntax" => SYNTAX_KEYS,
             "cache" => CACHE_KEYS,
             _ => {
                 if !TOP_LEVEL_KEYS.contains(&key.as_str()) {
@@ -129,8 +144,8 @@ fn unknown_keys(table: &toml::Table) -> Vec<String> {
                 continue;
             }
         };
-        // A non-table `site`/`cache` has nothing to walk; the typed parse
-        // below reports the shape error itself.
+        // A non-table section has nothing to walk; the typed parse below
+        // reports the shape error itself.
         let Some(section) = value.as_table() else {
             continue;
         };
@@ -161,6 +176,10 @@ root-readme = "/srv/git/README.md"
 logo = "/srv/git/logo.svg"
 logo-link = "https://example.com"
 favicon = "/srv/git/favicon.png"
+
+[syntax]
+theme-light = "one-light"
+theme-dark = "dracula"
 
 [cache]
 scan-ttl = 30
@@ -193,6 +212,9 @@ response-max-bytes = 1048576
             Some("https://example.com")
         );
         assert_eq!(config.site.favicon.as_deref(), Some("/srv/git/favicon.png"));
+
+        assert_eq!(config.syntax.theme_light.as_deref(), Some("one-light"));
+        assert_eq!(config.syntax.theme_dark.as_deref(), Some("dracula"));
 
         assert_eq!(config.cache.scan_ttl, Some(30));
         assert_eq!(config.cache.response_ttl, Some(120));

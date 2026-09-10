@@ -34,7 +34,7 @@ interface UnifiedHunkProps {
 /** One hunk rendered as a 4-column unified diff table (lineno × 2, origin, content). */
 export default function UnifiedHunk({ hunk, highlights }: UnifiedHunkProps) {
   return (
-    <table className="w-full border-collapse text-sm">
+    <table className="shiki-code w-full border-collapse text-sm">
       <tbody>
         <tr>
           <td colSpan={4} className="text-muted-foreground bg-muted/30 px-2 py-1 font-mono">

@@ -133,6 +133,11 @@ pub fn build_router(state: AppState) -> Router {
                 .as_ref()
                 .map(|asset| asset.href("/api/v1/site/favicon")),
             favicon_type: favicon_asset.as_ref().and_then(BrandingAsset::content_type),
+            // Opaque here on purpose (docs/DECISIONS.md #95): the set of
+            // valid theme ids belongs to the frontend, which falls back to
+            // its own default for anything it can't load.
+            syntax_theme_light: state.config.syntax_theme_light.clone(),
+            syntax_theme_dark: state.config.syntax_theme_dark.clone(),
         };
 
         router = match assets {

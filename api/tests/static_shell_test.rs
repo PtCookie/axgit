@@ -19,6 +19,7 @@ use tempfile::TempDir;
 use common::{
     get_bytes_with_headers, router_for, router_with_static, router_with_static_and_branding,
     router_with_static_and_clone_base, router_with_static_and_site,
+    router_with_static_and_syntax_themes,
 };
 
 // Each fixture carries a real `<head></head>` so the injected `<link>`s
@@ -384,6 +385,46 @@ async fn every_shell_carries_the_configured_site_meta() {
             "uri {uri} missing the site-desc meta: {body:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn every_shell_carries_the_configured_syntax_theme_meta() {
+    let (repo_root, static_dir) = setup_fixtures();
+
+    for uri in ["/", "/git-compose", "/git-compose/bogus"] {
+        let router = router_with_static_and_syntax_themes(
+            repo_root.path(),
+            static_dir.path(),
+            Some("one-light"),
+            Some("dracula"),
+        );
+        let (_, _, body) = get_bytes_with_headers(router, uri).await;
+        let body = String::from_utf8(body).unwrap();
+
+        assert!(
+            body.contains("<meta name=\"axgit:syntax-theme-light\" content=\"one-light\">"),
+            "uri {uri} missing the syntax-theme-light meta: {body:?}"
+        );
+        assert!(
+            body.contains("<meta name=\"axgit:syntax-theme-dark\" content=\"dracula\">"),
+            "uri {uri} missing the syntax-theme-dark meta: {body:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_unconfigured_syntax_theme_injects_no_meta() {
+    let (repo_root, static_dir) = setup_fixtures();
+    let router =
+        router_with_static_and_syntax_themes(repo_root.path(), static_dir.path(), None, None);
+
+    let (_, _, body) = get_bytes_with_headers(router, "/").await;
+    let body = String::from_utf8(body).unwrap();
+
+    assert!(
+        !body.contains("axgit:syntax-theme"),
+        "an unconfigured deployment should inject no syntax theme meta: {body:?}"
+    );
 }
 
 #[tokio::test]

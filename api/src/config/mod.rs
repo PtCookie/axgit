@@ -106,6 +106,20 @@ pub struct Config {
     /// given a path.
     #[arg(long, env = "AXGIT_FAVICON")]
     pub favicon: Option<String>,
+
+    /// Shiki theme used to highlight code in light mode (docs/DECISIONS.md
+    /// #95). Passed through to the frontend as an opaque string — the set of
+    /// theme ids lives in `web/src/lib/format/highlight.ts`, so validating it
+    /// here would mean duplicating a list that moves with every Shiki
+    /// upgrade. An id the frontend has no loader for falls back to its own
+    /// default, with a warning in the browser console.
+    #[arg(long, env = "AXGIT_SYNTAX_THEME_LIGHT")]
+    pub syntax_theme_light: Option<String>,
+
+    /// Shiki theme used to highlight code in dark mode — the counterpart to
+    /// `syntax_theme_light`, with the same pass-through handling.
+    #[arg(long, env = "AXGIT_SYNTAX_THEME_DARK")]
+    pub syntax_theme_dark: Option<String>,
 }
 
 impl Config {
@@ -226,6 +240,17 @@ fn merge(
         config.favicon = Some(value);
     }
 
+    if !is_explicit("syntax_theme_light")
+        && let Some(value) = file.syntax.theme_light
+    {
+        config.syntax_theme_light = Some(value);
+    }
+    if !is_explicit("syntax_theme_dark")
+        && let Some(value) = file.syntax.theme_dark
+    {
+        config.syntax_theme_dark = Some(value);
+    }
+
     if !is_explicit("cache_scan_ttl_secs")
         && let Some(value) = file.cache.scan_ttl
     {
@@ -274,6 +299,8 @@ mod tests {
             logo: None,
             logo_link: None,
             favicon: None,
+            syntax_theme_light: None,
+            syntax_theme_dark: None,
         }
     }
 
@@ -291,6 +318,10 @@ root-readme = "/var/git/README.md"
 logo = "/var/git/logo.svg"
 logo-link = "https://example.com"
 favicon = "/var/git/favicon.png"
+
+[syntax]
+theme-light = "one-light"
+theme-dark = "dracula"
 
 [cache]
 scan-ttl = 30
@@ -325,6 +356,8 @@ response-max-bytes = 1048576
         assert_eq!(config.logo.as_deref(), Some("/var/git/logo.svg"));
         assert_eq!(config.logo_link.as_deref(), Some("https://example.com"));
         assert_eq!(config.favicon.as_deref(), Some("/var/git/favicon.png"));
+        assert_eq!(config.syntax_theme_light.as_deref(), Some("one-light"));
+        assert_eq!(config.syntax_theme_dark.as_deref(), Some("dracula"));
         assert_eq!(config.cache_scan_ttl_secs, 30);
         assert_eq!(config.cache_response_ttl_secs, 120);
         assert_eq!(config.cache_response_max_bytes, 1048576);

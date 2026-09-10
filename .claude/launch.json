@@ -55,6 +55,27 @@
         "127.0.0.1:8081"
       ],
       "port": 8081
+    },
+    {
+      "name": "axgit-syntax-theme-demo",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": [
+        "run",
+        "--manifest-path",
+        "api/Cargo.toml",
+        "--",
+        "--repo-root",
+        "./fixtures/repos",
+        "--static-dir",
+        "./web/dist",
+        "--syntax-theme-light",
+        "solarized-light",
+        "--syntax-theme-dark",
+        "dracula",
+        "--listen",
+        "127.0.0.1:8082"
+      ],
+      "port": 8082
     }
   ]
 }

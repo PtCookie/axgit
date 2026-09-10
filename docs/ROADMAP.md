@@ -8,14 +8,17 @@ add its decision entry to `docs/DECISIONS.md`, in the same commit.
 
 ## Next up
 
-**Nothing is queued.** The GitHub Actions migration (#92) closed the last item that had a deadline
-attached: CI runs again on every push to `main` and on pull requests, and a `v*` tag publishes both
-the release tarballs and a multi-platform GHCR image — the CD half the Jenkins pipeline never had.
-No cgit-parity gaps remain (single-child directory collapsing was deliberately left unimplemented,
-see the "not planned" notes below), the single-binary deploy path — feature (#74) and packaging
-(#75) both — is done, configuration has a file surface as well as flags/env (#87), and the docs
-live next to the code they describe: the API contract and backend design in `api/README.md`, the
-frontend design in `web/README.md`, deployment in `README.md` (#89, #90).
+**Nothing is queued.** Syntax highlighting themes are now configurable per color mode (#95),
+which closed the last piece of site presentation still hardcoded — everything an operator sees
+is now reachable from flags, `AXGIT_*` env vars or the config file. Before that, the GitHub
+Actions migration (#92) closed the last item that had a deadline attached: CI runs on every push
+to `main` and on pull requests, and a `v*` tag publishes both the release tarballs and a
+multi-platform GHCR image — the CD half the Jenkins pipeline never had. No cgit-parity gaps
+remain (single-child directory collapsing was deliberately left unimplemented, see the "not
+planned" notes below), the single-binary deploy path — feature (#74) and packaging (#75) both —
+is done, configuration has a file surface as well as flags/env (#87), and the docs live next to
+the code they describe: the API contract and backend design in `api/README.md`, the frontend
+design in `web/README.md`, deployment in `README.md` (#89, #90).
 
 Pick the next piece of work from the candidates below.
 

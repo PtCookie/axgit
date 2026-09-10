@@ -1,4 +1,4 @@
-import type { HighlighterCore, LanguageInput } from "shiki/core";
+import type { HighlighterCore, LanguageInput, ThemeRegistration } from "shiki/core";
 
 /**
  * Client-side syntax highlighting (web/README.md, DECISIONS.md #11/#19) —
@@ -112,27 +112,111 @@ export function languageForFence(info: string): string | undefined {
   return LANG_BY_EXTENSION[token];
 }
 
-const LIGHT_THEME = "github-light";
-const DARK_THEME = "github-dark";
+/** The themes an operator can pick from, via `AXGIT_SYNTAX_THEME_LIGHT` /
+ *  `AXGIT_SYNTAX_THEME_DARK` (docs/DECISIONS.md #95). A curated subset of
+ *  Shiki's 66 bundled themes, for the same reason `LANG_LOADERS` curates
+ *  languages: every entry here becomes its own chunk in `web/dist`, which
+ *  the default build bakes into the binary. The light/dark grouping below
+ *  is only how the themes were designed — either mode accepts any id.
+ *
+ *  Each specifier must stay a *literal*: a template literal would make Vite
+ *  bundle all 66. Adding one means adding it to the table in `README.md`
+ *  and the `[syntax]` section of `axgit.toml` too. */
+const THEME_LOADERS = {
+  "github-light": () => import("shiki/themes/github-light.mjs"),
+  "github-light-default": () => import("shiki/themes/github-light-default.mjs"),
+  "one-light": () => import("shiki/themes/one-light.mjs"),
+  "catppuccin-latte": () => import("shiki/themes/catppuccin-latte.mjs"),
+  "solarized-light": () => import("shiki/themes/solarized-light.mjs"),
+  "vitesse-light": () => import("shiki/themes/vitesse-light.mjs"),
+  "min-light": () => import("shiki/themes/min-light.mjs"),
+  "github-dark": () => import("shiki/themes/github-dark.mjs"),
+  "github-dark-dimmed": () => import("shiki/themes/github-dark-dimmed.mjs"),
+  "one-dark-pro": () => import("shiki/themes/one-dark-pro.mjs"),
+  nord: () => import("shiki/themes/nord.mjs"),
+  dracula: () => import("shiki/themes/dracula.mjs"),
+  "catppuccin-mocha": () => import("shiki/themes/catppuccin-mocha.mjs"),
+  "solarized-dark": () => import("shiki/themes/solarized-dark.mjs"),
+  "vitesse-dark": () => import("shiki/themes/vitesse-dark.mjs"),
+  "tokyo-night": () => import("shiki/themes/tokyo-night.mjs"),
+} satisfies Record<string, () => Promise<{ default: ThemeRegistration }>>;
 
-let highlighterPromise: Promise<HighlighterCore> | undefined;
+type ThemeId = keyof typeof THEME_LOADERS;
+
+/** Used when the deployment configures nothing, and when what it configures
+ *  can't be loaded. */
+const DEFAULT_THEMES: Record<ColorMode, ThemeId> = {
+  light: "github-light",
+  dark: "github-dark",
+};
+
+type ColorMode = "light" | "dark";
+
+function isThemeId(id: string): id is ThemeId {
+  return id in THEME_LOADERS;
+}
+
+/** The theme id configured for `mode`, read from the `<meta>` `shell.rs`
+ *  injects into every served shell (`api/src/shell.rs::site_head_meta`).
+ *  Read from the document rather than fetched, so it is already in hand by
+ *  the time the highlighter is built — and unset in `astro dev`, which
+ *  serves the shells itself and injects nothing.
+ *
+ *  An id with no loader falls back rather than failing: the API deliberately
+ *  passes the value through without validating it, since the list of ids
+ *  lives here (docs/DECISIONS.md #95), so this warning is the only place a
+ *  typo surfaces. */
+function configuredTheme(mode: ColorMode): ThemeId {
+  const fallback = DEFAULT_THEMES[mode];
+  const configured = document.querySelector<HTMLMetaElement>(`meta[name="axgit:syntax-theme-${mode}"]`)?.content.trim();
+
+  if (!configured) return fallback;
+  if (isThemeId(configured)) return configured;
+
+  console.warn(
+    `[axgit] unknown ${mode} syntax theme "${configured}", falling back to "${fallback}". ` +
+      `Available: ${Object.keys(THEME_LOADERS).join(", ")}`,
+  );
+  return fallback;
+}
+
+/** The core plus the ids its two themes actually registered under, which
+ *  `codeToTokens` needs by name on every call. */
+interface Highlighter {
+  core: HighlighterCore;
+  themes: Record<ColorMode, string>;
+}
+
+let highlighterPromise: Promise<Highlighter> | undefined;
 
 /** The one highlighter instance is shared across every `highlightCode`
  *  call — languages are loaded into it incrementally as needed, never
- *  re-created per file. */
-function getHighlighter(): Promise<HighlighterCore> {
+ *  re-created per file. The configured themes are read once here, not per
+ *  call: they are deployment-wide, and the module outlives an
+ *  `astro:after-swap` (only `<body>` is swapped). */
+function getHighlighter(): Promise<Highlighter> {
   highlighterPromise ??= (async () => {
+    const lightId = configuredTheme("light");
+    const darkId = configuredTheme("dark");
     const [{ createHighlighterCore }, { createJavaScriptRegexEngine }, light, dark] = await Promise.all([
       import("shiki/core"),
       import("shiki/engine/javascript"),
-      import("shiki/themes/github-light.mjs").then((m) => m.default),
-      import("shiki/themes/github-dark.mjs").then((m) => m.default),
+      THEME_LOADERS[lightId]().then((m) => m.default),
+      THEME_LOADERS[darkId]().then((m) => m.default),
     ]);
-    return createHighlighterCore({
+    const core = await createHighlighterCore({
       themes: [light, dark],
       langs: [],
       engine: createJavaScriptRegexEngine({ forgiving: true }),
     });
+    // `createHighlighterCore` registers each theme under its own `name`,
+    // which is what `codeToTokens` then has to be given. Every bundled theme
+    // carries one and it matches its module's basename, but the type makes
+    // it optional, so the id we asked for stands in.
+    return {
+      core,
+      themes: { light: light.name ?? lightId, dark: dark.name ?? darkId },
+    };
   })();
   return highlighterPromise;
 }
@@ -169,16 +253,13 @@ async function tokenize(code: string, lang: string | undefined): Promise<Highlig
     if (lines > LINE_THRESHOLD) return null;
   }
 
-  const highlighter = await getHighlighter();
-  if (!highlighter.getLoadedLanguages().includes(lang)) {
+  const { core, themes } = await getHighlighter();
+  if (!core.getLoadedLanguages().includes(lang)) {
     const { default: grammars } = await loader();
-    await highlighter.loadLanguage(...grammars);
+    await core.loadLanguage(...grammars);
   }
 
-  const { tokens } = highlighter.codeToTokens(code, {
-    lang,
-    themes: { light: LIGHT_THEME, dark: DARK_THEME },
-  });
+  const { tokens } = core.codeToTokens(code, { lang, themes });
 
   return tokens.map((line) => line.map((token) => ({ content: token.content, style: token.htmlStyle ?? {} })));
 }

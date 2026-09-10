@@ -137,7 +137,7 @@ export default function SplitHunk({ hunk, highlights }: SplitHunkProps) {
   const rows = useMemo(() => pairHunkLines(hunk.lines), [hunk]);
 
   return (
-    <table className="w-full min-w-[52rem] table-fixed border-collapse text-sm">
+    <table className="shiki-code w-full min-w-[52rem] table-fixed border-collapse text-sm">
       <colgroup>
         <col className="w-10" />
         <col />

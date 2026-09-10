@@ -40,6 +40,8 @@ pub fn test_config(repo_root: &Path) -> Config {
         logo: None,
         logo_link: None,
         favicon: None,
+        syntax_theme_light: None,
+        syntax_theme_dark: None,
     }
 }
 
@@ -81,6 +83,23 @@ pub fn router_with_static_and_site(
     config.static_dir = Some(static_dir.to_owned());
     config.root_title = root_title.map(str::to_owned);
     config.root_desc = root_desc.map(str::to_owned);
+    build_router(AppState::new(config))
+}
+
+/// Like [`router_with_static`], plus the two Shiki theme ids — for asserting
+/// the page shell's injected `axgit:syntax-theme-*` `<meta>`s
+/// (docs/DECISIONS.md #95). Both are opaque strings to the API, so the
+/// values here need not be real theme ids.
+pub fn router_with_static_and_syntax_themes(
+    repo_root: &Path,
+    static_dir: &Path,
+    theme_light: Option<&str>,
+    theme_dark: Option<&str>,
+) -> Router {
+    let mut config = test_config(repo_root);
+    config.static_dir = Some(static_dir.to_owned());
+    config.syntax_theme_light = theme_light.map(str::to_owned);
+    config.syntax_theme_dark = theme_dark.map(str::to_owned);
     build_router(AppState::new(config))
 }
 

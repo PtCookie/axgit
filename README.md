@@ -153,6 +153,20 @@ environment variable.
 | `AXGIT_LOGO` | `site.logo` | _(unset)_ | Site logo, shown beside the header brand. An `http(s)://` URL (used verbatim) or a filesystem path axgit serves itself at `GET /api/v1/site/logo`; unset shows axgit's own mark (`/favicon.svg`), the same one the tab icon defaults to |
 | `AXGIT_LOGO_LINK` | `site.logo-link` | _(unset)_ | Where the logo links to; an `http(s)://` URL or a root-relative path, falling back to `/` |
 | `AXGIT_FAVICON` | `site.favicon` | _(unset)_ | Site favicon, replacing axgit's own default. Same URL-or-path rule as `AXGIT_LOGO`, served at `GET /api/v1/site/favicon` |
+| `AXGIT_SYNTAX_THEME_LIGHT` | `syntax.theme-light` | `github-light` | Shiki theme used to highlight code in light mode. One of the ids listed below; an unrecognized one falls back to the default, with a warning in the browser console |
+| `AXGIT_SYNTAX_THEME_DARK` | `syntax.theme-dark` | `github-dark` | Shiki theme used to highlight code in dark mode. Same id set and same fallback as `AXGIT_SYNTAX_THEME_LIGHT` |
+
+Both syntax themes accept any of these ids — a curated subset of Shiki's bundled themes, since
+each one ships as a separate chunk inside the binary (docs/DECISIONS.md #95). The light/dark
+grouping is only how each theme was designed; either setting accepts any id.
+
+- Light: `github-light`, `github-light-default`, `one-light`, `catppuccin-latte`,
+  `solarized-light`, `vitesse-light`, `min-light`
+- Dark: `github-dark`, `github-dark-dimmed`, `one-dark-pro`, `nord`, `dracula`,
+  `catppuccin-mocha`, `solarized-dark`, `vitesse-dark`, `tokyo-night`
+
+Only token colors come from the theme — code blocks keep axgit's own background, so they stay
+consistent with the surrounding page and with the diff view's add/remove row tints.
 
 ### Repository configuration
 

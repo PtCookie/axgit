@@ -61,7 +61,11 @@ excluded from eslint). When the API changes, regenerate it with `pnpm --filter w
 - Code highlighting: **Shiki, client-side**, with lazy-loaded language grammars, using the
   **JavaScript RegExp engine** (not Oniguruma/WASM, docs/DECISIONS.md #19). Highlighting is skipped
   above a size threshold for large files. (Astro's built-in Shiki/markdown is build-time only, so
-  it can't be used for runtime-fetched data.)
+  it can't be used for runtime-fetched data.) The light- and dark-mode themes are operator
+  configurable (`AXGIT_SYNTAX_THEME_LIGHT`/`_DARK`, docs/DECISIONS.md #95): `highlight.ts` reads
+  the ids from the `axgit:syntax-theme-*` `<meta>`s `serve_shell` injects, and falls back to
+  `github-light`/`github-dark` for an id it has no loader for. Both themes are tokenized at once
+  into `color` + `--shiki-dark`, so switching color mode never re-highlights.
 - README rendering: **react-markdown + remark-gfm + rehype-sanitize** (markdown only; rst/plain
   are shown as `<pre>`).
 - Avatars: generated locally with **DiceBear**, seeded from a hash of the committer's email

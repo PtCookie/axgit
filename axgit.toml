@@ -68,6 +68,24 @@ clone-url-base = "http://localhost:8080"
 # logo, served at GET /api/v1/site/favicon.
 # favicon = "./web/public/favicon.ico"
 
+# Syntax highlighting themes, one per color mode. axgit-specific: cgit
+# highlights through an external source-filter script and has no theme
+# setting to borrow a name from. Only token colors come from the theme —
+# code blocks keep axgit's own background either way.
+[syntax]
+
+# Shiki theme used in light mode. One of github-light,
+# github-light-default, one-light, catppuccin-latte, solarized-light,
+# vitesse-light, min-light, github-dark, github-dark-dimmed, one-dark-pro,
+# nord, dracula, catppuccin-mocha, solarized-dark, vitesse-dark,
+# tokyo-night. An unrecognized id falls back to the default, with a warning
+# in the browser console.
+# theme-light = "github-light"
+
+# Shiki theme used in dark mode. Same id set as theme-light — the light/dark
+# split above is only how each theme was designed, not a restriction.
+# theme-dark = "github-dark"
+
 # Cache knobs. axgit-specific — cgit's own cache-* options don't map onto
 # these. Worth turning down while developing, so an edit to a fixture repo
 # shows up without waiting out a TTL.

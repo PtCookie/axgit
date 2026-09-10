@@ -265,6 +265,11 @@ these two endpoints.
   into the served page's `<head>` (a `<meta name="axgit:logo">`/`<meta name="axgit:logo-link">` pair
   for the logo, read client-side to fill in the header brand; a real `<link rel="icon">` for the
   favicon, replacing axgit's own default pair), not fetched by the frontend at runtime.
+- `AXGIT_SYNTAX_THEME_LIGHT`/`AXGIT_SYNTAX_THEME_DARK` travel the same way, as an
+  `axgit:syntax-theme-light`/`axgit:syntax-theme-dark` `<meta>` pair read by the frontend's Shiki
+  highlighter (docs/DECISIONS.md #95). Both are passed through unvalidated — the set of valid
+  theme ids belongs to `web/src/lib/format/highlight.ts`, which falls back to its own default for
+  anything it can't load.
 
 #### `GET /api/v1/repos?sort=`
 

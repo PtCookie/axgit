@@ -2331,3 +2331,39 @@ side.
 - **Bumped node 24.11→24.20, rust 1.97→1.98, alpine 3.22→3.24 in the same commit** while here —
   latest minor on each as of 2026-09, staying on node's Active LTS line (24; 26 doesn't reach LTS
   until 2026-10) and matching alpine minors across all three stages as before.
+
+## #95 Syntax highlighting themes configurable per color mode
+
+Shiki's themes were hardcoded to `github-light`/`github-dark` since #19. Every other piece of site
+chrome — title, description, logo, favicon (#70, #81) — is operator-configurable, so this was a
+gap rather than a deliberate omission. `AXGIT_SYNTAX_THEME_LIGHT`/`AXGIT_SYNTAX_THEME_DARK` (with
+their flags and a new `[syntax]` config-file section) now set them.
+
+- **A new `[syntax]` section, not `[site]`.** `[site]` carries cgit's own cgitrc spelling so a
+  cgit deployment's values paste straight across (#70); these are not cgit keys — cgit highlights
+  through an external `source-filter` script and has no theme setting at all. `[cache]` is the
+  precedent for an axgit-specific section with axgit-specific names.
+- **Carried to the frontend as a `<meta>` pair, not a field on `GET /api/v1/site`.** Same channel
+  as the logo (#81), for two reasons: the value is already in the document by the time the
+  highlighter is constructed, so nothing has to await a fetch; and the API contract — `openapi.json`,
+  the generated `types.ts`, `api/README.md`'s spec — stays untouched by what is really a
+  presentation setting.
+- **A curated 16-theme subset, not Shiki's 66 bundled themes.** `import { bundledThemes }` would
+  give a typed union and the complete set for free, but Vite emits every entry as its own chunk:
+  1.4 MB added to `web/dist`, and thence to the rust-embed blob and the binary, to make two of
+  them reachable. The curated map costs 371 KB (339 KB net — `github-light`/`github-dark` already
+  shipped). This is the same trade #19 made in refusing Oniguruma's ~500 KiB wasm, and the same
+  one `LANG_LOADERS` makes in curating 22 languages. Adding a theme is a deliberate edit to
+  `highlight.ts`, `README.md` and `axgit.toml`.
+- **No server-side allowlist.** Validating like `repository-sort` does would mean duplicating a
+  list of theme ids in Rust that moves with every Shiki upgrade, for a setting the API never
+  interprets. The value passes through opaque; `highlight.ts` falls back to its default and
+  `console.warn`s with the full id list. The trade is a typo that degrades silently rather than
+  failing startup — acceptable because the failure is cosmetic and self-describing in the console,
+  where an operator changing themes is already looking.
+- **Code blocks keep axgit's own background.** Shiki's `bg`/`fg` stay discarded, as before: only
+  token colors follow the theme. Adopting the theme's background would apply to `.shiki-code`
+  containers only — blob view and README fences — leaving the diff view (which has no such
+  container, and tints rows by add/remove) on the app surface and visibly out of step.
+- Both themes are still tokenized in one pass into `color` + `--shiki-dark`, so the theme toggle
+  remains a pure CSS switch with no re-highlight, whatever the two configured themes are.

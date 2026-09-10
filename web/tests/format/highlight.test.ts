@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { highlightCode, languageForFence, languageForPath } from "@/lib/format/highlight";
 
@@ -76,5 +76,67 @@ describe("highlightCode", () => {
   it("returns null above the line-count threshold", async () => {
     const manyLines = "a\n".repeat(5001);
     expect(await highlightCode(manyLines, "src/main.rs")).toBeNull();
+  });
+});
+
+describe("configured syntax themes", () => {
+  function clearThemeMetas() {
+    document.head.querySelectorAll('meta[name^="axgit:syntax-theme-"]').forEach((meta) => {
+      meta.remove();
+    });
+  }
+
+  /** Highlights `fn` with the given `axgit:syntax-theme-*` metas in the
+   *  document, and returns its inline style. The highlighter is a module-level
+   *  singleton that reads the metas once, so each case needs a fresh module
+   *  instance — hence `resetModules` plus a dynamic import. */
+  async function keywordStyle(metas: { light?: string; dark?: string }) {
+    clearThemeMetas();
+    for (const [mode, content] of Object.entries(metas)) {
+      const meta = document.createElement("meta");
+      meta.name = `axgit:syntax-theme-${mode}`;
+      meta.content = content;
+      document.head.append(meta);
+    }
+
+    vi.resetModules();
+    const { highlightCode: fresh } = await import("@/lib/format/highlight");
+    const lines = await fresh("fn main() {}", "src/main.rs");
+    if (lines === null) throw new Error("expected tokens");
+
+    const keyword = lines[0]?.find((token) => token.content.trim() !== "");
+    if (!keyword) throw new Error("expected a non-whitespace token");
+    return keyword.style;
+  }
+
+  afterEach(() => {
+    clearThemeMetas();
+    vi.restoreAllMocks();
+  });
+
+  it("keeps both theme colors on a token so the mode toggle needs no re-highlight", async () => {
+    const style = await keywordStyle({});
+    expect(style).toHaveProperty("color");
+    expect(style).toHaveProperty("--shiki-dark");
+  });
+
+  it("honors a configured theme id", async () => {
+    const configured = await keywordStyle({ light: "one-light", dark: "dracula" });
+    const defaults = await keywordStyle({});
+
+    expect(configured.color).not.toBe(defaults.color);
+    expect(configured["--shiki-dark"]).not.toBe(defaults["--shiki-dark"]);
+  });
+
+  it("falls back to the default theme and warns for an id it cannot load", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const unknown = await keywordStyle({ dark: "githbu-dark" });
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("githbu-dark"));
+    // Same singleton state as an unconfigured deployment.
+    warn.mockClear();
+    const defaults = await keywordStyle({});
+    expect(unknown["--shiki-dark"]).toBe(defaults["--shiki-dark"]);
   });
 });
