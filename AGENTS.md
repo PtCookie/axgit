@@ -51,15 +51,16 @@ cited from source comments as `docs/DECISIONS.md #NN`. When finishing a piece of
 pnpm install                # all JS dependencies; lefthook's postinstall registers git hooks
 
 # Frontend (web/) — run from root with --filter web
-pnpm --filter web dev       # Astro dev server (API proxied via AXGIT_API_URL)
-pnpm --filter web build     # static build → web/dist/
-pnpm --filter web test      # vitest
-pnpm --filter web check     # astro sync + tsc --noEmit + eslint + prettier check
-                            # (individually: lint / format)
+pnpm --filter web run dev        # Astro dev server (API proxied via AXGIT_API_URL)
+pnpm --filter web run build      # static build → web/dist/
+pnpm --filter web run test       # vitest
+pnpm --filter web run test:e2e   # Playwright e2e (see Testing note below on sandboxed invocation)
+pnpm --filter web run check      # astro sync + tsc --noEmit + eslint + prettier check
+                                  # (individually: lint / format)
 
 # Backend (api/) — the default build bakes web/dist into the binary
 # (docs/DECISIONS.md #74, #88), so build it once first
-pnpm --filter web build
+pnpm --filter web run build
 cargo build --manifest-path api/Cargo.toml
 cargo test --manifest-path api/Cargo.toml
 cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
@@ -71,7 +72,7 @@ cargo build --manifest-path api/Cargo.toml --features api-only
 
 # Regenerate the OpenAPI spec (openapi.json) — run in any commit that changes the API
 AXGIT_UPDATE_OPENAPI=1 cargo test --manifest-path api/Cargo.toml --test openapi_test
-pnpm --filter web gen:types # then regenerate web types (openapi-typescript)
+pnpm --filter web run gen:types # then regenerate web types (openapi-typescript)
 
 # Generate fixture repositories (4 bare repos, fixed dates for reproducibility)
 ./scripts/make-fixtures.sh
@@ -81,7 +82,7 @@ pnpm --filter web gen:types # then regenerate web types (openapi-typescript)
 cargo run --manifest-path api/Cargo.toml -- --repo-root ./fixtures/repos --static-dir ./web/dist
 
 # Single-binary release build (docs/DECISIONS.md #74)
-pnpm --filter web build
+pnpm --filter web run build
 cargo build --release --manifest-path api/Cargo.toml
 
 # Container build
@@ -166,6 +167,12 @@ those changes, run it before committing one.
   web uses vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`,
   `web/tests/`) + Playwright e2e (`web/e2e/`). Pre-commit hooks are handled by lefthook
   (`lefthook.yml`).
+- **Claude Code sandbox note**: Playwright e2e launches real browser processes, which macOS's
+  sandbox blocks (`bootstrap_check_in ... Permission denied`) unless excluded —
+  `.claude/settings.json`'s `sandbox.excludedCommands: ["pnpm --filter web run test*"]` handles
+  this. That match is a literal prefix: invoke `pnpm --filter web run test:e2e` as the command
+  itself, not chained after `cd &&` or wrapped in a subshell, or the exclusion won't apply and
+  every test fails with the same Mach port error.
 - **CI/CD**: GitHub Actions (`.github/workflows/`, docs/DECISIONS.md #92) runs the same commands
   listed above on every push to `main` and on pull requests; `v*` tags additionally publish the
   release tarballs (`scripts/make-release.sh`) and the GHCR image. **GitHub is a mirror of
