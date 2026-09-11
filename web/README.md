@@ -75,4 +75,6 @@ excluded from eslint). When the API changes, regenerate it with `pnpm --filter w
   against `astro dev` with **no API behind it**: each spec stubs the endpoints its page needs with
   `page.route`, and `e2e/fixtures.ts` answers anything it missed with a 503 and fails the test
   (docs/DECISIONS.md #96) — so import `test`/`expect` from `./fixtures`, never from
-  `@playwright/test` (eslint enforces it).
+  `@playwright/test` (eslint enforces it). That server also runs with `AXGIT_E2E=1`, which drops
+  the `/api` dev proxy so a request escaping interception as a page closes gets a local 503
+  rather than an ECONNREFUSED trace in the log.

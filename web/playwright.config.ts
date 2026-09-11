@@ -75,5 +75,11 @@ export default defineConfig({
     command: "pnpm dev",
     url: "http://localhost:4321",
     reuseExistingServer: !process.env.CI,
+    // No axgit runs behind this server (docs/DECISIONS.md #92): the specs
+    // stub `/api` themselves. The flag makes `astro.config.mjs` drop the
+    // `/api` proxy for this server, so a request that escapes interception
+    // while a page is closing gets a local 503 instead of an ECONNREFUSED
+    // stack trace in the run's log (docs/DECISIONS.md #96).
+    env: { AXGIT_E2E: "1" },
   },
 });

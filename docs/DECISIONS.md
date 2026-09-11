@@ -2394,11 +2394,17 @@ the missing stubs by hand fixed the specs that were noisy that week without clos
 - **Failing, not warning.** The alternative — answer 503 quietly and report the URL in the report —
   removes the log noise but keeps the real defect: a test whose assertions ran against an error
   state, passing for a reason its own source never states.
-- **The dev proxy's error handler is gone again.** It was added to silence the ECONNREFUSED stacks
-  and could never do that: vite's `proxyMiddleware` calls `configure` *first* and only then
-  registers its own `error` listener, which logs the stack unconditionally. All it changed was the
-  502 body. With the guard in place nothing reaches the proxy from a test run at all, so
-  `astro.config.mjs` is back to the one-line `"/api": target` form.
+- **The dev proxy is removed for the duration of the run, not patched.** A first attempt kept the
+  proxy and hung an `error` handler off it; that could never work — vite's `proxyMiddleware` calls
+  `configure` *first* and only then registers its own `error` listener, which logs the stack
+  unconditionally, so all the handler changed was the 502 body. Nor is the fixture enough on its
+  own: once a page starts closing, Playwright's `_onRoute` returns early **without consulting any
+  handler** and lets the request continue to the network, so a fetch landing in that window
+  reached the proxy no matter what the test did — one `/api/v1/site` still escaped per CI run.
+  `playwright.config.ts` now sets `AXGIT_E2E=1` on the `webServer` it spawns, and under that flag
+  `astro.config.mjs` drops the `/api` proxy and answers `/api/*` with a local 503 instead. Normal
+  `astro dev` is untouched: without the flag the proxy behaves exactly as before, ECONNREFUSED
+  included, which is the right signal when a developer means to have an API running.
 - **It also makes a local run mean the same thing as CI's.** e2e is not in lefthook, so it runs
   mostly on CI — but a developer who happens to have axgit serving `fixtures/repos` on 8080 used
   to have those same unstubbed requests answered with *real* data. Now both environments see the

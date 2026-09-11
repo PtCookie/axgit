@@ -155,6 +155,41 @@ function shellRoutes() {
   };
 }
 
+/**
+ * True while the Playwright suite is running (`playwright.config.ts` sets it
+ * on the `webServer` it spawns). A dev-server-only flag — nothing in
+ * `api/src/config/` reads it.
+ */
+const E2E = process.env.AXGIT_E2E === "1";
+
+/**
+ * Answers `/api` with a 503 instead of proxying it, for the e2e run only.
+ *
+ * `e2e/fixtures.ts` already stubs or 503s every `/api` request a test makes,
+ * but it cannot cover all of them: once a page starts closing, Playwright's
+ * `_onRoute` returns early without consulting a single handler
+ * (playwright-core 1.62.1, `lib/coreBundle.js`) and lets the request go to
+ * the network. A fetch that lands in that window reached the proxy, and
+ * vite logged `http proxy error … ECONNREFUSED` for it — a run that passed
+ * still looked broken in CI's log. Removing the proxy for the duration of
+ * the suite is the only place that race can be closed (docs/DECISIONS.md
+ * #96).
+ *
+ * @returns {NonNullable<import("astro").ViteUserConfig["plugins"]>[number]}
+ */
+function apiUnavailable() {
+  return {
+    name: "axgit-api-unavailable",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!(req.url ?? "").startsWith("/api/")) return next();
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { code: "unavailable", message: "api unavailable (e2e)" } }));
+      });
+    },
+  };
+}
+
 // https://astro.build/config
 export default defineConfig({
   output: "static",
@@ -168,14 +203,12 @@ export default defineConfig({
   // the shell does nothing to speed up.
   prefetch: { prefetchAll: false },
   vite: {
-    plugins: [tailwindcss(), shellFallback()],
+    plugins: [tailwindcss(), shellFallback(), ...(E2E ? [apiUnavailable()] : [])],
     server: {
-      proxy: {
-        // Only `astro dev` uses this; the production binary serves `/api` itself.
-        // The Playwright suite never reaches it — `e2e/fixtures.ts` answers every
-        // unstubbed `/api` request itself (docs/DECISIONS.md #96).
-        "/api": process.env.AXGIT_API_URL ?? "http://127.0.0.1:8080",
-      },
+      // Only `astro dev` proxies `/api`; the production binary serves it
+      // itself. Under `AXGIT_E2E` there is nothing to proxy to, so the
+      // proxy is dropped entirely and `apiUnavailable()` answers instead.
+      proxy: E2E ? {} : { "/api": process.env.AXGIT_API_URL ?? "http://127.0.0.1:8080" },
     },
   },
 });

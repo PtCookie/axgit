@@ -70,9 +70,10 @@ jobs:
 
   # Independent of web-build: the e2e suite mocks `/api` through
   # `page.route` and runs against `astro dev`, so it needs neither `web/dist`
-  # nor an axgit binary. A request no spec stubbed never reaches the dev
-  # server's proxy (and 8080, where nothing listens) — `web/e2e/fixtures.ts`
-  # answers it 503 and fails that test (docs/DECISIONS.md #96).
+  # nor an axgit binary. A request no spec stubbed never reaches 8080, where
+  # nothing listens: `web/e2e/fixtures.ts` answers it 503 and fails that test,
+  # and the dev server Playwright spawns has no `/api` proxy at all
+  # (docs/DECISIONS.md #96).
   web:
     name: web
     runs-on: ubuntu-latest
