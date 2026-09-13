@@ -15,7 +15,7 @@
 # ---------------------------------------------------------------------------
 # Stage: web — pnpm --filter web build -> web/dist
 # ---------------------------------------------------------------------------
-FROM docker.io/library/node:24.20-alpine3.24 AS web
+FROM docker.io/library/node:26.8-alpine3.24 AS web
 
 # The root package.json pins packageManager to an exact pnpm version; corepack
 # reads that field instead of fetching whatever pnpm is latest.
