@@ -27,7 +27,6 @@ export default defineConfig({
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */
     baseURL: "http://localhost:4321",
-
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: "on-first-retry",
   },
@@ -38,26 +37,28 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
-
     {
-      name: "firefox",
-      use: { ...devices["Desktop Firefox"] },
+      name: "Mobile Chrome",
+      use: { ...devices["Pixel 5"] },
     },
 
-    {
-      name: "webkit",
-      use: { ...devices["Desktop Safari"] },
-    },
-
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
+    /* Test against minor browsers on CI. */
+    ...(process.env.CI
+      ? [
+          {
+            name: "firefox",
+            use: { ...devices["Desktop Firefox"] },
+          },
+          {
+            name: "webkit",
+            use: { ...devices["Desktop Safari"] },
+          },
+          {
+            name: "Mobile Safari",
+            use: { ...devices["iPhone 12"] },
+          },
+        ]
+      : []),
 
     /* Test against branded browsers. */
     // {
@@ -72,7 +73,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: "pnpm dev",
+    command: "pnpm run dev",
     url: "http://localhost:4321",
     reuseExistingServer: !process.env.CI,
     // No axgit runs behind this server (docs/DECISIONS.md #92): the specs
@@ -80,6 +81,6 @@ export default defineConfig({
     // `/api` proxy for this server, so a request that escapes interception
     // while a page is closing gets a local 503 instead of an ECONNREFUSED
     // stack trace in the run's log (docs/DECISIONS.md #96).
-    env: { AXGIT_E2E: "1" },
+    env: { ASTRO_DEV_BACKGROUND: "0", AXGIT_E2E: "1" },
   },
 });
