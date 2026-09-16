@@ -103,7 +103,7 @@ const COMMIT_DIFF = {
   ],
 };
 
-test("shows the repository summary, README, and links to refs", async ({ page }) => {
+test("shows the repository summary, README, and links to refs", async ({ page, isMobile }) => {
   await page.route("**/api/v1/repos/git-compose", async (route) => {
     await route.fulfill({ json: SUMMARY });
   });
@@ -137,14 +137,20 @@ test("shows the repository summary, README, and links to refs", async ({ page })
   // details-then-README
   // — `flex-row-reverse` in `pages/[repo]/index.astro`. Compared by
   // bounding box, since that ordering is purely a CSS outcome and nothing in
-  // the markup would catch a regression to a single column.
-  const details = page.getByRole("complementary", { name: "Repository details" });
-  const detailsBox = await details.boundingBox();
-  const readmeBox = await page.getByRole("heading", { name: "Getting started", level: 1 }).boundingBox();
-  if (!detailsBox || !readmeBox) {
-    throw new Error("expected both the details sidebar and the README heading to have a bounding box");
+  // the markup would catch a regression to a single column. Below the `lg`
+  // breakpoint (1024px) the layout collapses to a single column, so mobile
+  // projects render details and README stacked at the same x — skip the
+  // sidebar-position check there rather than assert a layout the page never
+  // claims to have at that width.
+  if (!isMobile) {
+    const details = page.getByRole("complementary", { name: "Repository details" });
+    const detailsBox = await details.boundingBox();
+    const readmeBox = await page.getByRole("heading", { name: "Getting started", level: 1 }).boundingBox();
+    if (!detailsBox || !readmeBox) {
+      throw new Error("expected both the details sidebar and the README heading to have a bounding box");
+    }
+    expect(detailsBox.x).toBeGreaterThan(readmeBox.x);
   }
-  expect(detailsBox.x).toBeGreaterThan(readmeBox.x);
 
   await expect(page.getByRole("link", { name: "1 branch" })).toHaveAttribute("href", "/git-compose/refs");
 
