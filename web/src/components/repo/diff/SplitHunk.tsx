@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { useMemo } from "react";
 
 import type { Hunk, Line } from "@/lib/api/schemas";
@@ -6,7 +7,6 @@ import { mergeTokensWithSegments } from "@/lib/diff/merge-tokens";
 import { pairHunkLines, type SplitRow } from "@/lib/diff/pair-lines";
 import type { HighlightedLine } from "@/lib/format/highlight";
 import TokenSpans from "@/components/repo/diff/TokenSpans";
-import { cn } from "@/lib/utils";
 
 function SegmentSpans({ segments, tint }: { segments: Segment[]; tint: "red" | "green" }) {
   const changedClass = tint === "red" ? "bg-red-500/30 dark:bg-red-500/40" : "bg-green-500/30 dark:bg-green-500/40";

@@ -1,5 +1,6 @@
+import { cn } from "cn";
+
 import { ALLOWED_CONTEXT, type DiffOptions, type DiffViewMode } from "@/lib/diff-options";
-import { cn } from "@/lib/utils";
 
 const NO_EXTRA_PARAMS: Record<string, string> = {};
 const VIEW_MODES: { value: DiffViewMode; label: string }[] = [

@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
@@ -5,7 +6,6 @@ import { getStats } from "@/lib/api/repos";
 import type { BucketStats, StatsPeriod, StatsResults } from "@/lib/api/schemas";
 import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import { statsHref } from "@/lib/repo-href";
-import { cn } from "@/lib/utils";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";

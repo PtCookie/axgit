@@ -3,6 +3,7 @@ import { GitBranchIcon } from "@phosphor-icons/react/dist/ssr/GitBranch";
 import { HouseIcon } from "@phosphor-icons/react/dist/ssr/House";
 import { RssIcon } from "@phosphor-icons/react/dist/ssr/Rss";
 import { TagIcon } from "@phosphor-icons/react/dist/ssr/Tag";
+import { cn } from "cn";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ApiError } from "@/lib/api/client";
@@ -11,7 +12,6 @@ import type { RepoSummary as RepoSummaryData } from "@/lib/api/schemas";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { refsHref } from "@/lib/repo-href";
 import { repoFromPathname } from "@/lib/repo-param";
-import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type State =
