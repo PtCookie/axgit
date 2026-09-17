@@ -19,3 +19,6 @@ fixtures/repos/
 
 # jetbrains setting folder
 .idea/
+
+# codegraph
+.codegraph/
