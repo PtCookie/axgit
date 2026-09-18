@@ -71,16 +71,34 @@ export default defineConfig({
     // },
   ],
 
-  /* Run your local dev server before starting the tests */
+  /* Two modes, chosen by whether `AXGIT_E2E_SERVER` is set (docs/DECISIONS.md
+   * #97):
+   *
+   *   * Locally: nothing sets it, so this spawns `astro dev` as before — no
+   *     axgit runs behind that server (docs/DECISIONS.md #92), the specs
+   *     stub `/api` themselves, and `AXGIT_E2E=1` makes `astro.config.mjs`
+   *     drop the `/api` proxy for it, so a request that escapes interception
+   *     while a page is closing gets a local 503 instead of an ECONNREFUSED
+   *     stack trace in the run's log (docs/DECISIONS.md #96).
+   *   * On CI: the `e2e` workflow job sets `AXGIT_E2E_SERVER` to a real axgit
+   *     binary invocation and this spawns that instead. Not `astro preview`:
+   *     its static-output preview server discards every user Vite plugin
+   *     wholesale, which is where the `/{repo}/…` → `__repo__` shell
+   *     rewrite and cgit redirects live (`astro.config.mjs`'s
+   *     `shellFallback()`) — every `/{repo}/*` navigation this suite makes
+   *     would 404 under it. The binary implements that routing for real
+   *     (`api/src/shell.rs`), and still has no `/api` behind it either, so
+   *     the same `page.route` stubs apply unchanged.
+   */
   webServer: {
-    command: "pnpm run dev",
+    command: process.env.AXGIT_E2E_SERVER ?? "pnpm run dev",
     url: "http://localhost:4321",
+    // Not just a CI/local split: a binary invocation with no `AXGIT_E2E_SERVER`
+    // fallback should fail loudly rather than quietly reuse (or spawn) a dev
+    // server that skips the very routing this mode exists to exercise.
     reuseExistingServer: !process.env.CI,
-    // No axgit runs behind this server (docs/DECISIONS.md #92): the specs
-    // stub `/api` themselves. The flag makes `astro.config.mjs` drop the
-    // `/api` proxy for this server, so a request that escapes interception
-    // while a page is closing gets a local 503 instead of an ECONNREFUSED
-    // stack trace in the run's log (docs/DECISIONS.md #96).
-    env: { ASTRO_DEV_BACKGROUND: "0", AXGIT_E2E: "1" },
+    // Only meaningful for the `astro dev` invocation above — an axgit binary
+    // reads its own `AXGIT_*` settings from CLI flags, not these.
+    env: process.env.AXGIT_E2E_SERVER ? {} : { ASTRO_DEV_BACKGROUND: "0", AXGIT_E2E: "1" },
   },
 });

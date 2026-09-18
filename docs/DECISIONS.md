@@ -2412,3 +2412,45 @@ the missing stubs by hand fixed the specs that were noisy that week without clos
 - **`eslint.config.js` forbids importing `@playwright/test` under `e2e/`** (type-only imports
   excepted). The guard is only as good as its coverage, and a new spec importing `test` directly
   would opt out of it silently.
+
+## #97 CI's e2e job runs Playwright against the real axgit binary, not `astro dev`
+
+Locally, e2e still runs against `astro dev` (#92, #96) — a developer already has it running or
+starts it in seconds. On CI, `astro dev` never exercised the real static-serving path at all:
+`web/src/pages/[repo]/` is one prerendered shell per route *shape*, built under a placeholder
+param and rewritten onto by `astro.config.mjs`'s dev-only middleware (#17, #88) — a JS
+reimplementation of what `api/src/shell.rs::shell_for` does for real in production. A regression
+in the Rust side had no CI coverage; only the JS mirror did.
+
+The obvious fix — `astro preview` on the production build, the pattern used elsewhere
+(`www`'s `AGENTS.md`) — doesn't work here. `astro preview`'s static-output server
+(`node_modules/astro/dist/core/preview/static-preview-server.js`) builds its own Vite config from
+scratch and keeps only `plugins: [vitePluginAstroPreview(settings)]` — every plugin from the
+project's own `astro.config.mjs` is dropped
+(`const { plugins: _plugins, ...userViteConfig } = settings.config.vite ?? {}`). That's exactly
+where `shellFallback()` and the cgit-redirect check live, so every `/{repo}/*` navigation the e2e
+specs make (`/git-compose`, `/git-compose/refs`, `/git-compose/commit/<sha>`, …) would 404 under
+it — confirmed by pointing a debug build of the axgit binary at the same paths and diffing against
+what `astro preview` would answer.
+
+- **The `api` job's binary is the e2e server, not a new Node process.** The default cargo build
+  already embeds `web/dist` (#74, #88) for the "single binary" deploy story; the `api` job already
+  produces it before its `--features api-only` steps. Adding one more `cargo build` there (after
+  `cargo test`, so it's an incremental no-op) and uploading `api/target/debug/axgit` costs nothing
+  new to compile — only an artifact upload/download. This gives the e2e job the *actual* Rust
+  routing code, not a second implementation of it, with zero new server code to maintain.
+- **e2e moved out of the `web` job into its own job, `needs: api`.** `web` keeps check + vitest,
+  independent as before. The job graph is now `web-build → api → e2e`, serializing what used to run
+  in parallel with `api` — the cost of testing against the real binary instead of a parallel-but-
+  unfaithful dev server. `--repo-root` points at an empty directory created in the job (not the
+  default `/srv/git`, which doesn't exist on the runner): nothing in the suite reaches the real
+  repo-scanning code path, every `/api` response is still stubbed by `page.route` the same as
+  before, and `web/e2e/fixtures.ts`'s catch-all still 503s anything a spec forgot.
+- **`playwright.config.ts`'s `webServer.command` branches on `AXGIT_E2E_SERVER`.** Unset (the local
+  default), it spawns `pnpm run dev` exactly as before, `AXGIT_E2E=1` and all. Set — only the CI
+  `e2e` job sets it — it spawns that string as the server command directly, e.g. `<path>/axgit
+  --listen 0.0.0.0:4321 --repo-root <dir>`. `reuseExistingServer: !process.env.CI` is unchanged: CI
+  always spawns fresh (there's nothing to reuse, and reusing would silently mask a binary that
+  failed to start), local runs reuse whatever's already answering on `:4321`.
+- **Artifact uploads drop the executable bit**, so the `e2e` job `chmod +x`s the downloaded binary
+  before spawning it — GitHub Actions has no flag to preserve it instead.

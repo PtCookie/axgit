@@ -9,19 +9,23 @@ import { test as base, expect } from "@playwright/test";
 const isApiRequest = (url: URL) => url.pathname.startsWith("/api/");
 
 /**
- * The e2e suite runs against `astro dev` with no axgit binary behind it
- * (docs/DECISIONS.md #92, #96): every `/api` response a spec relies on is
- * stubbed with `page.route`. Anything a spec *forgets* to stub used to fall
- * through to the dev server's `/api` proxy and out to `127.0.0.1:8080`,
- * where nothing is listening — the island then rendered its error fallback
- * and the test passed anyway, as long as it didn't assert on that data.
- * That made a missing stub invisible, and it made a local run (where the
- * developer may well have an axgit serving `fixtures/repos` on 8080) pass
- * for a different reason than CI's.
+ * Locally the e2e suite runs against `astro dev` with no axgit binary
+ * behind it (docs/DECISIONS.md #92, #96): every `/api` response a spec
+ * relies on is stubbed with `page.route`. Anything a spec *forgets* to stub
+ * used to fall through to the dev server's `/api` proxy and out to
+ * `127.0.0.1:8080`, where nothing is listening — the island then rendered
+ * its error fallback and the test passed anyway, as long as it didn't
+ * assert on that data. That made a missing stub invisible, and it made a
+ * local run (where the developer may well have an axgit serving
+ * `fixtures/repos` on 8080) pass for a different reason than CI's.
  *
- * This fixture closes both: a catch-all route answers every unstubbed `/api`
- * request with a 503 — so nothing reaches the proxy, and the ECONNREFUSED
- * stack traces vite logs for it disappear at the source — and the test fails
+ * On CI the suite instead runs against a real axgit binary with an empty
+ * `--repo-root` (docs/DECISIONS.md #97) — there's no dev-server proxy to
+ * fall through to at all, so an unstubbed request that reached the network
+ * would get a real (empty-repo-root) API response rather than an
+ * ECONNREFUSED proxy failure. Either environment, this fixture closes the
+ * gap the same way: a catch-all route answers every unstubbed `/api`
+ * request with a 503 before it ever leaves the page, and the test fails
  * with the offending URLs.
  *
  * Two ordering facts it rests on, both verified against the installed

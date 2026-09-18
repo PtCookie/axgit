@@ -165,8 +165,11 @@ those changes, run it before committing one.
   (`api/tests/`). git CLI invocations block host config with `GIT_CONFIG_GLOBAL=/dev/null`
   `GIT_CONFIG_SYSTEM=/dev/null` and pin `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` for determinism.
   web uses vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`,
-  `web/tests/`) + Playwright e2e (`web/e2e/`). Pre-commit hooks are handled by lefthook
-  (`lefthook.yml`).
+  `web/tests/`) + Playwright e2e (`web/e2e/`). Locally, e2e runs against `astro dev`
+  (`playwright.config.ts`'s `webServer`); on CI it runs against the real axgit binary instead
+  (docs/DECISIONS.md #97) — `astro preview` can't stand in for it, since its preview server drops
+  every Vite plugin from `astro.config.mjs`, including the `/{repo}/…` shell rewrite the e2e specs
+  navigate through. Pre-commit hooks are handled by lefthook (`lefthook.yml`).
 - **Claude Code sandbox note**: Playwright e2e launches real browser processes, which macOS's
   sandbox blocks (`bootstrap_check_in ... Permission denied`) unless excluded —
   `.claude/settings.json`'s `sandbox.excludedCommands: ["pnpm --filter web run test*"]` handles
@@ -174,8 +177,11 @@ those changes, run it before committing one.
   itself, not chained after `cd &&` or wrapped in a subshell, or the exclusion won't apply and
   every test fails with the same Mach port error.
 - **CI/CD**: GitHub Actions (`.github/workflows/`, docs/DECISIONS.md #92) runs the same commands
-  listed above on every push to `main` and on pull requests; `v*` tags additionally publish the
-  release tarballs (`scripts/make-release.sh`) and the GHCR image. **GitHub is a mirror of
+  listed above on every push to `main` and on pull requests, across four jobs — `web-build`
+  (production Astro build), `web` (check + vitest), `api` (rustfmt/clippy/test, plus building and
+  uploading the binary the `e2e` job needs), and `e2e` (Playwright against that binary,
+  docs/DECISIONS.md #97). `v*` tags additionally publish the release tarballs
+  (`scripts/make-release.sh`) and the GHCR image. **GitHub is a mirror of
   `git.ptcookie.net`**, which is force-pushed by git-server's post-receive hook — so no workflow
   may write to the repository (a commit it pushes is erased by the next mirror push), and an
   approved PR is pulled locally and pushed to the origin rather than merged through the GitHub UI.

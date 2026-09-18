@@ -72,9 +72,11 @@ excluded from eslint). When the API changes, regenerate it with `pnpm --filter w
   address (no external requests). Commit message linkification uses regex-based linkify.
 - vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`) + Playwright e2e.
   The API client is tested with fetch mocking, components with fixture JSON. The e2e suite runs
-  against `astro dev` with **no API behind it**: each spec stubs the endpoints its page needs with
+  with **no API behind it** either way: each spec stubs the endpoints its page needs with
   `page.route`, and `e2e/fixtures.ts` answers anything it missed with a 503 and fails the test
   (docs/DECISIONS.md #96) — so import `test`/`expect` from `./fixtures`, never from
-  `@playwright/test` (eslint enforces it). That server also runs with `AXGIT_E2E=1`, which drops
-  the `/api` dev proxy so a request escaping interception as a page closes gets a local 503
-  rather than an ECONNREFUSED trace in the log.
+  `@playwright/test` (eslint enforces it). Locally it runs against `astro dev` with `AXGIT_E2E=1`,
+  which drops the `/api` dev proxy so a request escaping interception as a page closes gets a
+  local 503 rather than an ECONNREFUSED trace in the log; on CI it instead runs against the real
+  axgit binary, since `astro dev`'s dev-only shell-routing middleware has no production
+  counterpart in the test loop otherwise (docs/DECISIONS.md #97).

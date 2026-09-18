@@ -8,14 +8,17 @@ add its decision entry to `docs/DECISIONS.md`, in the same commit.
 
 ## Next up
 
-**Nothing is queued.** The e2e suite now fails a test whose page requested an `/api` endpoint the
-spec never stubbed (#96), instead of letting it leak to the dev proxy and pass against an error
-fallback. Before that, syntax highlighting themes became configurable per color mode (#95),
-which closed the last piece of site presentation still hardcoded — everything an operator sees
-is now reachable from flags, `AXGIT_*` env vars or the config file. Before that, the GitHub
-Actions migration (#92) closed the last item that had a deadline attached: CI runs on every push
-to `main` and on pull requests, and a `v*` tag publishes both the release tarballs and a
-multi-platform GHCR image — the CD half the Jenkins pipeline never had. No cgit-parity gaps
+**Nothing is queued.** CI's e2e job now runs Playwright against the real axgit binary instead of
+`astro dev` (#97), so the Rust static-serving path (`api/src/shell.rs`) has actual coverage rather
+than only its JS mirror; locally, e2e still runs against `astro dev` as before. Before that, the
+e2e suite started failing a test whose page requested an `/api` endpoint the spec never stubbed
+(#96), instead of letting it leak to the dev proxy and pass against an error fallback. Before
+that, syntax highlighting themes became configurable per color mode (#95), which closed the last
+piece of site presentation still hardcoded — everything an operator sees is now reachable from
+flags, `AXGIT_*` env vars or the config file. Before that, the GitHub Actions migration (#92)
+closed the last item that had a deadline attached: CI runs on every push to `main` and on pull
+requests, and a `v*` tag publishes both the release tarballs and a multi-platform GHCR image — the
+CD half the Jenkins pipeline never had. No cgit-parity gaps
 remain (single-child directory collapsing was deliberately left unimplemented, see the "not
 planned" notes below), the single-binary deploy path — feature (#74) and packaging (#75) both —
 is done, configuration has a file surface as well as flags/env (#87), and the docs live next to

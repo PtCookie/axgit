@@ -34,8 +34,9 @@ function isPublicAsset(pathname) {
  * shape, mirroring the production static fallback (`api/src/shell.rs`,
  * docs/DECISIONS.md #17). `astro dev` serves `/{repo}` from the placeholder
  * route it actually built (`src/pages/[repo]/`), so dev and production
- * render the same file. Only affects `astro dev` / Playwright against it —
- * the static build itself is untouched.
+ * render the same file. Only affects `astro dev` (and Playwright running
+ * against it locally, docs/DECISIONS.md #97 — CI's e2e job runs against the
+ * real axgit binary instead) — the static build itself is untouched.
  *
  * The mapping lives in `src/lib/shell.ts` so it has one JS definition and a
  * unit test; only the request plumbing is here.
@@ -59,8 +60,9 @@ function shellFallback() {
         // `fetch(href)` with no adapter-supplied headers, which Chrome/Firefox
         // send as `Accept: */*` with `Sec-Fetch-Dest: empty` — so relying on
         // `accept` alone would make every client-side navigation 404 in dev
-        // (and under Playwright, which runs against `astro dev`) and silently
-        // fall back to a full reload. `sec-fetch-dest` isn't sent by non-browser
+        // (and under Playwright's local run, which spawns `astro dev` —
+        // docs/DECISIONS.md #97) and silently fall back to a full reload.
+        // `sec-fetch-dest` isn't sent by non-browser
         // clients (e.g. `curl`), but those fall through to `next()` untouched
         // either way, so this only ever widens which *browser* requests match.
         const isNavigation =
@@ -156,14 +158,16 @@ function shellRoutes() {
 }
 
 /**
- * True while the Playwright suite is running (`playwright.config.ts` sets it
- * on the `webServer` it spawns). A dev-server-only flag — nothing in
+ * True while Playwright is running its own local `astro dev` server
+ * (`playwright.config.ts` sets it on the `webServer` it spawns in that
+ * mode — never on CI, which runs the e2e suite against a real axgit binary
+ * instead, docs/DECISIONS.md #97). A dev-server-only flag — nothing in
  * `api/src/config/` reads it.
  */
 const E2E = process.env.AXGIT_E2E === "1";
 
 /**
- * Answers `/api` with a 503 instead of proxying it, for the e2e run only.
+ * Answers `/api` with a 503 instead of proxying it, for a local e2e run only.
  *
  * `e2e/fixtures.ts` already stubs or 503s every `/api` request a test makes,
  * but it cannot cover all of them: once a page starts closing, Playwright's
@@ -171,9 +175,10 @@ const E2E = process.env.AXGIT_E2E === "1";
  * (playwright-core 1.62.1, `lib/coreBundle.js`) and lets the request go to
  * the network. A fetch that lands in that window reached the proxy, and
  * vite logged `http proxy error … ECONNREFUSED` for it — a run that passed
- * still looked broken in CI's log. Removing the proxy for the duration of
+ * still looked broken in the log. Removing the proxy for the duration of
  * the suite is the only place that race can be closed (docs/DECISIONS.md
- * #96).
+ * #96). Moot on CI, where there's no dev-server proxy to race in the first
+ * place (docs/DECISIONS.md #97).
  *
  * @returns {NonNullable<import("astro").ViteUserConfig["plugins"]>[number]}
  */
@@ -206,8 +211,9 @@ export default defineConfig({
     plugins: [tailwindcss(), shellFallback(), ...(E2E ? [apiUnavailable()] : [])],
     server: {
       // Only `astro dev` proxies `/api`; the production binary serves it
-      // itself. Under `AXGIT_E2E` there is nothing to proxy to, so the
-      // proxy is dropped entirely and `apiUnavailable()` answers instead.
+      // itself. Under `AXGIT_E2E` (local Playwright only) there is nothing
+      // to proxy to, so the proxy is dropped entirely and `apiUnavailable()`
+      // answers instead.
       proxy: E2E ? {} : { "/api": process.env.AXGIT_API_URL ?? "http://127.0.0.1:8080" },
     },
   },
