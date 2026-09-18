@@ -70,8 +70,8 @@ const navActive = NAV_ACTIVE[active];
       *first* load of a repository page, which happens before body content
       (and so before `Layout`'s head script could find `[data-repo-name]`
       itself even if it tried). `is:inline` keeps it a synchronous classic
-      script that runs before first paint — a bundled `<script>` is deferred
-      (`type="module"`) and would flash an empty heading and dead tab links.
+      script that runs before first paint — a bundled script tag is deferred
+      (type="module") and would flash an empty heading and dead tab links.
     */
   }
   <script is:inline>

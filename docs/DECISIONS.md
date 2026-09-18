@@ -2454,3 +2454,48 @@ what `astro preview` would answer.
   failed to start), local runs reuse whatever's already answering on `:4321`.
 - **Artifact uploads drop the executable bit**, so the `e2e` job `chmod +x`s the downloaded binary
   before spawning it — GitHub Actions has no flag to preserve it instead.
+
+## #98 A literal `<script>` inside a comment before a real inline script hangs Vitest
+
+CI's `web` job's Vitest step ran 20+ minutes with no output and had to be cancelled by hand —
+reproducible locally after clearing `node_modules/.vite` (a warm cache masks it). The actual chain:
+
+1. `vitest.config.ts` uses `getViteConfig` from `astro/config`, which feeds Vite's dependency
+   scanner every page and layout as an entry, including their hoisted/inline `<script>` bodies as
+   separate virtual modules (`<file>?id=N`) for Rolldown to scan.
+2. For `Layout.astro` and `RepoLayout.astro`, that virtual module's *content* came out wrong:
+   `Layout.astro?id=0` began mid-sentence with `` ` is deferred (type="module") and would flash the
+   light theme… ``. Both files' inline theme/shell-fill scripts are preceded by a `{/* … */}`
+   comment that — for readability — named the tag it was talking about as `` `<script>` ``. The
+   scan tooling that carves an inline script's source out of the surrounding file text apparently
+   locates the tag by searching for the literal substring `<script`, and matched the one *inside
+   the comment* instead of the real `<script is:inline>` a few lines below — slicing from there
+   onward instead of from the actual tag. The result fails to parse (`Unterminated string` /
+   `Expected a semicolon…`), so **the entire batched scan fails for every entry**, not just these
+   two files.
+3. Vite logs that failure as a one-line warning and "skips dependency pre-bundling" rather than
+   erroring — so the run doesn't stop. Instead, dependencies that would have been pre-bundled up
+   front (`vitest-browser-react`, `recharts`, individual `@phosphor-icons/react` icon subpaths) get
+   optimized lazily, the first time a test actually imports them, each one triggering a full
+   dev-server reload (`[vitest] Vite unexpectedly reloaded a test…`) in the middle of a live browser
+   test run. Most of these are survived, but not all: eventually one leaves a browser instance's
+   test runner waiting on an RPC response that Vite's reloaded server never sends, and nothing
+   times out that wait — the process just hangs until something external kills it.
+- **Fix: don't spell out `<script>` inside a comment that precedes a real inline `<script>` tag.**
+  Both comments now say "a bundled script tag" instead of `` `<script>` ``. Rewording, not a
+  behavior change — re-running with a cleared `node_modules/.vite` after the edit shows no scan
+  failure, no lazy-reload log lines, and all 1050 tests passing in ~10s (previously: hangs
+  indefinitely once triggered). Confirmed by first trying to fix the *other* backtick pair in the
+  same comments (`` `type="module"` ``) alone — that alone did not fix it, isolating the literal
+  `<script` substring specifically as the trigger, not backticks or template-literal-like text in
+  general (which the rest of this codebase's comments use constantly with no issue).
+- **Why this wasn't caught by `astro build`, `astro dev`, or `astro check`.** None of those run
+  Vite's batched multi-entry dependency *scan* — that code path is specific to how
+  `@vitest/browser-playwright` primes the browser's module graph before running tests. A normal
+  build or dev server compiles each file directly and never hits the buggy extraction path.
+- **Not fixed by adding `optimizeDeps.include`** for the specific packages that got lazily
+  optimized (the pattern used for browser-mode flakiness of this shape in other Astro+Vitest
+  projects, e.g. `astro:transitions`): that would only mask *this* run's set of lazily-discovered
+  dependencies, not the underlying scan failure, and a future dependency change could still trigger
+  the same failure-then-hang chain through a different import. Fixing the scan itself removes the
+  whole class.

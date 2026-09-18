@@ -44,8 +44,8 @@ const { title = "Axgit" } = Astro.props;
       /*
         Resolves the theme onto <html> before the document has a body, so no
         paint ever happens with the wrong one. `is:inline` keeps this a
-        synchronous classic script — a bundled `<script>` becomes a deferred
-        `type="module"` and would flash the light theme on every load for
+        synchronous classic script — a bundled script tag becomes a deferred
+        type="module" and would flash the light theme on every load for
         anyone on dark, the same lesson RepoLayout.astro's fill-in script
         records. `data-theme-init` is both the e2e test hook and, per Astro's
         rules, what makes `is:inline` structural: any non-`src` attribute

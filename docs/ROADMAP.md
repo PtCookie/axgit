@@ -8,9 +8,14 @@ add its decision entry to `docs/DECISIONS.md`, in the same commit.
 
 ## Next up
 
-**Nothing is queued.** CI's e2e job now runs Playwright against the real axgit binary instead of
-`astro dev` (#97), so the Rust static-serving path (`api/src/shell.rs`) has actual coverage rather
-than only its JS mirror; locally, e2e still runs against `astro dev` as before. Before that, the
+**Nothing is queued.** CI's `web` job's Vitest step no longer hangs indefinitely: a comment in
+`Layout.astro`/`RepoLayout.astro` that named a real inline `<script>` tag's own tag literally
+(`` `<script>` ``) made Vite's dependency scanner mis-locate that script's source, fail the whole
+scan, and fall back to lazy dependency optimization mid-test-run — which eventually left a browser
+test waiting on a response that never arrived (#98). Before that, CI's e2e job started running
+Playwright against the real axgit binary instead of `astro dev` (#97), so the Rust static-serving
+path (`api/src/shell.rs`) has actual coverage rather than only its JS mirror; locally, e2e still
+runs against `astro dev` as before. Before that, the
 e2e suite started failing a test whose page requested an `/api` endpoint the spec never stubbed
 (#96), instead of letting it leak to the dev proxy and pass against an error fallback. Before
 that, syntax highlighting themes became configurable per color mode (#95), which closed the last
