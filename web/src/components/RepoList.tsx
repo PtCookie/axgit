@@ -212,6 +212,7 @@ export default function RepoList() {
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Filter repositories…"
         aria-label="Filter repositories"
+        autoComplete="off"
       />
       {isFiltered && (
         <p role="status" className="text-muted-foreground text-sm">

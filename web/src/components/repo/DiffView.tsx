@@ -184,6 +184,8 @@ export default function DiffView({
             defaultValue={resolvedFrom ?? ""}
             placeholder="e.g. main"
             aria-label="Compare from revision"
+            autoComplete="off"
+            spellCheck={false}
             className="w-44"
           />
         </label>
@@ -196,6 +198,8 @@ export default function DiffView({
             defaultValue={resolvedTo ?? ""}
             placeholder="e.g. HEAD"
             aria-label="Compare to revision"
+            autoComplete="off"
+            spellCheck={false}
             className="w-44"
           />
         </label>

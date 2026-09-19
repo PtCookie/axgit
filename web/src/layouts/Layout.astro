@@ -20,6 +20,18 @@ const { title = "Axgit" } = Astro.props;
     <link rel="icon" href="/favicon.ico" />
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content="Self-hosted Git repository web viewer" />
+    {
+      /*
+        Kept to `--background`'s two resolved values (`global.css`) rather
+        than a `prefers-color-scheme` media pair: the resolved theme can
+        differ from the OS preference (an explicit light/dark override,
+        `components/theme.tsx`), and a media-conditioned meta can't express
+        that. `data-theme-color` marks it for the same scripts that resolve
+        `dark` — the inline one below and `theme.tsx`'s `apply()` — to update
+        synchronously, before paint, alongside the `dark` class itself.
+      */
+    }
+    <meta name="theme-color" content="#ffffff" data-theme-color />
     <title>{title}</title>
     <ClientRouter />
     {
@@ -94,11 +106,18 @@ const { title = "Axgit" } = Astro.props;
             // leaving the page unthemed.
           }
 
+          const resolvedDark =
+            pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.dataset.theme = pref;
-          document.documentElement.classList.toggle(
-            "dark",
-            pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches),
-          );
+          document.documentElement.classList.toggle("dark", resolvedDark);
+
+          // Keyed to the same two `--background` values `theme.tsx`'s
+          // `apply()` uses — see that function's comment for why this isn't
+          // shared as an import (this is a separate `is:inline` script).
+          const themeColorMeta = document.querySelector("[data-theme-color]");
+          if (themeColorMeta) {
+            themeColorMeta.content = resolvedDark ? "#090b0c" : "#ffffff";
+          }
         }
 
         applyStoredTheme();

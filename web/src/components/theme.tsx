@@ -16,6 +16,12 @@ export function isTheme(value: string | null | undefined): value is Theme {
   return value === "system" || value === "light" || value === "dark";
 }
 
+/** Values of `--background` (`global.css`, light and dark) for the two
+ *  resolved themes — kept in sync with `<meta name="theme-color">` below, so
+ *  the browser chrome (address bar, task switcher) always matches the page
+ *  rather than the OS preference. */
+const THEME_COLOR = { light: "#ffffff", dark: "#090b0c" } as const;
+
 /** Applies `theme` to <html>: `data-theme` carries the *preference*
  *  (system/light/dark), the `dark` class carries the *resolved* value that
  *  `global.css`'s `@custom-variant dark` and `.dark {}` token block key off.
@@ -23,8 +29,14 @@ export function isTheme(value: string | null | undefined): value is Theme {
  *  duplicated rather than shared, since that one is a separate `is:inline`
  *  script with no import of its own. */
 export function apply(theme: Theme, media: MediaQueryList) {
+  const resolvedDark = theme === "dark" || (theme === "system" && media.matches);
   document.documentElement.dataset.theme = theme;
-  document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && media.matches));
+  document.documentElement.classList.toggle("dark", resolvedDark);
+
+  const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeColorMeta) {
+    themeColorMeta.setAttribute("content", resolvedDark ? THEME_COLOR.dark : THEME_COLOR.light);
+  }
 }
 
 /** Leaf module shared by the eager `ThemeToggle` and the lazy `ThemeMenu` —

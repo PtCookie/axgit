@@ -120,13 +120,14 @@ export default function SearchView({ repo, q: qParam, type: typeParam, ref: refP
           defaultValue={resolvedQuery}
           placeholder="Search this repository…"
           aria-label="Search query"
+          autoComplete="off"
           className="min-w-48 flex-1"
         />
         <select
           name="type"
           defaultValue={resolvedType}
           aria-label="Search type"
-          className="border-input bg-input/50 h-9 rounded-3xl border px-3 text-sm"
+          className="border-input bg-input/50 text-foreground h-9 rounded-3xl border px-3 text-sm"
         >
           {TYPE_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>

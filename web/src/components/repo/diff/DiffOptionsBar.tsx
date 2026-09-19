@@ -72,7 +72,7 @@ export default function DiffOptionsBar({ options, extraParams = NO_EXTRA_PARAMS,
             name="context"
             defaultValue={String(options.context)}
             aria-label="Context lines"
-            className="border-input bg-input/50 h-8 rounded-md border px-2 text-sm"
+            className="border-input bg-input/50 text-foreground h-8 rounded-md border px-2 text-sm"
           >
             {ALLOWED_CONTEXT.map((value) => (
               <option key={value} value={value}>
@@ -89,7 +89,7 @@ export default function DiffOptionsBar({ options, extraParams = NO_EXTRA_PARAMS,
           type="submit"
           className="border-input bg-input/50 hover:bg-accent h-8 rounded-md border px-3 text-sm font-medium"
         >
-          Apply
+          Apply diff options
         </button>
       </form>
     </div>

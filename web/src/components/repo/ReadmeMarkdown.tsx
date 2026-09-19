@@ -142,7 +142,18 @@ export default function ReadmeMarkdown({ repo, content }: ReadmeMarkdownProps) {
         <a className="text-primary underline underline-offset-2" href={href ? rewriteHref(href) : href} {...props} />
       ),
       img: ({ src, ...props }) => (
-        <img className="max-w-full" src={typeof src === "string" ? rewriteSrc(src) : src} {...props} />
+        // No `width`/`height`: markdown carries no intrinsic size for an
+        // arbitrary repository image, and probing it would cost a network
+        // round trip per image just to prevent a reflow that's already
+        // scoped to this one element (`max-w-full`), not the surrounding
+        // layout.
+        <img
+          className="max-w-full"
+          loading="lazy"
+          decoding="async"
+          src={typeof src === "string" ? rewriteSrc(src) : src}
+          {...props}
+        />
       ),
       ul: (props) => <ul className="list-disc space-y-1 pl-6" {...props} />,
       ol: (props) => <ol className="list-decimal space-y-1 pl-6" {...props} />,
