@@ -33,7 +33,7 @@ interface RepoSummaryProps {
 function MetaItem({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{label}</dt>
+      <dt className="text-muted-foreground text-xs font-medium">{label}</dt>
       <dd className="mt-1 text-sm break-words">{children}</dd>
     </div>
   );

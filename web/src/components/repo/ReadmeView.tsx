@@ -89,7 +89,7 @@ export default function ReadmeView({ repo }: ReadmeViewProps) {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-muted-foreground font-mono text-xs tracking-wide uppercase">{readme.path}</h2>
+      <h2 className="text-muted-foreground font-mono text-xs">{readme.path}</h2>
       <ReadmeBody format={readme.format} content={readme.content} repo={resolvedRepo} />
     </div>
   );
