@@ -14,6 +14,8 @@ export function getStaticPaths() {
 
 <RepoLayout active="search" title="Search — Axgit">
   <SearchView client:only="react">
-    <div slot="fallback"><SearchViewSkeleton /></div>
+    <div slot="fallback">
+      <SearchViewSkeleton />
+    </div>
   </SearchView>
 </RepoLayout>

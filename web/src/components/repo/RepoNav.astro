@@ -36,22 +36,20 @@ const TABS = [
 <div class="mb-6 space-y-3">
   <h1 class="font-heading text-2xl font-medium break-all" data-repo-name data-title-suffix={titleSuffix}></h1>
   <nav class="border-border flex flex-wrap gap-4 border-b">
-    {
-      TABS.map((tab) => (
-        <a
-          href="/"
-          data-repo-href={tab.sub}
-          aria-current={tab.key === active ? "page" : undefined}
-          class:list={[
-            "-mb-px border-b-2 px-1 pb-2 text-sm font-medium",
-            tab.key === active
-              ? "border-primary text-foreground"
-              : "text-muted-foreground hover:text-foreground border-transparent",
-          ]}
-        >
-          {tab.label}
-        </a>
-      ))
-    }
+    {TABS.map((tab) => (
+      <a
+        href="/"
+        data-repo-href={tab.sub}
+        aria-current={tab.key === active ? "page" : undefined}
+        class:list={[
+          "-mb-px border-b-2 px-1 pb-2 text-sm font-medium",
+          tab.key === active
+            ? "border-primary text-foreground"
+            : "text-muted-foreground hover:text-foreground border-transparent",
+        ]}
+      >
+        {tab.label}
+      </a>
+    ))}
   </nav>
 </div>

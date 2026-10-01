@@ -18,6 +18,8 @@ export function getStaticPaths() {
 
 <RepoLayout active="blob" title="Blob — Axgit">
   <BlobView client:only="react">
-    <div slot="fallback"><BlobViewSkeleton /></div>
+    <div slot="fallback">
+      <BlobViewSkeleton />
+    </div>
   </BlobView>
 </RepoLayout>

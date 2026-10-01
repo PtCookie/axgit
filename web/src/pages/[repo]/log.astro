@@ -14,6 +14,8 @@ export function getStaticPaths() {
 
 <RepoLayout active="log" title="Log — Axgit">
   <CommitLog client:only="react">
-    <div slot="fallback"><CommitLogSkeleton /></div>
+    <div slot="fallback">
+      <CommitLogSkeleton />
+    </div>
   </CommitLog>
 </RepoLayout>

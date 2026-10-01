@@ -7,10 +7,14 @@ import SiteIntro, { SiteIntroSkeleton } from "../components/SiteIntro";
 <Layout>
   <div class="space-y-8">
     <SiteIntro client:only="react">
-      <div slot="fallback"><SiteIntroSkeleton /></div>
+      <div slot="fallback">
+        <SiteIntroSkeleton />
+      </div>
     </SiteIntro>
     <RepoList client:only="react">
-      <div slot="fallback"><RepoListSkeleton /></div>
+      <div slot="fallback">
+        <RepoListSkeleton />
+      </div>
     </RepoList>
   </div>
 </Layout>

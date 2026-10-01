@@ -18,6 +18,8 @@ export function getStaticPaths() {
 
 <RepoLayout active="blame" title="Blame — Axgit">
   <BlameView client:only="react">
-    <div slot="fallback"><BlameViewSkeleton /></div>
+    <div slot="fallback">
+      <BlameViewSkeleton />
+    </div>
   </BlameView>
 </RepoLayout>

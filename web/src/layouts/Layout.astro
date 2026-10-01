@@ -20,8 +20,7 @@ const { title = "Axgit" } = Astro.props;
     <link rel="icon" href="/favicon.ico" />
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content="Self-hosted Git repository web viewer" />
-    {
-      /*
+    {/*
         Kept to `--background`'s two resolved values (`global.css`) rather
         than a `prefers-color-scheme` media pair: the resolved theme can
         differ from the OS preference (an explicit light/dark override,
@@ -29,13 +28,11 @@ const { title = "Axgit" } = Astro.props;
         that. `data-theme-color` marks it for the same scripts that resolve
         `dark` — the inline one below and `theme.tsx`'s `apply()` — to update
         synchronously, before paint, alongside the `dark` class itself.
-      */
-    }
+      */}
     <meta name="theme-color" content="#ffffff" data-theme-color />
     <title>{title}</title>
     <ClientRouter />
-    {
-      /*
+    {/*
         A repository page's `<head>` also carries two `rel="alternate"
         type="application/atom+xml"` feed-discovery links and, when
         `AXGIT_CLONE_URL_BASE` is configured, a `rel="vcs-git"` clone link
@@ -50,10 +47,8 @@ const { title = "Axgit" } = Astro.props;
         this is production-server-only, and there is no dev-time equivalent
         to fall back to either (`clone_url_base` is api-side config Astro
         never sees).
-      */
-    }
-    {
-      /*
+      */}
+    {/*
         Resolves the theme onto <html> before the document has a body, so no
         paint ever happens with the wrong one. `is:inline` keeps this a
         synchronous classic script — a bundled script tag becomes a deferred
@@ -88,8 +83,7 @@ const { title = "Axgit" } = Astro.props;
 
         The counterpart that wires the toggle itself lives in
         `components/ThemeToggle.tsx`.
-      */
-    }
+      */}
     <script is:inline data-theme-init>
       {
         function applyStoredTheme() {
@@ -124,8 +118,7 @@ const { title = "Axgit" } = Astro.props;
         document.addEventListener("astro:after-swap", applyStoredTheme);
       }
     </script>
-    {
-      /*
+    {/*
         Fills in the repository shell's name, <title>, and tab hrefs from
         `location` — see `RepoLayout.astro` and `components/repo/RepoNav.astro`
         for what it reads and why the value isn't known at build time.
@@ -142,8 +135,7 @@ const { title = "Axgit" } = Astro.props;
         `fillSiteChrome` (below) lives in this same script for the same
         reason: it must be defined and its listener registered before the
         first swap, on every shell, repository or not.
-      */
-    }
+      */}
     <script is:inline data-repo-shell-init>
       {
         if (!window.__axgit) {
@@ -257,19 +249,16 @@ const { title = "Axgit" } = Astro.props;
     </script>
   </head>
   <body class="min-h-screen">
-    {
-      /*
+    {/*
         Persisted across navigations rather than torn down and rebuilt: the
         header is identical on every page, and persisting it keeps the
         `ThemeToggle` island alive so its `client:only` hydration (and the
         disabled `ThemeToggleFallback` skeleton that precedes it) doesn't
         flash on every same-site link click.
-      */
-    }
+      */}
     <header class="border-border border-b" transition:persist>
       <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-        {
-          /*
+        {/*
             Logo and title are siblings, not a replacement — cgit's own
             header shape, and it degrades correctly when only one of the two
             is configured. `data-site-brand` carries the link (its `href`
@@ -280,19 +269,21 @@ const { title = "Axgit" } = Astro.props;
             text-only, and is swapped to `axgit:logo`'s content once
             `fillSiteChrome` sees that meta. `alt=""` because the adjacent
             title text already names the site.
-          */
-        }
+          */}
         <a href="/" data-site-brand class="flex items-center gap-2">
           <img data-site-logo alt="" src="/favicon.svg" class="h-6 w-auto" />
-          <span data-site-title class="font-heading text-lg font-medium">Axgit</span>
+          <span data-site-title class="font-heading text-lg font-medium">
+            Axgit
+          </span>
         </a>
         <ThemeToggle client:only="react">
-          <div slot="fallback"><ThemeToggleFallback /></div>
+          <div slot="fallback">
+            <ThemeToggleFallback />
+          </div>
         </ThemeToggle>
       </div>
     </header>
-    {
-      /*
+    {/*
         One-time call for the *first* load of any page: `fillSiteChrome` is
         only defined and registered as an `astro:after-swap` listener above,
         in <head> — before <body> (so `[data-site-title]`) exists. Every
@@ -301,13 +292,11 @@ const { title = "Axgit" } = Astro.props;
         and so never torn down), but `<meta name="description">` and
         `document.title` are both un-persisted <head> content that swap back
         to the shell's build-time defaults on every navigation.
-      */
-    }
+      */}
     <script is:inline>
       window.__axgit.fillSiteChrome();
     </script>
-    {
-      /*
+    {/*
         Deliberately NOT persisted: every data island inside (RepoSummary,
         TreeView, CommitLog, …) reads `location` only once, at mount
         (`lib/repo-param.ts`) — persisting <main> across a same-shell
@@ -323,8 +312,7 @@ const { title = "Axgit" } = Astro.props;
         #32). Because <main> is replaced wholesale on each swap, the
         animation re-runs on its own — no class toggling or event hook
         needed.
-      */
-    }
+      */}
     <main class="mx-auto max-w-5xl px-4 py-6">
       <slot />
     </main>

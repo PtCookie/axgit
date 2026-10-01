@@ -18,6 +18,8 @@ export function getStaticPaths() {
 
 <RepoLayout active="tag" title="Tag — Axgit">
   <TagView client:only="react">
-    <div slot="fallback"><TagViewSkeleton /></div>
+    <div slot="fallback">
+      <TagViewSkeleton />
+    </div>
   </TagView>
 </RepoLayout>
