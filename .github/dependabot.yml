@@ -12,6 +12,8 @@ version: 2
 updates:
   - package-ecosystem: cargo
     directory: /api
+    assignees:
+      - PtCookie
     schedule:
       interval: weekly
     commit-message:
@@ -40,6 +42,8 @@ updates:
   # and keep the other two.
   - package-ecosystem: npm
     directory: /
+    assignees:
+      - PtCookie
     schedule:
       interval: weekly
     commit-message:
@@ -64,6 +68,8 @@ updates:
 
   - package-ecosystem: docker
     directory: /
+    assignees:
+      - PtCookie
     schedule:
       interval: weekly
     commit-message:
@@ -71,6 +77,8 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    assignees:
+      - PtCookie
     schedule:
       interval: weekly
     commit-message:
