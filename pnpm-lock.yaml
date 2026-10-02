@@ -112,14 +112,14 @@ importers:
         specifier: ^7.13.0
         version: 7.13.0(typescript@5.9.3)
       prettier:
-        specifier: 3.9.8
-        version: 3.9.8
+        specifier: 3.9.6
+        version: 3.9.6
       prettier-plugin-astro:
         specifier: 1.0.0
-        version: 1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.8)
+        version: 1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.6)
       prettier-plugin-tailwindcss:
         specifier: 0.8.1
-        version: 0.8.1(prettier-plugin-astro@1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.8))(prettier@3.9.8)
+        version: 0.8.1(prettier-plugin-astro@1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.6))(prettier@3.9.6)
       shadcn:
         specifier: ^4.21.0
         version: 4.21.0(supports-color@10.2.2)(typescript@5.9.3)
@@ -3426,8 +3426,8 @@ packages:
       prettier-plugin-svelte:
         optional: true
 
-  prettier@3.9.8:
-    resolution: {integrity: sha512-WRFq3Wn3WId7LLROfMLdH7xaFr2jR62wU8nLO6rQUOLOxNZUviyJQs1M0iIhLexSFy+L+w0ch66wtoO2jRjG0A==}
+  prettier@3.9.6:
+    resolution: {integrity: sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -7701,23 +7701,23 @@ snapshots:
 
   prelude-ls@1.2.1: {}
 
-  prettier-plugin-astro@1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.8):
+  prettier-plugin-astro@1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.6):
     dependencies:
       '@astrojs/compiler-rs': 0.4.1(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)
       '@prettier/parse-srcset': 3.1.0
-      prettier: 3.9.8
+      prettier: 3.9.6
       sass-formatter: 0.8.0
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
-  prettier-plugin-tailwindcss@0.8.1(prettier-plugin-astro@1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.8))(prettier@3.9.8):
+  prettier-plugin-tailwindcss@0.8.1(prettier-plugin-astro@1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.6))(prettier@3.9.6):
     dependencies:
-      prettier: 3.9.8
+      prettier: 3.9.6
     optionalDependencies:
-      prettier-plugin-astro: 1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.8)
+      prettier-plugin-astro: 1.0.0(@emnapi/core@2.0.0-alpha.4)(@emnapi/runtime@2.0.0-alpha.4)(prettier@3.9.6)
 
-  prettier@3.9.8: {}
+  prettier@3.9.6: {}
 
   pretty-ms@9.3.1:
     dependencies:

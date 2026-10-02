@@ -58,6 +58,7 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+      - dependency-name: "prettier"
     groups:
       npm:
         patterns:
