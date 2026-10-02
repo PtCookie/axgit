@@ -249,13 +249,13 @@ describe("TreeView", () => {
     mockedGetTree.mockRejectedValue(new ApiError("path_not_found", "path 'nope' not found", 404));
     await render(<TreeView repo="git-compose" path="nope" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Path not found.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Path not found.");
   });
 
   it("shows a repository-not-found message", async () => {
     mockedGetTree.mockRejectedValue(new ApiError("repo_not_found", "repository 'nope' not found", 404));
     await render(<TreeView repo="nope" path="" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Repository not found.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Repository not found.");
   });
 });

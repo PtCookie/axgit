@@ -89,7 +89,7 @@ describe("CommitView", () => {
     await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("heading", { name: "fix: update a" })).toBeVisible();
-    await expect.element(page.getByText("full body")).toBeVisible();
+    await expect.element(page.getByText("full body", { exact: false })).toBeVisible();
     await expect.element(page.getByText(AUTHOR.name).first()).toBeVisible();
     await expect.element(page.getByText("a.txt").first()).toBeVisible();
     await expect.element(page.getByText("one")).toBeVisible();
@@ -150,8 +150,8 @@ describe("CommitView", () => {
     await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
     await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
-    await expect.element(page.getByText("Reviewed-by: someone")).toBeVisible();
-    await expect.element(page.getByText("LGTM")).toBeVisible();
+    await expect.element(page.getByText("Reviewed-by: someone", { exact: false })).toBeVisible();
+    await expect.element(page.getByText("LGTM", { exact: false })).toBeVisible();
   });
 
   it("shows no Notes block when the commit has no git note", async () => {
@@ -185,7 +185,7 @@ describe("CommitView", () => {
     mockedGetCommitDiff.mockResolvedValue(DIFF);
     await render(<CommitView repo="git-compose" sha={DETAIL.sha} />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 
   it("shows every ref badge pointing at the commit, uncapped", async () => {
@@ -288,7 +288,7 @@ describe("CommitView", () => {
     mockedGetCommitDiff.mockResolvedValue(DIFF);
     await render(<CommitView repo="git-compose" sha={DETAIL.sha} path="a.txt" />);
 
-    await expect.element(page.getByText("Showing only")).toBeVisible();
+    await expect.element(page.getByText("Showing only", { exact: false })).toBeVisible();
     await expect.element(page.getByText("a.txt").first()).toBeVisible();
     await expect
       .element(page.getByRole("link", { name: "Show all files" }))

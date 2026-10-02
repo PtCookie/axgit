@@ -144,14 +144,14 @@ describe("SearchView", () => {
     mockedSearchRepo.mockResolvedValue(PATH_RESULTS);
     await render(<SearchView repo="git-compose" q="main" type="path" />);
 
-    await expect.element(page.getByRole("status")).toHaveTextContent("partial result");
+    await expect.element(page.getByRole("status")).toMatchTextContent("partial result");
   });
 
   it("shows an error message when the request fails", async () => {
     mockedSearchRepo.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<SearchView repo="git-compose" q="hello" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 
   it("defaults to type=content when omitted", async () => {

@@ -117,6 +117,6 @@ describe("TagView", () => {
     mockedGetTag.mockRejectedValue(new ApiError("ref_not_found", "not found", 404));
     await render(<TagView repo="git-compose" name="no-such-tag" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Tag not found.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Tag not found.");
   });
 });

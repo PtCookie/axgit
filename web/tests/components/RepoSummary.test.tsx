@@ -85,7 +85,7 @@ describe("RepoSummary", () => {
     mockedGetRepo.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<RepoSummary repo="git-compose" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 
   it("links branch and tag counts to the refs page", async () => {

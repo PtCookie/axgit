@@ -96,7 +96,7 @@ describe("ReadmeView", () => {
     mockedGetReadme.mockResolvedValue({ path: "README", format: "plain", content: "just text\nno markup" });
     await render(<ReadmeView repo="git-compose" />);
 
-    await expect.element(page.getByText("just text")).toBeVisible();
+    await expect.element(page.getByText("just text", { exact: false })).toBeVisible();
     // Only the path label (`README`) is a heading — no markdown-derived `h1`.
     expect(page.getByRole("heading", { level: 1 }).elements().length).toBe(0);
   });
@@ -115,6 +115,6 @@ describe("ReadmeView", () => {
     mockedGetReadme.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<ReadmeView repo="git-compose" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 });

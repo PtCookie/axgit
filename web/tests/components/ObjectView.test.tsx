@@ -196,6 +196,6 @@ describe("ObjectView", () => {
     mockedGetObject.mockRejectedValue(new ApiError("object_not_found", "not found", 404));
     await render(<ObjectView repo="git-compose" oid="deadbeef" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Object not found.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Object not found.");
   });
 });

@@ -90,7 +90,7 @@ describe("RepoList", () => {
     mockedListRepos.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<RepoList />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 
   it("filters rows by the typed query and mirrors it into the URL's ?q=", async () => {
@@ -103,7 +103,7 @@ describe("RepoList", () => {
 
     await expect.element(page.getByRole("link", { name: "dotfiles", exact: true })).toBeVisible();
     await expect.element(page.getByRole("link", { name: "git-compose", exact: true })).not.toBeInTheDocument();
-    await expect.element(page.getByRole("status")).toHaveTextContent("1 of 4 repositories");
+    await expect.element(page.getByRole("status")).toMatchTextContent("1 of 4 repositories");
     expect(new URLSearchParams(window.location.search).get("q")).toBe("dotfiles");
   });
 

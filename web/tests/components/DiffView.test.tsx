@@ -144,14 +144,14 @@ describe("DiffView", () => {
     mockedGetDiff.mockRejectedValue(new ApiError("ref_not_found", "ref 'nope' not found", 404));
     await render(<DiffView repo="git-compose" from="nope" to={TO_SHA} />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Revision not found.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Revision not found.");
   });
 
   it("shows the api error message for other failures", async () => {
     mockedGetDiff.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 
   it("populates the revision datalist from getRefs", async () => {
@@ -207,7 +207,7 @@ describe("DiffView", () => {
     mockedGetDiff.mockResolvedValue(REV_DIFF);
     await render(<DiffView repo="git-compose" from={FROM_SHA} to={TO_SHA} path="a.txt" />);
 
-    await expect.element(page.getByText("Showing only")).toBeVisible();
+    await expect.element(page.getByText("Showing only", { exact: false })).toBeVisible();
     await expect
       .element(page.getByRole("link", { name: "Show all files" }))
       .toHaveAttribute("href", `/git-compose/diff?from=${FROM_SHA}&to=${TO_SHA}`);

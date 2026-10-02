@@ -144,7 +144,7 @@ describe("StatsView", () => {
     mockedGetStats.mockResolvedValue({ ...RESULTS, truncated: true });
     await render(<StatsView repo="git-compose" period="month" />);
 
-    await expect.element(page.getByRole("status")).toHaveTextContent("partial result");
+    await expect.element(page.getByRole("status")).toMatchTextContent("partial result");
   });
 
   it("shows a top-N note when the author list is cut by limit", async () => {
@@ -196,13 +196,13 @@ describe("StatsView", () => {
     mockedGetStats.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<StatsView repo="git-compose" period="month" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 
   it("shows a not-found message for a 404", async () => {
     mockedGetStats.mockRejectedValue(new ApiError("repo_not_found", "nope", 404));
     await render(<StatsView repo="nope" period="month" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Repository not found.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Repository not found.");
   });
 });

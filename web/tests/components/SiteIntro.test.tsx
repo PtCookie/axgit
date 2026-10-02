@@ -83,6 +83,6 @@ describe("SiteIntro", () => {
     mockedGetSite.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<SiteIntro />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 });

@@ -85,7 +85,7 @@ describe("CommitLog", () => {
     mockedListCommits.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<CommitLog repo="git-compose" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 
   it("renders an Older link that carries the cursor and preserves ref/path", async () => {

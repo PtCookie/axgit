@@ -91,7 +91,7 @@ describe("RefsView", () => {
     mockedGetRefs.mockRejectedValue(new ApiError("internal", "boom", 500));
     await render(<RefsView repo="git-compose" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("boom");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("boom");
   });
 
   it("links a non-default branch's Compare cell to the default branch, but not the default branch's own row", async () => {

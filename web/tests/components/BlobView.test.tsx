@@ -105,6 +105,6 @@ describe("BlobView", () => {
     mockedGetBlob.mockRejectedValue(new ApiError("path_not_found", "path 'nope' not found", 404));
     await render(<BlobView repo="git-compose" path="nope" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Path not found.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Path not found.");
   });
 });

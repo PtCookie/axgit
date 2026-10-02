@@ -145,6 +145,6 @@ describe("BlameView", () => {
     mockedGetBlob.mockResolvedValue(TEXT_BLOB);
     await render(<BlameView repo="git-compose" path="nope" />);
 
-    await expect.element(page.getByRole("alert")).toHaveTextContent("Path not found.");
+    await expect.element(page.getByRole("alert")).toMatchTextContent("Path not found.");
   });
 });
