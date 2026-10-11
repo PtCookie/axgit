@@ -38,7 +38,7 @@ RUN pnpm --filter web build
 # ---------------------------------------------------------------------------
 # Stage: api — cargo build --release -> /axgit
 # ---------------------------------------------------------------------------
-FROM docker.io/library/rust:1.98-alpine3.24 AS api
+FROM docker.io/library/rust:1.99-alpine3.24 AS api
 
 # musl-dev: libgit2-sys's build.rs falls back to building vendored libgit2
 # (via `cc`) since alpine has no system libgit2 to find via pkg-config — this
