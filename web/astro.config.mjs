@@ -167,7 +167,18 @@ function shellRoutes() {
 const E2E = process.env.AXGIT_E2E === "1";
 
 /**
- * Answers `/api` with a 503 instead of proxying it, for a local e2e run only.
+ * True when the dev server is only there to serve a test run with no axgit
+ * behind it: a local Playwright run (`E2E`) or vitest, which sets `VITEST`
+ * itself. Both drop the `/api` proxy and answer `/api/*` locally instead.
+ * vitest needs it too, although every `/api` module is mocked there: a
+ * rendered `<img src="/api/…/raw/…">` (`ReadmeView.test.tsx`) is a real
+ * browser request, which would otherwise hit the proxy and log
+ * `http proxy error … ECONNREFUSED` (docs/DECISIONS.md #100).
+ */
+const NO_API = E2E || Boolean(process.env.VITEST);
+
+/**
+ * Answers `/api` with a 503 instead of proxying it, when `NO_API` is set.
  *
  * `e2e/fixtures.ts` already stubs or 503s every `/api` request a test makes,
  * but it cannot cover all of them: once a page starts closing, Playwright's
@@ -189,7 +200,7 @@ function apiUnavailable() {
       server.middlewares.use((req, res, next) => {
         if (!(req.url ?? "").startsWith("/api/")) return next();
         res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: { code: "unavailable", message: "api unavailable (e2e)" } }));
+        res.end(JSON.stringify({ error: { code: "unavailable", message: "api unavailable (test run)" } }));
       });
     },
   };
@@ -208,13 +219,13 @@ export default defineConfig({
   // the shell does nothing to speed up.
   prefetch: { prefetchAll: false },
   vite: {
-    plugins: [tailwindcss(), shellFallback(), ...(E2E ? [apiUnavailable()] : [])],
+    plugins: [tailwindcss(), shellFallback(), ...(NO_API ? [apiUnavailable()] : [])],
     server: {
       // Only `astro dev` proxies `/api`; the production binary serves it
-      // itself. Under `AXGIT_E2E` (local Playwright only) there is nothing
-      // to proxy to, so the proxy is dropped entirely and `apiUnavailable()`
-      // answers instead.
-      proxy: E2E ? {} : { "/api": process.env.AXGIT_API_URL ?? "http://127.0.0.1:8080" },
+      // itself. Under `AXGIT_E2E` (local Playwright only) or vitest there is
+      // nothing to proxy to, so the proxy is dropped entirely and
+      // `apiUnavailable()` answers instead.
+      proxy: NO_API ? {} : { "/api": process.env.AXGIT_API_URL ?? "http://127.0.0.1:8080" },
     },
   },
 });

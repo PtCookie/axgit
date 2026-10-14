@@ -2534,3 +2534,27 @@ Axgit's own `ReadmeMarkdown` (#21) — so the constraint is what all three agree
   plus a second (the README island fetches after load); the diff at `?view=split` on the last
   commit, in a 1280x900 viewport scrolled to the changed-files table; the log in the dark theme
   via `set-color-scheme dark`.
+
+## #100 Vitest drops the `/api` dev proxy too
+
+`vitest run` printed `http proxy error: /api/v1/repos/git-compose/raw/HEAD/images/logo.png —
+connect ECONNREFUSED 127.0.0.1:8080` three times (once per browser instance) on every run, while
+reporting every test green. Same symptom as #96, different source: every `/api` *module* is mocked
+in these tests, but `ReadmeView.test.tsx` renders a real `<img src="/api/…/raw/…">`, and an image
+the page loads is a real browser request. It goes to the Vite server `getViteConfig` starts for
+browser mode, which carries `astro.config.mjs`'s `/api` proxy to `127.0.0.1:8080`, where nothing
+listens.
+
+- **Reuses #96's mechanism, not a second one.** `astro.config.mjs` now drops the proxy and answers
+  `/api/*` with a local 503 whenever `NO_API` holds: `AXGIT_E2E=1` (unchanged) or `VITEST`, which
+  vitest sets itself in every process. No new flag for a developer to remember.
+- **Silencing the request, not mocking the image.** The test asserts the `src` the component
+  produced, not that the image loaded; the 503 makes the `<img>` fail to load quietly. Pointing the
+  `rawUrl` mock at a `data:` URL would also avoid the request, but only for this one test — the next
+  test that renders an image from `/api` would log the same trace.
+- **Unlike #96, nothing fails on a 503.** The e2e guard fails a test whose page asked for an
+  unstubbed endpoint because those tests are meant to stub every call. Here the mocks are at module
+  level, and a request that never goes through `fetch` (an `<img>`, a `<link>`) is outside what a
+  test could stub.
+- **Plain `astro dev` is untouched.** Without either variable the proxy behaves as before,
+  ECONNREFUSED included, which is the right signal when a developer means to have an API running.

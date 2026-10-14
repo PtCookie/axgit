@@ -79,4 +79,6 @@ excluded from eslint). When the API changes, regenerate it with `pnpm --filter w
   which drops the `/api` dev proxy so a request escaping interception as a page closes gets a
   local 503 rather than an ECONNREFUSED trace in the log; on CI it instead runs against the real
   axgit binary, since `astro dev`'s dev-only shell-routing middleware has no production
-  counterpart in the test loop otherwise (docs/DECISIONS.md #97).
+  counterpart in the test loop otherwise (docs/DECISIONS.md #97). vitest drops the same proxy
+  (it sets `VITEST` itself), because a rendered `<img src="/api/…">` is a real request even
+  when every API module is mocked (docs/DECISIONS.md #100).
