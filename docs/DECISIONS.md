@@ -2499,3 +2499,38 @@ reproducible locally after clearing `node_modules/.vite` (a warm cache masks it)
   dependencies, not the underlying scan failure, and a future dependency change could still trigger
   the same failure-then-hang chain through a different import. Fixing the scan itself removes the
   whole class.
+
+## #99 README screenshots: relative-path plain markdown, WebP under `docs/images/`
+
+An issue asked for screenshots ("GUI with no screenshot"), raised by someone who found the project
+on the GitLab mirror. The README is rendered by three different engines — GitHub, GitLab, and
+Axgit's own `ReadmeMarkdown` (#21) — so the constraint is what all three agree on.
+
+- **Plain `![alt](docs/images/x.webp)`, no HTML.** `rehype-sanitize` without `rehype-raw` drops
+  `<img width>`, `<picture>` and `<p align="center">` in Axgit (#21), so sizing/centering that only
+  GitHub and GitLab honor would silently differ. Images are therefore captured at the width they
+  should be shown at (1280px viewport, 1x) rather than resized in the markup.
+- **Relative paths, never absolute URLs.** All three engines resolve them against the repository
+  being viewed (Axgit via `rewriteSrc` → `/raw/...`), and the mirrors carry the files along with the
+  commit. An absolute `raw.githubusercontent.com` URL would tie the other two hosts to one of them
+  and break on a rename.
+- **Lossless WebP** (`cwebp -lossless -z 9`), under `docs/images/`. For flat UI with text it came
+  out smaller than lossy q90 (roughly half, measured on the first set of shots) and has no ringing
+  around glyphs; the four images total ~135 KB. `/raw` types `.webp` via `mime_guess`, and
+  GitHub/GitLab both render it. Every image stays in the git history for good, which is the reason
+  to keep them this small.
+- **One dark-theme image, not a light/dark pair.** The `<picture>` + `prefers-color-scheme` switch
+  is unavailable (#23's known limitation), so a pair would show both stacked in Axgit. A single
+  dark shot (the log, whose graph is the most theme-sensitive part) shows the theme exists.
+- **Captured from invented repositories, built by `scripts/make-screenshot-repos.sh`** — not from
+  `make-fixtures.sh`'s (those have two-line READMEs and a handful of commits, which make dull
+  screenshots, and tests assert on their content, so they can't be enriched for the sake of a
+  picture) and not from a real repository (the first set of shots used copies of the maintainer's
+  own; replaced so the images show nothing that belongs to a real project or person). The script
+  takes its destination as an argument and is deterministic. The showcase repository, `lumen`, has
+  a branchy history with merges and tags, three authors, a README with a list, table and
+  highlighted fences, and a final refactor commit that makes a readable diff.
+- **Recipe**, so a later UI change can refresh them: 1280x800 viewport; wait for `networkidle`
+  plus a second (the README island fetches after load); the diff at `?view=split` on the last
+  commit, in a 1280x900 viewport scrolled to the changed-files table; the log in the dark theme
+  via `set-color-scheme dark`.

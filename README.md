@@ -16,6 +16,25 @@ Docs: [api/README.md](api/README.md) (backend design + the normative API spec) �
 [web/README.md](web/README.md) (frontend design) · [Decisions](docs/DECISIONS.md) ·
 [Roadmap](docs/ROADMAP.md)
 
+## Screenshots
+
+Repository index, with the section grouping and the filter box:
+
+![Repository index](docs/images/index.webp)
+
+A repository's summary page, with the rendered README next to the metadata sidebar:
+
+![Repository summary page](docs/images/summary.webp)
+
+The commit log with its branch/merge graph, ref badges, and the dark theme (it follows the OS
+setting, or can be picked from the header):
+
+![Commit log in the dark theme](docs/images/log-dark.webp)
+
+A commit's diff in the side-by-side view, with intra-line highlighting:
+
+![Side-by-side diff](docs/images/diff-split.webp)
+
 ## Features
 
 Full parity with cgit's own feature set (see `docs/ROADMAP.md` for the audit and the deliberate

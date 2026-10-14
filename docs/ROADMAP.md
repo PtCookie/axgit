@@ -8,7 +8,8 @@ add its decision entry to `docs/DECISIONS.md`, in the same commit.
 
 ## Next up
 
-**Nothing is queued.** CI's `web` job's Vitest step no longer hangs indefinitely: a comment in
+**Nothing is queued.** The README now carries four screenshots (#99), kept to plain markdown with
+relative paths so GitHub, GitLab and Axgit itself all render them. Before that, CI's `web` job's Vitest step no longer hangs indefinitely: a comment in
 `Layout.astro`/`RepoLayout.astro` that named a real inline `<script>` tag's own tag literally
 (`` `<script>` ``) made Vite's dependency scanner mis-locate that script's source, fail the whole
 scan, and fall back to lazy dependency optimization mid-test-run — which eventually left a browser

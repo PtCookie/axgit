@@ -77,6 +77,9 @@ pnpm --filter web run gen:types # then regenerate web types (openapi-typescript)
 # Generate fixture repositories (4 bare repos, fixed dates for reproducibility)
 ./scripts/make-fixtures.sh
 
+# Synthetic repositories the README screenshots are taken from (docs/DECISIONS.md #99)
+./scripts/make-screenshot-repos.sh <dest-dir>
+
 # Local integrated run: AXGIT_STATIC_DIR overrides the binary's baked-in web/dist,
 # handy for iterating on the frontend without a full `cargo build` per change
 cargo run --manifest-path api/Cargo.toml -- --repo-root ./fixtures/repos --static-dir ./web/dist
@@ -218,7 +221,7 @@ axgit/
     tests/            # vitest (browser mode)
     e2e/              # Playwright
   docs/               # DECISIONS.md, ROADMAP.md
-  scripts/            # make-fixtures.sh, make-release.sh
+  scripts/            # make-fixtures.sh, make-screenshot-repos.sh, make-release.sh
   lefthook.yml
   openapi.json        # generated OpenAPI spec (see the regeneration command above)
   axgit.toml          # commented example config file (every key; dev values active)
