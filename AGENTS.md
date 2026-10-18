@@ -151,7 +151,7 @@ those changes, run it before committing one.
   `slot="fallback"` skeleton — don't switch to `client:load` without re-reading DECISIONS.md #17
   (the shell is built under a placeholder param, so a hydrated island would receive it as a prop).
 - Code highlighting uses Shiki, lazy-loaded client-side (dynamic import per language).
-  READMEs use react-markdown + rehype-sanitize; avatars are generated locally with DiceBear
+  READMEs use react-markdown + rehype-raw + rehype-sanitize (GitHub's schema, DECISIONS.md #101); avatars are generated locally with DiceBear
   (no external requests, DECISIONS.md #11).
 - UI components use shadcn/ui, generated into `web/src/components/ui/`. Generated files may be
   modified (vendored approach).

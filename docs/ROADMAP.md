@@ -8,7 +8,10 @@ add its decision entry to `docs/DECISIONS.md`, in the same commit.
 
 ## Next up
 
-**Nothing is queued.** The README now carries four screenshots (#99), kept to plain markdown with
+**Nothing is queued.** README raw HTML now renders (#101): `rehype-raw` parses it and
+`rehype-sanitize` filters it with GitHub's own schema, so a centred `<p align>` + `<img width>`
+header, a light/dark `<picture>` or a `<details>` block shows up as it does on GitHub instead of
+vanishing. Before that, the README gained four screenshots (#99), kept to plain markdown with
 relative paths so GitHub, GitLab and Axgit itself all render them. Before that, CI's `web` job's Vitest step no longer hangs indefinitely: a comment in
 `Layout.astro`/`RepoLayout.astro` that named a real inline `<script>` tag's own tag literally
 (`` `<script>` ``) made Vite's dependency scanner mis-locate that script's source, fail the whole

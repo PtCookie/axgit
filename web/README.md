@@ -66,8 +66,9 @@ excluded from eslint). When the API changes, regenerate it with `pnpm --filter w
   the ids from the `axgit:syntax-theme-*` `<meta>`s `serve_shell` injects, and falls back to
   `github-light`/`github-dark` for an id it has no loader for. Both themes are tokenized at once
   into `color` + `--shiki-dark`, so switching color mode never re-highlights.
-- README rendering: **react-markdown + remark-gfm + rehype-sanitize** (markdown only; rst/plain
-  are shown as `<pre>`).
+- README rendering: **react-markdown + remark-gfm + rehype-raw + rehype-sanitize** with GitHub's
+  sanitize schema, so a README's raw HTML (`<p align>`, `<img width>`, `<picture>`, `<details>`)
+  renders as on GitHub (`docs/DECISIONS.md` #101). Markdown only; rst/plain are shown as `<pre>`.
 - Avatars: generated locally with **DiceBear**, seeded from a hash of the committer's email
   address (no external requests). Commit message linkification uses regex-based linkify.
 - vitest browser mode (`@vitest/browser-playwright` + `vitest-browser-react`) + Playwright e2e.

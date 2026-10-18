@@ -1,12 +1,34 @@
 import { Fragment, isValidElement, useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
-import Markdown, { type Components } from "react-markdown";
-import rehypeSanitize from "rehype-sanitize";
+import Markdown, { type Components, type Options as MarkdownOptions } from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 import { highlightFence, type HighlightedLine } from "@/lib/format/highlight";
-import { isExternalUrl, resolveRepoPath } from "@/lib/markdown-url";
+import { isExternalUrl, resolveRepoPath, rewriteSrcSet } from "@/lib/markdown-url";
 import { blobHref, treeHref } from "@/lib/repo-href";
 import { rawUrl } from "@/lib/api/repos";
+
+/** GitHub's own sanitize rules (`hast-util-sanitize`'s `defaultSchema`), so
+ *  the raw HTML a README carries — `<p align>`, `<img width>`, `<details>`,
+ *  `<kbd>`, `<picture>` — renders as it does on GitHub, while `<script>`,
+ *  `style`, `on*` handlers and unsafe URL schemes are still stripped
+ *  (docs/DECISIONS.md #101). The one addition is `media`/`type` on
+ *  `<source>`, without which a light/dark `<picture>` pair would always pick
+ *  its first `<source>`. */
+const sanitizeSchema: SanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    source: [...(defaultSchema.attributes?.source ?? []), "media", "type"],
+  },
+};
+
+const remarkPlugins: MarkdownOptions["remarkPlugins"] = [remarkGfm];
+// `rehypeRaw` must run first: it parses the README's raw HTML into hast
+// elements, which is what lets `rehypeSanitize` see — and filter — them.
+// In the other order the sanitizer would drop every `raw` node wholesale.
+const rehypePlugins: MarkdownOptions["rehypePlugins"] = [rehypeRaw, [rehypeSanitize, sanitizeSchema]];
 
 interface ReadmeMarkdownProps {
   /** Omitted for a readme with no single owning repository (the site-level
@@ -99,7 +121,7 @@ function MarkdownFence({ code, info }: MarkdownFenceProps) {
 }
 
 /** The markdown-rendering half of `ReadmeView` — lazy-loaded, since
- *  react-markdown/remark-gfm/rehype-sanitize (~135 KB) are only needed for a
+ *  react-markdown/remark-gfm/rehype-raw/rehype-sanitize are only needed for a
  *  repository whose README is actually `format: "markdown"`. `ReadmeView`
  *  keeps the fetch/state machine and the `rst`/`plain` `<pre>` branch, which
  *  need none of this. */
@@ -147,13 +169,19 @@ export default function ReadmeMarkdown({ repo, content }: ReadmeMarkdownProps) {
         // round trip per image just to prevent a reflow that's already
         // scoped to this one element (`max-w-full`), not the surrounding
         // layout.
+        // `h-auto`: an HTML `<img width height>` keeps its aspect ratio
+        // when `max-w-full` caps the width, instead of stretching.
         <img
-          className="max-w-full"
+          className="h-auto max-w-full"
           loading="lazy"
           decoding="async"
           src={typeof src === "string" ? rewriteSrc(src) : src}
           {...props}
         />
+      ),
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      source: ({ srcSet, node, ...props }) => (
+        <source srcSet={typeof srcSet === "string" ? rewriteSrcSet(srcSet, rewriteSrc) : undefined} {...props} />
       ),
       ul: (props) => <ul className="list-disc space-y-1 pl-6" {...props} />,
       ol: (props) => <ol className="list-decimal space-y-1 pl-6" {...props} />,
@@ -187,7 +215,7 @@ export default function ReadmeMarkdown({ repo, content }: ReadmeMarkdownProps) {
 
   return (
     <div className="space-y-3">
-      <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={components}>
+      <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
         {content}
       </Markdown>
     </div>

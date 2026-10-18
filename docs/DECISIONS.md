@@ -247,7 +247,8 @@ Superseded by #17. One note survives: in axum, routes that are `nest`ed or merge
 
 ## #21 README rendering + archive/feed links
 
-- **react-markdown + remark-gfm + rehype-sanitize, no `rehype-raw`** (#11). Raw HTML in a README is
+- **react-markdown + remark-gfm + rehype-sanitize, no `rehype-raw`** (#11) — *superseded by #101,
+  which adds `rehype-raw` in front of the sanitizer*. Raw HTML in a README is
   dropped rather than sanitized-and-kept: re-introducing it would mean trusting
   `hast-util-sanitize`'s schema to catch everything, and repository content is untrusted — the same
   reason Shiki tokens and `linkify.tsx` never use `dangerouslySetInnerHTML`.
@@ -342,7 +343,8 @@ Superseded by #17. One note survives: in axum, routes that are `nest`ed or merge
   instead.
 - **Known limitation**: README images are arbitrary repository content, so a transparent PNG with
   dark artwork can be invisible in dark mode. The usual `<picture>` + `prefers-color-scheme` fix is
-  unavailable because `rehype-sanitize` without `rehype-raw` strips it (#21).
+  unavailable because `rehype-sanitize` without `rehype-raw` strips it (#21). *Since #101 the
+  `<picture>` fix works, though it follows the OS preference rather than a manual override.*
 
 ## #24 Client-side routing via Astro's `<ClientRouter />` (refines #17)
 
@@ -2508,7 +2510,8 @@ Axgit's own `ReadmeMarkdown` (#21) — so the constraint is what all three agree
 
 - **Plain `![alt](docs/images/x.webp)`, no HTML.** `rehype-sanitize` without `rehype-raw` drops
   `<img width>`, `<picture>` and `<p align="center">` in Axgit (#21), so sizing/centering that only
-  GitHub and GitLab honor would silently differ. Images are therefore captured at the width they
+  GitHub and GitLab honor would silently differ. (#101 later made Axgit render that HTML too; the
+  screenshots stay plain markdown, which needs no change.) Images are therefore captured at the width they
   should be shown at (1280px viewport, 1x) rather than resized in the markup.
 - **Relative paths, never absolute URLs.** All three engines resolve them against the repository
   being viewed (Axgit via `rewriteSrc` → `/raw/...`), and the mirrors carry the files along with the
@@ -2558,3 +2561,43 @@ listens.
   test could stub.
 - **Plain `astro dev` is untouched.** Without either variable the proxy behaves as before,
   ECONNREFUSED included, which is the right signal when a developer means to have an API running.
+
+## #101 README raw HTML: `rehype-raw` + GitHub's sanitize schema (refines #21)
+
+The patina repository's README opens with `<p align="center"><img src="docs/header.svg"
+width="960"></p>`, the usual GitHub header idiom. GitHub rendered it; Axgit showed nothing, because
+#21 ran `rehype-sanitize` without `rehype-raw`, so every raw HTML node was dropped whole (not even
+escaped as text: the sanitizer removes `raw` nodes before react-markdown's own raw-to-text fallback
+would run). READMEs written for GitHub lean on this HTML constantly: centred headers, sized images,
+`<details>` sections, `<kbd>`, light/dark `<picture>` pairs.
+
+- **`rehype-raw` before `rehype-sanitize`.** Raw parses the HTML into ordinary hast elements; the
+  sanitizer then filters them by the same rules as markdown-derived ones. The order matters — the
+  other way round, sanitize would still drop every `raw` node and raw would have nothing to parse.
+- **GitHub's own schema** (`hast-util-sanitize`'s `defaultSchema`, which is modelled on GitHub's
+  sanitizer), not a hand-picked allowlist. The point is GitHub parity: a narrower list would fix the
+  header and leave `<details>`/`<kbd>`/`<sup>` still vanishing. The one addition is `media` and
+  `type` on `<source>` — `defaultSchema` keeps only `srcSet` there, which makes a light/dark
+  `<picture>` always pick its first `<source>`.
+- **Why #21's concern no longer holds it back.** #21 declined to rely on the schema alone because
+  repository content is untrusted. Nothing reaches the DOM as an HTML string, though: react-markdown
+  builds React elements through hast-util-to-jsx-runtime, so the schema's job is limited to which
+  elements and attributes exist. It strips `<script>`, `<iframe>`, `<style>`, `<form>` controls,
+  `style` and `on*` attributes and comments, limits `href`/`src` schemes, and prefixes `id`/`name`
+  with `user-content-` against DOM clobbering; react-markdown's `urlTransform` checks `href`/`src`
+  schemes a second time. `ReadmeView.test.tsx` pins the hostile cases.
+- **`srcset` is the gap both checks miss** — neither the schema's `protocols` nor react-markdown's
+  URL attribute list covers it. A `source` component override rewrites each candidate through the
+  same `rewriteSrc` as `<img src>` (so a repository-relative `srcset` resolves via `/raw` like any
+  other README image) and drops candidates whose scheme isn't `http(s)` (`lib/markdown-url.ts`'s
+  `rewriteSrcSet`).
+- **Relative HTML `<img src>`/`<a href>` need nothing new**: they become the same hast elements as
+  their markdown forms, so the existing `img`/`a` overrides rewrite them. `img` gains `h-auto` so an
+  HTML `width`/`height` pair keeps its aspect ratio once `max-w-full` caps the width. `align`
+  passes through and browsers honour it, so no CSS was added for centring.
+- **Cost**: `rehype-raw` brings `hast-util-raw` and `parse5` into the `ReadmeMarkdown` chunk, which
+  is already lazy and loaded only for a markdown README (`ReadmeBody.tsx`). The site-level readme
+  (`SiteIntro.tsx`) goes through the same component and gains the same HTML support.
+- **Remaining limitation**: `<source media="(prefers-color-scheme: dark)">` follows the OS/browser
+  preference, not the manual Light/Dark choice from #23's selector. Rewriting `media` to track that
+  choice would mean re-rendering on every theme switch; not worth it until someone asks.

@@ -56,3 +56,27 @@ export function resolveRepoPath(base: string, url: string): string | null {
 
   return resolved.join("/");
 }
+
+/** Rewrites every candidate URL of an HTML `srcset` (`<source srcset>` inside
+ *  a README's raw `<picture>`, docs/DECISIONS.md #101) through `rewrite`,
+ *  keeping each candidate's width/density descriptor.
+ *
+ *  Unlike `src`, a `srcset` gets no protocol check anywhere else — neither
+ *  react-markdown's `urlTransform` nor the sanitize schema looks at it — so
+ *  a candidate whose URL is absolute but not `http(s)` (or protocol-relative)
+ *  is dropped here. Splits on `,` alone: a `data:` URL's own comma breaks
+ *  that, but `data:` is dropped anyway, and the stray remainder only turns
+ *  into a harmless 404 under `/raw`. Returns `undefined` when no candidate
+ *  survives, so the attribute is omitted rather than left empty. */
+export function rewriteSrcSet(srcSet: string, rewrite: (url: string) => string): string | undefined {
+  const candidates = srcSet
+    .split(",")
+    .map((candidate) => candidate.trim())
+    .filter((candidate) => candidate.length > 0)
+    .flatMap((candidate) => {
+      const [url = "", ...descriptor] = candidate.split(/\s+/);
+      if (isExternalUrl(url) && !/^(https?:)?\/\//i.test(url)) return [];
+      return [[rewrite(url), ...descriptor].join(" ")];
+    });
+  return candidates.length > 0 ? candidates.join(", ") : undefined;
+}

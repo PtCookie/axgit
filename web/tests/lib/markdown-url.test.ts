@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isExternalUrl, resolveRepoPath } from "@/lib/markdown-url";
+import { isExternalUrl, resolveRepoPath, rewriteSrcSet } from "@/lib/markdown-url";
 
 describe("isExternalUrl", () => {
   it("treats http(s)/mailto/data URLs as external", () => {
@@ -55,5 +55,26 @@ describe("resolveRepoPath", () => {
     expect(resolveRepoPath("src/lib", "../README.md")).toBe("src/README.md");
     expect(resolveRepoPath("src/lib", "../../README.md")).toBe("README.md");
     expect(resolveRepoPath("src/lib", "../../../escape.md")).toBeNull();
+  });
+});
+
+describe("rewriteSrcSet", () => {
+  const rewrite = (url: string) => (isExternalUrl(url) ? url : `/raw/${url}`);
+
+  it("rewrites each relative candidate and keeps its descriptor", () => {
+    expect(rewriteSrcSet("dark.png", rewrite)).toBe("/raw/dark.png");
+    expect(rewriteSrcSet("a.png 1x, b.png 2x", rewrite)).toBe("/raw/a.png 1x, /raw/b.png 2x");
+  });
+
+  it("passes http(s) and protocol-relative candidates through", () => {
+    expect(rewriteSrcSet("https://example.com/a.png 480w, //cdn.example.com/b.png 960w", rewrite)).toBe(
+      "https://example.com/a.png 480w, //cdn.example.com/b.png 960w",
+    );
+  });
+
+  it("drops candidates with any other scheme", () => {
+    expect(rewriteSrcSet("javascript:alert(1), a.png 2x", rewrite)).toBe("/raw/a.png 2x");
+    expect(rewriteSrcSet("javascript:alert(1)", rewrite)).toBeUndefined();
+    expect(rewriteSrcSet(" , ", rewrite)).toBeUndefined();
   });
 });

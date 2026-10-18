@@ -9,7 +9,9 @@ import type { ReadmeInfo } from "@/lib/api/schemas";
 
 vi.mock("@/lib/api/repos", () => ({
   getReadme: vi.fn(),
-  rawUrl: vi.fn(() => "/api/v1/repos/git-compose/raw/HEAD/images/logo.png"),
+  // Echoes `path` so each test can tell which file a rewritten `src`/`srcset`
+  // points at.
+  rawUrl: vi.fn((repo: string, _ref: string | undefined, path: string) => `/api/v1/repos/${repo}/raw/HEAD/${path}`),
 }));
 
 const mockedGetReadme = vi.mocked(getReadme);
@@ -61,6 +63,81 @@ describe("ReadmeView", () => {
     await expect
       .element(img, { timeout: 5000 })
       .toHaveAttribute("src", "/api/v1/repos/git-compose/raw/HEAD/images/logo.png");
+  });
+
+  it("renders a README's raw HTML header: centred paragraph, sized image through the raw endpoint", async () => {
+    mockedGetReadme.mockResolvedValue({
+      path: "README.md",
+      format: "markdown",
+      content: '<p align="center">\n  <img src="docs/header.svg" alt="header" width="960">\n</p>\n\n# Patina\n',
+    });
+    await render(<ReadmeView repo="patina" />);
+
+    const img = page.getByRole("img", { name: "header" });
+    // See the timeout note above.
+    await expect
+      .element(img, { timeout: 5000 })
+      .toHaveAttribute("src", "/api/v1/repos/patina/raw/HEAD/docs/header.svg");
+    await expect.element(img).toHaveAttribute("width", "960");
+    expect(img.element().closest("p")?.getAttribute("align")).toBe("center");
+  });
+
+  it("keeps a <picture>'s <source media> and rewrites its srcset", async () => {
+    mockedGetReadme.mockResolvedValue({
+      path: "README.md",
+      format: "markdown",
+      content:
+        '<picture>\n  <source media="(prefers-color-scheme: dark)" srcset="docs/dark.png">\n  <img src="docs/light.png" alt="logo">\n</picture>\n',
+    });
+    const { container } = await render(<ReadmeView repo="git-compose" />);
+
+    await expect
+      .element(page.getByRole("img", { name: "logo" }), { timeout: 5000 })
+      .toHaveAttribute("src", "/api/v1/repos/git-compose/raw/HEAD/docs/light.png");
+    const source = container.querySelector("picture > source");
+    expect(source?.getAttribute("media")).toBe("(prefers-color-scheme: dark)");
+    expect(source?.getAttribute("srcset")).toBe("/api/v1/repos/git-compose/raw/HEAD/docs/dark.png");
+  });
+
+  it("renders GitHub-allowed HTML such as <details>/<summary> and <kbd>", async () => {
+    mockedGetReadme.mockResolvedValue({
+      path: "README.md",
+      format: "markdown",
+      content: "<details>\n<summary>More</summary>\n\nPress <kbd>Ctrl</kbd>.\n\n</details>\n",
+    });
+    const { container } = await render(<ReadmeView repo="git-compose" />);
+
+    await expect.element(page.getByText("More"), { timeout: 5000 }).toBeVisible();
+    expect(container.querySelector("details > summary")?.textContent).toBe("More");
+    expect(container.querySelector("kbd")?.textContent).toBe("Ctrl");
+  });
+
+  it("strips scripts, event handlers, inline styles, iframes and unsafe URL schemes from raw HTML", async () => {
+    mockedGetReadme.mockResolvedValue({
+      path: "README.md",
+      format: "markdown",
+      content: [
+        "# Hostile",
+        "",
+        "<script>window.__pwned = true</script>",
+        '<img src="x.png" alt="evil" onerror="window.__pwned = true">',
+        '<a href="javascript:window.__pwned = true">click</a>',
+        '<p style="position:fixed">styled</p>',
+        '<iframe src="https://example.com"></iframe>',
+        '<picture><source srcset="javascript:alert(1)"><img src="y.png" alt="pic"></picture>',
+        "",
+      ].join("\n"),
+    });
+    const { container } = await render(<ReadmeView repo="git-compose" />);
+
+    await expect.element(page.getByRole("heading", { name: "Hostile", level: 1 }), { timeout: 5000 }).toBeVisible();
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(container.querySelector("[onerror]")).toBeNull();
+    expect(container.querySelector("[style]")).toBeNull();
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull();
+    expect(container.querySelector("source")?.hasAttribute("srcset")).toBe(false);
+    expect((window as { __pwned?: boolean }).__pwned).toBeUndefined();
   });
 
   it("highlights a fenced code block via Shiki, keyed off the fence language", async () => {
