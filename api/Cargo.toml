@@ -57,7 +57,7 @@ toml = { version = "1", default-features = false, features = ["parse", "serde", 
 tower-http = { version = "0.7", features = ["fs", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-utoipa = { version = "5.5.0", features = ["preserve_order"] }
+utoipa = { version = "6.0.0", features = ["preserve_order"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 
 [features]
