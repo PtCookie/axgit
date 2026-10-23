@@ -786,7 +786,7 @@ export interface components {
        *     as `body`, #44).
        */
       renamed_from?: string | null;
-      stat?: null | components["schemas"]["StatCounts"];
+      stat?: components["schemas"]["StatCounts"] | null;
     };
     CommitsPage: {
       commits: components["schemas"]["CommitInfo"][];
@@ -940,9 +940,9 @@ export interface components {
     ObjectDetail: {
       sha: string;
       type: components["schemas"]["ObjectKind"];
-      tree: null | components["schemas"]["ObjectTree"];
-      blob: null | components["schemas"]["ObjectBlob"];
-      tag: null | components["schemas"]["ObjectTag"];
+      tree: components["schemas"]["ObjectTree"] | null;
+      blob: components["schemas"]["ObjectBlob"] | null;
+      tag: components["schemas"]["ObjectTag"] | null;
     };
     /**
      * @description What kind of object a tag's one-level dereference points at. Deliberately
@@ -968,7 +968,7 @@ export interface components {
        *     non-utf8 or all-whitespace message.
        */
       message: string | null;
-      tagger: null | components["schemas"]["CommitAuthor"];
+      tagger: components["schemas"]["CommitAuthor"] | null;
       tagged_at: string | null;
     };
     /**
@@ -1177,7 +1177,7 @@ export interface components {
       title: string;
       /** @description `AXGIT_ROOT_DESC`. `null` when unset. */
       description: string | null;
-      readme: null | components["schemas"]["SiteReadme"];
+      readme: components["schemas"]["SiteReadme"] | null;
     };
     SiteReadme: {
       format: components["schemas"]["ReadmeFormat"];
@@ -1218,7 +1218,7 @@ export interface components {
       buckets: components["schemas"]["BucketStats"][];
       /** @description Sorted by commit count, descending; capped at `limit`. */
       authors: components["schemas"]["AuthorStats"][];
-      others: null | components["schemas"]["OtherAuthors"];
+      others: components["schemas"]["OtherAuthors"] | null;
     };
     /** @description Tag detail of `GET /api/v1/repos/{repo}/tags/{name}` (api/README.md). */
     TagDetail: {
@@ -1244,7 +1244,7 @@ export interface components {
        *     lightweight tag, a non-utf8 message, or an all-whitespace message.
        */
       message: string | null;
-      tagger: null | components["schemas"]["CommitAuthor"];
+      tagger: components["schemas"]["CommitAuthor"] | null;
       tagged_at: string | null;
     };
     /**

@@ -2760,11 +2760,11 @@
           "stat": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/StatCounts",
                 "description": "File/line counts against the first parent, present only when the\nrequest asked for it (`stat=1`, docs/DECISIONS.md #57). Restricted to\nthe `path` filter when one is active (the `follow`-tracked path, at\nthe point of this commit). **The key itself is omitted**, not set to\n`null`, when `stat` is off — same convention as `body` (#44)."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -3124,30 +3124,30 @@
           "tree": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ObjectTree"
               },
               {
-                "$ref": "#/components/schemas/ObjectTree"
+                "type": "null"
               }
             ]
           },
           "blob": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ObjectBlob"
               },
               {
-                "$ref": "#/components/schemas/ObjectBlob"
+                "type": "null"
               }
             ]
           },
           "tag": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ObjectTag"
               },
               {
-                "$ref": "#/components/schemas/ObjectTag"
+                "type": "null"
               }
             ]
           }
@@ -3195,11 +3195,11 @@
           "tagger": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/CommitAuthor",
                 "description": "`None` when the tag object has no tagger line (git allows creating\none without)."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -3603,11 +3603,11 @@
           "readme": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SiteReadme",
                 "description": "From `AXGIT_ROOT_README`. `null` when unset, unreadable, over the\nsize limit, or not valid UTF-8."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -3709,11 +3709,11 @@
           "others": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/OtherAuthors",
                 "description": "Aggregate of the authors past `limit`; `None` when nothing was cut —\nso this is the precise \"`limit` cut the author list\" signal, where\n`truncated` unions that cause with the commit scan budget."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -3764,11 +3764,11 @@
           "tagger": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/CommitAuthor",
                 "description": "`None` for a lightweight tag, and for an annotated tag with no tagger\nline (git allows creating one)."
+              },
+              {
+                "type": "null"
               }
             ]
           },
