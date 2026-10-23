@@ -226,7 +226,7 @@ export default function ObjectView({ repo, oid }: ObjectViewProps) {
             )}
           </dl>
           {detail.tag.message && (
-            <pre className="border-border bg-muted/30 overflow-x-auto rounded-md border p-3 text-sm whitespace-pre-wrap">
+            <pre className="border-border bg-muted overflow-x-auto rounded-md border p-3 text-sm whitespace-pre-wrap">
               {linkify(detail.tag.message, { repo: resolvedRepo })}
             </pre>
           )}

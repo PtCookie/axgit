@@ -2,7 +2,10 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/inter/wght-italic.css";
 @import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/jetbrains-mono/wght-italic.css";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 
 /* The `dark` class is set on <html> itself (`Layout.astro`'s theme script),
  * so the variant has to match the element carrying the class as well as its
@@ -12,6 +15,16 @@
  * how these utilities rank against anything else. */
 @custom-variant dark (&:is(.dark, .dark *));
 
+/*
+ * Design tokens: Patina (https://patina.ptcookie.net, docs/DECISIONS.md #102).
+ * `:root`, `.dark` and `@theme inline` below are Patina's `r/base.json`
+ * (token snapshot 1792693731-8d8b) verbatim, plus `color-scheme`. Don't
+ * hand-tune a value here — change it in Patina and copy the new snapshot in,
+ * so this file never drifts from the system it claims to follow. That
+ * includes the values earlier decisions tuned locally (#23's dark
+ * `--primary`, #29/#73's chart colors): Patina now carries the fix for each
+ * (`--link` for emerald text, a per-theme `chart-*` ramp), see #102.
+ */
 :root {
     /* Renders scrollbars, form controls and the canvas in the matching
      * scheme. Keyed to the resolved theme class rather than
@@ -25,47 +38,78 @@
     --popover-foreground: oklch(0.148 0.004 228.8);
     --primary: oklch(0.508 0.118 165.612);
     --primary-foreground: oklch(0.979 0.021 166.113);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
+    --link: var(--primary);
+    --secondary: oklch(0.963 0.002 197.1);
+    --secondary-foreground: oklch(0.218 0.008 223.9);
     --muted: oklch(0.963 0.002 197.1);
-    --muted-foreground: oklch(0.56 0.021 213.5);
+    --muted-foreground: oklch(0.53 0.021 213.5);
     --accent: oklch(0.963 0.002 197.1);
     --accent-foreground: oklch(0.218 0.008 223.9);
-    --destructive: oklch(0.577 0.245 27.325);
+    --destructive: oklch(0.53 0.22 27.4);
     --border: oklch(0.925 0.005 214.3);
     --input: oklch(0.925 0.005 214.3);
-    --ring: oklch(0.723 0.014 214.4);
-    /* shadcn's generated chart-1 was never checked against the dataviz
-     * skill's checks (docs/DECISIONS.md #29): at its original lightness
-     * (oklch L 0.855) it read at ~1.4:1 against this surface, effectively
-     * invisible as a bar fill. Reset to --primary's hue/chroma, which the
-     * skill's validator already passes here (ALL CHECKS PASS) — one brand
-     * hue instead of introducing an unvalidated new one.
-     * chart-2..5 were shadcn's generated teal ramp — one hue at four
-     * lightness steps, identical in light and dark — which the validator
-     * hard-fails outright (chroma floor, normal-vision floor, and here in
-     * light mode's own band too) rather than merely leaving unverified
-     * (docs/DECISIONS.md #73). Replaced with four hues from the skill's
-     * reference categorical palette (references/palette.md), in an order
-     * derived by enumerating candidates and keeping the one that clears
-     * every check against this surface with the widest margin — not
-     * hand-picked. Slot 1 (the brand hue) anchors the order; light and dark
-     * are stepped separately below, unlike the old identical-in-both-modes
-     * values. */
-    --chart-1: oklch(0.508 0.118 165.612);
-    --chart-2: oklch(0.575 0.163 255.53);
-    --chart-3: oklch(0.671 0.175 40.6);
-    --chart-4: oklch(0.433 0.167 283.6);
-    --chart-5: oklch(0.623 0.191 24.9);
-    --radius: 0.625rem;
+    --ring: oklch(0.6 0.021 213.5);
+    --chart-1: oklch(0.645 0.116 181.071);
+    --chart-2: oklch(0.58 0.102 182.503);
+    --chart-3: oklch(0.515 0.09 184.704);
+    --chart-4: oklch(0.45 0.078 186.391);
+    --chart-5: oklch(0.385 0.066 188.216);
     --sidebar: oklch(0.987 0.002 197.1);
     --sidebar-foreground: oklch(0.148 0.004 228.8);
-    --sidebar-primary: oklch(0.596 0.145 163.225);
+    --sidebar-primary: oklch(0.508 0.118 165.612);
     --sidebar-primary-foreground: oklch(0.979 0.021 166.113);
     --sidebar-accent: oklch(0.963 0.002 197.1);
     --sidebar-accent-foreground: oklch(0.218 0.008 223.9);
     --sidebar-border: oklch(0.925 0.005 214.3);
-    --sidebar-ring: oklch(0.723 0.014 214.4);
+    --sidebar-ring: var(--ring);
+    --success: oklch(0.448 0.119 151.328);
+    --primary-muted: oklch(0.508 0.118 165.612 / 10%);
+    --success-muted: oklch(0.448 0.119 151.328 / 10%);
+    --success-foreground: oklch(0.985 0 0);
+    --warning: oklch(0.473 0.137 46.201);
+    --warning-muted: oklch(0.473 0.137 46.201 / 10%);
+    --warning-foreground: oklch(0.985 0 0);
+    --info: oklch(0.5 0.134 242.749);
+    --info-muted: oklch(0.5 0.134 242.749 / 10%);
+    --info-foreground: oklch(0.977 0.013 236.62);
+    --primary-hover: oklch(0.508 0.118 165.612 / 80%);
+    --secondary-hover: oklch(0.922 0.002 198.685);
+    --muted-hover: oklch(0.963 0.002 197.1 / 50%);
+    --ghost-hover: var(--muted);
+    --outline-hover: var(--muted);
+    --tab-active: var(--background);
+    --tab-foreground: oklch(0.148 0.004 228.8 / 60%);
+    --control: oklch(0.925 0.005 214.3 / 50%);
+    --control-strong: oklch(0.925 0.005 214.3 / 90%);
+    --kbd: oklch(0.53 0.021 213.5 / 10%);
+    --destructive-muted: oklch(0.53 0.22 27.4 / 10%);
+    --destructive-muted-hover: oklch(0.53 0.22 27.4 / 20%);
+    --invalid-ring: oklch(0.53 0.22 27.4 / 20%);
+    --invalid-border: oklch(0.53 0.22 27.4 / 0%);
+    --overlay: oklch(0 0 0 / 30%);
+    --outline-fill: var(--background);
+    --switch-thumb: var(--background);
+    --switch-thumb-checked: var(--background);
+    --radius: 8px;
+    --control-xs: 24px;
+    --control-sm: 32px;
+    --control-md: 36px;
+    --control-lg: 40px;
+    --table-head: 48px;
+    --icon-sm: 12px;
+    --icon-md: 16px;
+    --icon-lg: 20px;
+    --compact-control: 28px;
+    --compact-row: 28px;
+    --compact-head: 32px;
+    --compact-pad: 8px;
+    --shadow-card:
+        0 0 0 1px oklch(0.148 0.004 228.8 / 5%), 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --shadow-menu:
+        0 0 0 1px oklch(0.148 0.004 228.8 / 5%), 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    --shadow-card-hover:
+        0 0 0 1px oklch(0.148 0.004 228.8 / 10%), 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .dark {
@@ -76,17 +120,11 @@
     --card-foreground: oklch(0.987 0.002 197.1);
     --popover: oklch(0.218 0.008 223.9);
     --popover-foreground: oklch(0.987 0.002 197.1);
-    /* shadcn's generated value here (oklch(0.432 0.095 166.913)) was
-     * *darker* than the light theme's --primary — backwards for a dark
-     * theme, and invisible until now because this block was inert (nothing
-     * ever applied `.dark`). At the original value every `text-primary`
-     * link and the active-tab underline sat under ~3:1 against
-     * --background. Raised to line up with --sidebar-primary below, which
-     * was already correct (see DECISIONS.md #23). */
-    --primary: oklch(0.72 0.13 166);
+    --primary: oklch(0.432 0.095 166.913);
     --primary-foreground: oklch(0.979 0.021 166.113);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
+    --link: oklch(0.696 0.17 162.48);
+    --secondary: oklch(0.275 0.011 216.9);
+    --secondary-foreground: oklch(0.987 0.002 197.1);
     --muted: oklch(0.275 0.011 216.9);
     --muted-foreground: oklch(0.723 0.014 214.4);
     --accent: oklch(0.275 0.011 216.9);
@@ -95,20 +133,11 @@
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.56 0.021 213.5);
-    /* Same hue/chroma as --primary (line above uses a lighter step tuned for
-     * *text* contrast — see the comment on --primary above); a chart mark
-     * needs to land in the dataviz skill's dark-mode lightness band (OKLCH L
-     * 0.48-0.67) instead, or it reads as glowing against this surface.
-     * oklch(0.72 ...) — --primary's dark value — sits above that band; this
-     * step (L 0.60) is the one the validator passes (docs/DECISIONS.md #29).
-     * chart-2..5 are the same four reference hues as :root above, each
-     * re-stepped for this surface and the dark lightness band rather than
-     * reusing the light values verbatim (docs/DECISIONS.md #73). */
-    --chart-1: oklch(0.6 0.118 165.612);
-    --chart-2: oklch(0.622 0.161 255.1);
-    --chart-3: oklch(0.622 0.173 40.1);
-    --chart-4: oklch(0.67 0.145 286.8);
-    --chart-5: oklch(0.669 0.159 22.3);
+    --chart-1: oklch(0.88 0.138 181.071);
+    --chart-2: oklch(0.79 0.14 182.503);
+    --chart-3: oklch(0.7 0.118 184.704);
+    --chart-4: oklch(0.61 0.096 186.391);
+    --chart-5: oklch(0.53 0.078 188.216);
     --sidebar: oklch(0.218 0.008 223.9);
     --sidebar-foreground: oklch(0.987 0.002 197.1);
     --sidebar-primary: oklch(0.696 0.17 162.48);
@@ -116,58 +145,125 @@
     --sidebar-accent: oklch(0.275 0.011 216.9);
     --sidebar-accent-foreground: oklch(0.987 0.002 197.1);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.56 0.021 213.5);
+    --success: oklch(0.792 0.209 151.711);
+    --primary-muted: oklch(0.696 0.17 162.48 / 20%);
+    --success-muted: oklch(0.792 0.209 151.711 / 20%);
+    --success-foreground: oklch(0.266 0.065 152.934);
+    --warning: oklch(0.828 0.189 84.429);
+    --warning-muted: oklch(0.828 0.189 84.429 / 20%);
+    --warning-foreground: oklch(0.279 0.077 45.635);
+    --info: oklch(0.746 0.16 232.661);
+    --info-muted: oklch(0.746 0.16 232.661 / 20%);
+    --info-foreground: oklch(0.293 0.066 243.157);
+    --primary-hover: oklch(0.432 0.095 166.913 / 80%);
+    --secondary-hover: oklch(0.311 0.011 215.91);
+    --muted-hover: oklch(0.275 0.011 216.9 / 50%);
+    --ghost-hover: oklch(0.275 0.011 216.9 / 50%);
+    --outline-hover: oklch(1 0 0 / 4.5%);
+    --tab-active: oklch(1 0 0 / 4.5%);
+    --tab-foreground: oklch(0.987 0.002 197.1 / 60%);
+    --control: oklch(1 0 0 / 7.5%);
+    --control-strong: oklch(1 0 0 / 13.5%);
+    --kbd: oklch(0.723 0.014 214.4 / 10%);
+    --destructive-muted: oklch(0.704 0.191 22.216 / 20%);
+    --destructive-muted-hover: oklch(0.704 0.191 22.216 / 30%);
+    --invalid-ring: oklch(0.704 0.191 22.216 / 40%);
+    --invalid-border: oklch(0.704 0.191 22.216 / 50%);
+    --overlay: oklch(0 0 0 / 30%);
+    --outline-fill: oklch(0 0 0 / 0%);
+    --switch-thumb: var(--foreground);
+    --switch-thumb-checked: var(--primary-foreground);
+    --shadow-card:
+        0 0 0 1px oklch(0.987 0.002 197.1 / 10%), 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --shadow-menu:
+        0 0 0 1px oklch(0.987 0.002 197.1 / 10%), 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    --shadow-card-hover:
+        0 0 0 1px oklch(0.987 0.002 197.1 / 20%), 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 @theme inline {
-    --font-sans: "Inter Variable", sans-serif;
-    --font-heading: "JetBrains Mono Variable", monospace;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
     --color-background: var(--background);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-link: var(--link);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-success: var(--success);
+    --color-primary-muted: var(--primary-muted);
+    --color-success-muted: var(--success-muted);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-muted: var(--warning-muted);
+    --color-warning-foreground: var(--warning-foreground);
+    --color-info: var(--info);
+    --color-info-muted: var(--info-muted);
+    --color-info-foreground: var(--info-foreground);
+    --color-primary-hover: var(--primary-hover);
+    --color-secondary-hover: var(--secondary-hover);
+    --color-muted-hover: var(--muted-hover);
+    --color-ghost-hover: var(--ghost-hover);
+    --color-outline-hover: var(--outline-hover);
+    --color-tab-active: var(--tab-active);
+    --color-tab-foreground: var(--tab-foreground);
+    --color-control: var(--control);
+    --color-control-strong: var(--control-strong);
+    --color-kbd: var(--kbd);
+    --color-destructive-muted: var(--destructive-muted);
+    --color-destructive-muted-hover: var(--destructive-muted-hover);
+    --color-invalid-ring: var(--invalid-ring);
+    --color-invalid-border: var(--invalid-border);
+    --color-overlay: var(--overlay);
+    --color-outline-fill: var(--outline-fill);
+    --color-switch-thumb: var(--switch-thumb);
+    --color-switch-thumb-checked: var(--switch-thumb-checked);
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
     --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+    --radius-xl: 10px;
+    --radius-2xl: 12px;
+    --radius-3xl: 16px;
+    --radius-full: 9999px;
+    --font-sans: "Inter Variable", "Pretendard Variable", ui-sans-serif, system-ui, sans-serif;
+    --font-heading: "JetBrains Mono Variable", "Pretendard Variable", ui-monospace, monospace;
+    --font-mono: "JetBrains Mono Variable", "D2Coding", ui-monospace, monospace;
+    --font-mono-ko: "D2Coding", ui-monospace, monospace;
+    --font-serif: "Newsreader Variable", "MaruBuri", ui-serif, Georgia, serif;
 }
 
 @layer base {
     * {
-        @apply border-border outline-ring/50;
+        @apply border-border outline-ring;
     }
     body {
-        @apply bg-background text-foreground;
+        @apply bg-background text-foreground antialiased;
     }
     button:not(:disabled),
     [role="button"]:not(:disabled) {

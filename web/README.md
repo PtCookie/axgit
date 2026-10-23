@@ -34,6 +34,9 @@ excluded from eslint). When the API changes, regenerate it with `pnpm --filter w
 
 ## Design
 
+- **Design system: Patina** (https://patina.ptcookie.net, docs/DECISIONS.md #102). `src/styles/global.css`
+  carries Patina's tokens verbatim and `src/components/ui/` its shadcn registry items; colour is
+  only ever a semantic token name (`text-link`, `bg-success-muted`, `bg-primary-muted`, …).
 - **Astro static** + React islands + shadcn/ui + Tailwind. Astro pages are prerendered shells —
   page chrome (heading, tab nav, `<title>`) is static HTML; only the data regions are client-fetched
   React islands (`client:only="react"`, with a static `slot="fallback"` skeleton).

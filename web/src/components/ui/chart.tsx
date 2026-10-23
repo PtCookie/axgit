@@ -1,7 +1,28 @@
 import * as React from "react";
-import { cn } from "cn";
 import * as RechartsPrimitive from "recharts";
 import type { TooltipValueType } from "recharts";
+
+import { cn } from "cn";
+
+// Recharts charts on the teal ramp `chart-1`…`chart-5`. The ramp is sequential, not categorical: use it for one
+// series or for ordered values (light = less, dark = more) and never give unrelated series different steps.
+// One series is `chart-3` (`chart-4` on hover); grid and axis lines are `border`; ticks are 12px
+// `muted-foreground` with tabular figures. Status colours never colour data. One y-axis per chart.
+
+/** The colours of the sequential ramp, lightest to darkest, as CSS variables. */
+export const chartRamp = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+] as const;
+
+/** The colour of a single series, and the one it takes on hover. */
+export const chartSeries = { color: "var(--chart-3)", hover: "var(--chart-4)" } as const;
+
+/** Bars have 4px rounded tops anchored to the baseline: `<Bar radius={chartBarRadius} />`. */
+export const chartBarRadius: [number, number, number, number] = [4, 4, 0, 0];
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const;
@@ -55,9 +76,10 @@ function ChartContainer({
     <ChartContext.Provider value={{ config }}>
       <div
         data-slot="chart"
+        data-testid="chart"
         data-chart={chartId}
         className={cn(
-          "[&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border flex aspect-video justify-center text-xs [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-surface]:outline-hidden",
+          "[&_.recharts-bar-rectangle:hover_.recharts-rectangle]:fill-chart-4 [&_.recharts-cartesian-axis-line]:stroke-border [&_.recharts-cartesian-axis-tick-line]:stroke-border [&_.recharts-cartesian-axis-tick-value]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick-value]:tabular-nums [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-transparent [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-surface]:outline-hidden",
           className,
         )}
         {...props}
@@ -102,6 +124,7 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
 
+// The tooltip is a `popover` surface with `radius-md` and `shadow-menu`: 12px text, the value in `mono`.
 function ChartTooltipContent({
   active,
   payload,
@@ -156,7 +179,7 @@ function ChartTooltipContent({
   return (
     <div
       className={cn(
-        "bg-popover text-popover-foreground ring-foreground/5 dark:ring-foreground/10 grid min-w-32 items-start gap-1.5 rounded-xl px-2.5 py-1.5 text-xs shadow-lg ring-1",
+        "bg-popover text-popover-foreground grid items-start gap-1.5 rounded-md px-2.5 py-1.5 text-xs leading-4 whitespace-nowrap shadow-(--shadow-menu)",
         className,
       )}
     >
@@ -173,7 +196,7 @@ function ChartTooltipContent({
               <div
                 key={index}
                 className={cn(
-                  "[&>svg]:text-muted-foreground flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5",
+                  "[&>svg]:text-muted-foreground flex w-full flex-wrap items-stretch gap-2 [&>svg]:size-2.5",
                   indicator === "dot" && "items-center",
                 )}
               >
@@ -186,8 +209,8 @@ function ChartTooltipContent({
                     ) : (
                       !hideIndicator && (
                         <div
-                          className={cn("shrink-0 rounded-[2px] border-(--color-border) bg-(--color-bg)", {
-                            "h-2.5 w-2.5": indicator === "dot",
+                          className={cn("shrink-0 rounded-xs border-(--color-border) bg-(--color-bg)", {
+                            "size-2": indicator === "dot",
                             "w-1": indicator === "line",
                             "w-0 border-[1.5px] border-dashed bg-transparent": indicator === "dashed",
                             "my-0.5": nestLabel && indicator === "dashed",
@@ -201,18 +224,13 @@ function ChartTooltipContent({
                         />
                       )
                     )}
-                    <div
-                      className={cn(
-                        "flex flex-1 justify-between leading-none",
-                        nestLabel ? "items-end" : "items-center",
-                      )}
-                    >
+                    <div className={cn("flex flex-1 justify-between gap-2", nestLabel ? "items-end" : "items-center")}>
                       <div className="grid gap-1.5">
                         {nestLabel ? tooltipLabel : null}
-                        <span className="text-muted-foreground">{itemConfig?.label ?? item.name}</span>
+                        <span>{itemConfig?.label ?? item.name}</span>
                       </div>
                       {item.value != null && (
-                        <span className="text-foreground font-mono font-medium tabular-nums">
+                        <span className="font-mono font-medium tabular-nums">
                           {typeof item.value === "number" ? item.value.toLocaleString() : String(item.value)}
                         </span>
                       )}
@@ -254,19 +272,11 @@ function ChartLegendContent({
           const itemConfig = getPayloadConfigFromPayload(config, item, key);
 
           return (
-            <div
-              key={index}
-              className={cn("[&>svg]:text-muted-foreground flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3")}
-            >
+            <div key={index} className="[&>svg]:text-muted-foreground flex items-center gap-1.5 [&>svg]:size-3">
               {itemConfig?.icon && !hideIcon ? (
                 <itemConfig.icon />
               ) : (
-                <div
-                  className="h-2 w-2 shrink-0 rounded-[2px]"
-                  style={{
-                    backgroundColor: item.color,
-                  }}
-                />
+                <div className="size-2 shrink-0 rounded-xs" style={{ backgroundColor: item.color }} />
               )}
               {itemConfig?.label}
             </div>

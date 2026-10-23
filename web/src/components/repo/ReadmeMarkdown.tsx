@@ -161,7 +161,7 @@ export default function ReadmeMarkdown({ repo, content }: ReadmeMarkdownProps) {
       h4: (props) => <h4 className="text-foreground mt-4 text-sm font-semibold" {...props} />,
       p: (props) => <p className="text-foreground leading-relaxed" {...props} />,
       a: ({ href, ...props }) => (
-        <a className="text-primary underline underline-offset-2" href={href ? rewriteHref(href) : href} {...props} />
+        <a className="text-link underline underline-offset-2" href={href ? rewriteHref(href) : href} {...props} />
       ),
       img: ({ src, ...props }) => (
         // No `width`/`height`: markdown carries no intrinsic size for an

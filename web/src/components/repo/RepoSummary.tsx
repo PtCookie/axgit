@@ -39,7 +39,7 @@ function MetaItem({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const LINK_CLASS = "text-primary underline underline-offset-2";
+const LINK_CLASS = "text-link underline underline-offset-2";
 
 /** An icon + label link row. `aria-hidden` on the icon is load-bearing: the
  *  accessible name must stay exactly the label text ("tar.gz", "Atom", …),
@@ -187,7 +187,7 @@ export default function RepoSummary({ repo }: RepoSummaryProps) {
         </MetaItem>
         {summary.clone_url && (
           <MetaItem label="Clone">
-            <code className="border-border bg-muted/50 block rounded-md border px-2 py-1.5 font-mono text-xs break-all">
+            <code className="border-border bg-muted block rounded-md border px-2 py-1.5 font-mono text-xs break-all">
               {summary.clone_url}
             </code>
           </MetaItem>

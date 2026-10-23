@@ -8,6 +8,7 @@ import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format/time";
 import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import { blobHref, blobLineHref } from "@/lib/repo-href";
 import AuthorAvatar from "@/components/repo/AuthorAvatar";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -127,7 +128,7 @@ export default function SearchView({ repo, q: qParam, type: typeParam, ref: refP
           name="type"
           defaultValue={resolvedType}
           aria-label="Search type"
-          className="border-input bg-input/50 text-foreground h-9 rounded-3xl border px-3 text-sm"
+          className="bg-control text-foreground focus-visible:outline-ring h-(--control-md) rounded-lg border border-transparent px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           {TYPE_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -136,12 +137,9 @@ export default function SearchView({ repo, q: qParam, type: typeParam, ref: refP
           ))}
         </select>
         {resolvedRef && <input type="hidden" name="ref" value={resolvedRef} />}
-        <button
-          type="submit"
-          className="border-input bg-input/50 hover:bg-accent h-9 rounded-3xl border px-4 text-sm font-medium"
-        >
+        <Button type="submit" variant="outline">
           Search
-        </button>
+        </Button>
       </form>
 
       {resolvedType === "range" && (

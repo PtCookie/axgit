@@ -57,7 +57,7 @@ export default function CodeBlock({ content, path, gutter }: CodeBlockProps) {
             const tokens = highlighted?.[index];
             const cell = gutter?.[index];
             return (
-              <tr key={lineNumber} id={anchor} className="target:bg-primary/10">
+              <tr key={lineNumber} id={anchor} className="target:bg-primary-muted">
                 {gutter && cell && (
                   <td
                     rowSpan={cell.rowSpan}

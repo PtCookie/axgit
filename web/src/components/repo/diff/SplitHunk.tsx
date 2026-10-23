@@ -9,11 +9,14 @@ import type { HighlightedLine } from "@/lib/format/highlight";
 import TokenSpans from "@/components/repo/diff/TokenSpans";
 
 function SegmentSpans({ segments, tint }: { segments: Segment[]; tint: "red" | "green" }) {
-  const changedClass = tint === "red" ? "bg-red-500/30 dark:bg-red-500/40" : "bg-green-500/30 dark:bg-green-500/40";
+  // The row under this span already carries the same `*-muted` tint, so the
+  // translucent token stacks over itself and the changed run reads stronger
+  // than the line — without a computed colour (docs/DECISIONS.md #102).
+  const changedClass = tint === "red" ? "bg-destructive-muted" : "bg-success-muted";
   return segments.map((segment, index) =>
     segment.changed ? (
       // eslint-disable-next-line @eslint-react/no-array-index-key -- segments have no stable identity
-      <span key={index} className={cn("rounded-[2px]", changedClass)}>
+      <span key={index} className={cn("rounded-xs", changedClass)}>
         {segment.text}
       </span>
     ) : (
@@ -34,14 +37,14 @@ function MergedSpans({
   segments: Segment[];
   tint: "red" | "green";
 }) {
-  const changedClass = tint === "red" ? "bg-red-500/30 dark:bg-red-500/40" : "bg-green-500/30 dark:bg-green-500/40";
+  const changedClass = tint === "red" ? "bg-destructive-muted" : "bg-success-muted";
   const fragments = mergeTokensWithSegments(tokens, segments);
   return fragments.map((fragment, index) => (
     <span
       // eslint-disable-next-line @eslint-react/no-array-index-key -- fragments have no stable identity
       key={index}
       style={fragment.style}
-      className={fragment.changed ? cn("rounded-[2px]", changedClass) : undefined}
+      className={fragment.changed ? cn("rounded-xs", changedClass) : undefined}
     >
       {fragment.text}
     </span>
@@ -82,8 +85,8 @@ function SplitRowView({ row, highlights }: SplitRowViewProps) {
 
   // A `null` side gets a filler tint so "nothing here" reads differently
   // from "unchanged" (which has no tint at all).
-  const oldBg = row.old ? "bg-red-500/10 dark:bg-red-500/20" : "bg-muted/30";
-  const newBg = row.new ? "bg-green-500/10 dark:bg-green-500/20" : "bg-muted/30";
+  const oldBg = row.old ? "bg-destructive-muted" : "bg-muted";
+  const newBg = row.new ? "bg-success-muted" : "bg-muted";
   const oldTokens = row.old ? highlights?.get(row.old) : undefined;
   const newTokens = row.new ? highlights?.get(row.new) : undefined;
 
@@ -146,7 +149,7 @@ export default function SplitHunk({ hunk, highlights }: SplitHunkProps) {
       </colgroup>
       <tbody>
         <tr>
-          <td colSpan={4} className="text-muted-foreground bg-muted/30 px-2 py-1 font-mono">
+          <td colSpan={4} className="text-muted-foreground bg-muted px-2 py-1 font-mono">
             {hunk.header}
           </td>
         </tr>

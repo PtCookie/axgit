@@ -42,7 +42,7 @@ export default function DiffFile({ file, index, view }: DiffFileProps) {
 
   return (
     <details open id={`diff-${index + 1}`} className="border-border rounded-md border">
-      <summary className="bg-muted/50 cursor-pointer px-3 py-2 font-mono text-sm">
+      <summary className="bg-muted cursor-pointer px-3 py-2 font-mono text-sm">
         <span className={STATUS_CLASS[file.status]}>{STATUS_LABEL[file.status]}</span> {renamePathLabel(file)}{" "}
         <span className="text-muted-foreground">
           +{file.additions} −{file.deletions}

@@ -4,11 +4,7 @@ import TokenSpans from "@/components/repo/diff/TokenSpans";
 
 function DiffLineRow({ line, tokens }: { line: Line; tokens?: HighlightedLine }) {
   const background =
-    line.origin === "+"
-      ? "bg-green-500/10 dark:bg-green-500/20"
-      : line.origin === "-"
-        ? "bg-red-500/10 dark:bg-red-500/20"
-        : undefined;
+    line.origin === "+" ? "bg-success-muted" : line.origin === "-" ? "bg-destructive-muted" : undefined;
   return (
     <tr className={background}>
       <td className="text-muted-foreground w-10 shrink-0 px-2 text-right font-mono select-none">
@@ -37,7 +33,7 @@ export default function UnifiedHunk({ hunk, highlights }: UnifiedHunkProps) {
     <table className="shiki-code w-full border-collapse text-sm">
       <tbody>
         <tr>
-          <td colSpan={4} className="text-muted-foreground bg-muted/30 px-2 py-1 font-mono">
+          <td colSpan={4} className="text-muted-foreground bg-muted px-2 py-1 font-mono">
             {hunk.header}
           </td>
         </tr>

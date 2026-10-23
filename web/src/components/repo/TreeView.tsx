@@ -108,7 +108,7 @@ const KIND_LABEL: Record<EntryKind, string> = {
  *  isn't knowable from here, and the blob endpoint 404s cleanly. */
 function SymlinkTarget({ repo, dir, target, ref }: { repo: string; dir: string; target: string; ref?: string }) {
   const resolved = resolveRepoPath(dir, target);
-  const label = <code className="bg-muted/50 rounded px-1 py-0.5 font-mono text-xs">{target}</code>;
+  const label = <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">{target}</code>;
   return (
     <span className="text-muted-foreground">
       {" → "}

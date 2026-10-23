@@ -123,7 +123,7 @@ export default function StatsView({ repo, period: periodParam, ref: refParam, pa
           className={cn(
             "rounded-3xl border px-3 py-1 text-sm font-medium",
             option.value === resolvedPeriod
-              ? "border-primary bg-primary/10 text-foreground"
+              ? "border-link bg-primary-muted text-foreground"
               : "border-input text-muted-foreground hover:text-foreground",
           )}
         >

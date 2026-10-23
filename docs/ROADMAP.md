@@ -8,7 +8,10 @@ add its decision entry to `docs/DECISIONS.md`, in the same commit.
 
 ## Next up
 
-**Nothing is queued.** README raw HTML now renders (#101): `rehype-raw` parses it and
+**Nothing is queued.** The web UI now follows the Patina design system (#102): `global.css`
+carries Patina's tokens verbatim, `ui/` its registry components, and every ad hoc state colour
+(`bg-primary/10`, the green/red diff tints, `color-mix`) became a Patina token; #23's dark-primary
+tweak and #29/#73's chart palette are superseded by fixes made upstream. Before that, README raw HTML started rendering (#101): `rehype-raw` parses it and
 `rehype-sanitize` filters it with GitHub's own schema, so a centred `<p align>` + `<img width>`
 header, a light/dark `<picture>` or a `<details>` block shows up as it does on GitHub instead of
 vanishing. Before that, the README gained four screenshots (#99), kept to plain markdown with

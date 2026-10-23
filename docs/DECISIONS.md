@@ -2601,3 +2601,57 @@ would run). READMEs written for GitHub lean on this HTML constantly: centred hea
 - **Remaining limitation**: `<source media="(prefers-color-scheme: dark)">` follows the OS/browser
   preference, not the manual Light/Dark choice from #23's selector. Rewriting `media` to track that
   choice would mean re-rendering on every theme switch; not worth it until someone asks.
+
+## #102 Adopt the Patina design system (supersedes #23's dark `--primary`, #29/#73's chart colors)
+
+Patina (https://patina.ptcookie.net) is the maintainer's own design system: one token set for web
+(a shadcn registry on Base UI, Tailwind 4), Slint and Android. Its web tokens started from the same
+shadcn preset Axgit was generated from (Luma · Mist · Emerald · Base UI, Phosphor, Inter + JetBrains
+Mono), so adopting it is mostly a re-baseline rather than a redesign. What it buys is a single
+source of truth shared with other projects, and a token for every state Axgit used to compute
+ad hoc (`bg-primary/10`, `bg-[color-mix(…)]`, `bg-green-500/10 dark:bg-green-500/20`).
+
+- **Tokens are copied, never tuned here.** `global.css`'s `:root`, `.dark` and `@theme inline` are
+  Patina's `r/base.json` (snapshot `1792693731-8d8b`) verbatim, plus `color-scheme`. Merged by hand
+  rather than with `shadcn init`, because init rewrites the whole CSS file and the rest of it
+  (`color-scheme`, the Shiki dark-token rule, the theme-icon rule, #24/#32's view-transition and
+  page-fade rules) is Axgit's own. A value that looks wrong is fixed in Patina and re-copied.
+- **The local overrides it supersedes were all fixed upstream first**, checked before adopting:
+  - #23 raised dark `--primary` so `text-primary` links stayed above 3:1. Patina keeps dark
+    `primary` as a dim *fill* (2.6:1 on `background`) and adds `--link` for emerald text (8.0:1).
+    Every emerald text/indicator use moved to `link`: README and summary links, the 404 link, the
+    repository tab underline and the selected-toggle border (`border-link`, since an indicator
+    needs 3:1 too) and the commit-message accent rule.
+  - #29/#73 replaced shadcn's teal ramp because it read at 1.4:1 and was identical in both themes.
+    Patina's ramp now has per-theme values, every step ≥3:1 on `background` and `card` in both
+    themes (light 3.1–9.5:1, dark 3.4–14.5:1, measured from the snapshot). It is a *sequential*
+    ramp, not #73's categorical palette; Axgit's only chart has one series, so it uses Patina's
+    single-series rule: `chart-3`, `chart-4` on hover (`chartSeries` from `ui/chart.tsx`). Dark
+    `chart-3` (OKLCH L 0.70) sits just above the dataviz skill's 0.48–0.67 dark band #29 aimed for;
+    accepted, since the band is a glare heuristic and the contrast floor is met with room.
+- **`dark` variant stays `&:is(.dark, .dark *)`.** Patina's guide now says the same (the class is
+  on `<html>`), but the shadcn CLI writes the shorter form on every `init` — re-check after one.
+- **`ui/` is Patina's registry items** (`components.json` registers `@patina`), replacing the stock
+  shadcn badge, button, card, chart, dropdown-menu, input, skeleton and table. One local edit is
+  kept and marked in the file: `TableHead`'s `scope="col"` (Chromium maps a bare `<th>` to "cell",
+  breaking `getByRole("columnheader")`). Patina's items also carry `data-testid` attributes; none
+  collide with the e2e suite's own ids. Corners follow Patina's px radius scale (8px base) instead
+  of the old 10px-derived one, so most controls are slightly squarer.
+- **Ad hoc state colours → tokens.** Selected toggles and the targeted code line use
+  `primary-muted`; diff lines use `success-muted` / `destructive-muted` and the file-status words use
+  `success` / `warning` (the status keeps its word, so it is never colour alone). Intra-line changed
+  runs had no token; they reuse the same `*-muted` token, which stacks over the row's identical
+  translucent tint and so reads stronger without computing a colour. `bg-muted/30` and `/50` on
+  code chips, `<pre>` blocks and hunk headers became plain `bg-muted`. The hand-styled native
+  `<select>`s use `bg-control`; the native submit buttons and the Swap link became Patina's outline
+  `Button` / `buttonVariants`.
+- **Fonts: Pretendard added, D2Coding/MaruBuri/Newsreader not.** `font-sans` and `font-heading`
+  fall back to Pretendard for Hangul (the `pretendard` package's dynamic subset, ~3 MB in `dist`,
+  fetched per unicode-range only when Hangul is on screen). `font-mono` names D2Coding and
+  `font-serif` Newsreader → MaruBuri, but their files are not bundled: D2Coding is ~8.4 MB of TTF
+  and MaruBuri ~3.1 MB of OTF that Patina requires unmodified (no subsetting or woff2), which would
+  land in every release binary (#74) for text Axgit rarely shows (Hangul in code) or never uses
+  (serif). Without them the stacks fall through to a locally installed copy or `ui-monospace` /
+  `ui-serif`. Revisit if Hangul-in-code alignment becomes a complaint.
+- **`theme-color` keeps its hex literals** (`theme.tsx`, `Layout.astro`): a `<meta>` content can't
+  reference a CSS variable. They equal Patina's `background` in each theme.

@@ -110,7 +110,7 @@ export default function BlobView({ repo, path, ref: refParam }: BlobViewProps) {
 
       {blob.mode === SYMLINK_MODE ? (
         <p className="text-sm">
-          Symlink to <code className="bg-muted/50 rounded px-1 py-0.5 font-mono">{blob.content}</code>
+          Symlink to <code className="bg-muted rounded px-1 py-0.5 font-mono">{blob.content}</code>
         </p>
       ) : blob.binary ? (
         <HexDump url={raw} size={blob.size} />

@@ -169,7 +169,7 @@ export default function TagView({ repo, name }: TagViewProps) {
       </div>
 
       {detail.message && (
-        <pre className="border-border bg-muted/30 overflow-x-auto rounded-md border p-3 text-sm whitespace-pre-wrap">
+        <pre className="border-border bg-muted overflow-x-auto rounded-md border p-3 text-sm whitespace-pre-wrap">
           {linkify(detail.message, { repo: resolvedRepo })}
         </pre>
       )}

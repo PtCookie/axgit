@@ -1,13 +1,22 @@
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
-import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import {
+  chartBarRadius,
+  type ChartConfig,
+  ChartContainer,
+  chartSeries,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 
 interface StatsChartProps {
   data: { label: string; commits: number }[];
 }
 
+// One series: Patina's `chart-3`, with `ChartContainer` lifting a hovered
+// bar to `chart-4` (docs/DECISIONS.md #102).
 const chartConfig: ChartConfig = {
-  commits: { label: "Commits", color: "var(--chart-1)" },
+  commits: { label: "Commits", color: chartSeries.color },
 };
 
 /** Lazy-loaded by `StatsView.tsx` — Recharts is the single biggest
@@ -27,7 +36,7 @@ export default function StatsChart({ data }: StatsChartProps) {
             (`references/interaction.md`'s "the mark is the hit target"
             rule). `minPointSize` keeps a thin sliver so every bucket stays
             hoverable, a zero-commit month included. */}
-        <Bar dataKey="commits" fill="var(--color-commits)" radius={[4, 4, 0, 0]} maxBarSize={24} minPointSize={2} />
+        <Bar dataKey="commits" fill="var(--color-commits)" radius={chartBarRadius} maxBarSize={24} minPointSize={2} />
       </BarChart>
     </ChartContainer>
   );

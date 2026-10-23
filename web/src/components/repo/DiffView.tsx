@@ -10,6 +10,7 @@ import { paramFromSearch, repoFromPathname } from "@/lib/repo-param";
 import DiffFileList from "@/components/repo/diff/DiffFileList";
 import DiffOptionsBar from "@/components/repo/diff/DiffOptionsBar";
 import DiffStatTable from "@/components/repo/diff/DiffStatTable";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -209,12 +210,9 @@ export default function DiffView({
           ))}
         </datalist>
         {resolvedPath && <input type="hidden" name="path" value={resolvedPath} />}
-        <button
-          type="submit"
-          className="border-input bg-input/50 hover:bg-accent h-9 rounded-3xl border px-4 text-sm font-medium"
-        >
+        <Button type="submit" variant="outline">
           Compare
-        </button>
+        </Button>
         {hasComparison && (
           <a
             href={compareHref(resolvedRepo, {
@@ -224,7 +222,7 @@ export default function DiffView({
               ...options,
             })}
             aria-label="Swap revisions"
-            className="border-input bg-input/50 hover:bg-accent flex h-9 items-center rounded-3xl border px-4 text-sm font-medium"
+            className={buttonVariants({ variant: "outline" })}
           >
             Swap
           </a>

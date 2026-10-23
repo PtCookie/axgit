@@ -19,9 +19,9 @@ interface RefBadgesProps {
  *  commit, linking to the log filtered by that ref (`?ref=`, DECISIONS.md
  *  #18). Kind is encoded by icon, not colour: the dataviz method's own
  *  accessibility rule is that identity is never colour-alone, and a
- *  branch/tag badge has no chart-legend context to lean on regardless of
- *  whether `--chart-2..5` validate (#29, #73). Renders nothing for an empty
- *  list. */
+ *  branch/tag badge has no chart-legend context to lean on — and Patina's
+ *  `chart-*` is a sequential ramp, not a categorical palette, anyway (#102).
+ *  Renders nothing for an empty list. */
 export default function RefBadges({ repo, refs, max }: RefBadgesProps) {
   if (refs.length === 0) {
     return null;

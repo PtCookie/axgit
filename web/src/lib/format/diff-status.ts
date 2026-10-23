@@ -10,9 +10,9 @@ export const STATUS_LABEL: Record<DiffStatus, string> = {
 };
 
 export const STATUS_CLASS: Record<DiffStatus, string> = {
-  added: "text-green-600 dark:text-green-400",
+  added: "text-success",
   deleted: "text-destructive",
-  modified: "text-amber-600 dark:text-amber-400",
+  modified: "text-warning",
   renamed: "text-muted-foreground",
   copied: "text-muted-foreground",
   typechange: "text-muted-foreground",

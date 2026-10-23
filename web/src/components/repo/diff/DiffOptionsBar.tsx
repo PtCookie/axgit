@@ -1,5 +1,7 @@
 import { cn } from "cn";
 
+import { Button } from "@/components/ui/button";
+
 import { ALLOWED_CONTEXT, type DiffOptions, type DiffViewMode } from "@/lib/diff-options";
 
 const NO_EXTRA_PARAMS: Record<string, string> = {};
@@ -51,10 +53,10 @@ export default function DiffOptionsBar({ options, extraParams = NO_EXTRA_PARAMS,
             href={hrefFor({ view: mode.value })}
             aria-current={mode.value === options.view ? "page" : undefined}
             className={cn(
-              "rounded-3xl border px-3 py-1 text-sm font-medium",
+              "rounded-full border px-3 py-1 text-sm font-medium",
               mode.value === options.view
-                ? "border-primary bg-primary/10 text-foreground"
-                : "border-input text-muted-foreground hover:text-foreground",
+                ? "border-link bg-primary-muted text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground",
             )}
           >
             {mode.label}
@@ -72,7 +74,7 @@ export default function DiffOptionsBar({ options, extraParams = NO_EXTRA_PARAMS,
             name="context"
             defaultValue={String(options.context)}
             aria-label="Context lines"
-            className="border-input bg-input/50 text-foreground h-8 rounded-md border px-2 text-sm"
+            className="bg-control text-foreground focus-visible:outline-ring h-(--control-sm) rounded-lg border border-transparent px-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             {ALLOWED_CONTEXT.map((value) => (
               <option key={value} value={value}>
@@ -85,12 +87,9 @@ export default function DiffOptionsBar({ options, extraParams = NO_EXTRA_PARAMS,
           <input type="checkbox" name="ignorews" value="1" defaultChecked={options.ignorews} className="size-4" />
           <span>Ignore whitespace</span>
         </label>
-        <button
-          type="submit"
-          className="border-input bg-input/50 hover:bg-accent h-8 rounded-md border px-3 text-sm font-medium"
-        >
+        <Button type="submit" variant="outline" size="sm">
           Apply diff options
-        </button>
+        </Button>
       </form>
     </div>
   );

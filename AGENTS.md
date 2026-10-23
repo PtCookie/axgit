@@ -153,8 +153,13 @@ those changes, run it before committing one.
 - Code highlighting uses Shiki, lazy-loaded client-side (dynamic import per language).
   READMEs use react-markdown + rehype-raw + rehype-sanitize (GitHub's schema, DECISIONS.md #101); avatars are generated locally with DiceBear
   (no external requests, DECISIONS.md #11).
-- UI components use shadcn/ui, generated into `web/src/components/ui/`. Generated files may be
-  modified (vendored approach).
+- UI follows the **Patina** design system (https://patina.ptcookie.net, docs/DECISIONS.md #102):
+  the tokens in `global.css` are Patina's `r/base.json` verbatim, and `web/src/components/ui/` holds
+  its shadcn registry items (`shadcn add @patina/<name>`, registered in `components.json`). Colour
+  only by semantic token name — no hex/`oklch()` literal, palette class (`bg-green-500`), opacity
+  modifier (`bg-muted/50`), `color-mix()` or `dark:` colour override; emerald text is `text-link`,
+  not `text-primary`. A state with no token is a gap to report to Patina, not a value to invent.
+  Local edits to a vendored component are allowed but must be marked as such in a comment.
 
 ## Conventions
 
