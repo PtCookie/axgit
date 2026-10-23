@@ -2533,6 +2533,10 @@ Axgit's own `ReadmeMarkdown` (#21) — so the constraint is what all three agree
   takes its destination as an argument and is deterministic. The showcase repository, `lumen`, has
   a branchy history with merges and tags, three authors, a README with a list, table and
   highlighted fences, and a final refactor commit that makes a readable diff.
+- **Refreshed after #102** (the Patina re-baseline) from `make-screenshot-repos.sh`'s output with the
+  recipe below; lossless WebP via sharp (`webp({ lossless: true, effort: 6 })`) when `cwebp` isn't
+  installed — same encoder family, ~143 KB for the four. Relative times ("last month") follow the
+  capture date, as they did before.
 - **Recipe**, so a later UI change can refresh them: 1280x800 viewport; wait for `networkidle`
   plus a second (the README island fetches after load); the diff at `?view=split` on the last
   commit, in a 1280x900 viewport scrolled to the changed-files table; the log in the dark theme
@@ -2641,7 +2645,9 @@ ad hoc (`bg-primary/10`, `bg-[color-mix(…)]`, `bg-green-500/10 dark:bg-green-5
   `primary-muted`; diff lines use `success-muted` / `destructive-muted` and the file-status words use
   `success` / `warning` (the status keeps its word, so it is never colour alone). Intra-line changed
   runs had no token; they reuse the same `*-muted` token, which stacks over the row's identical
-  translucent tint and so reads stronger without computing a colour. `bg-muted/30` and `/50` on
+  translucent tint (~19% against the row's 10%) without computing a colour. That is visibly weaker
+  than the old 30% tint — clear on the red side, subtle on the green one (the README's split-diff
+  shot shows it) — and is a gap to report to Patina: a stronger `*-muted` step for changed runs. `bg-muted/30` and `/50` on
   code chips, `<pre>` blocks and hunk headers became plain `bg-muted`. The hand-styled native
   `<select>`s use `bg-control`; the native submit buttons and the Swap link became Patina's outline
   `Button` / `buttonVariants`.
