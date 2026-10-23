@@ -5,13 +5,13 @@
       "source": "apollographql/skills",
       "sourceType": "github",
       "skillPath": "skills/rust-best-practices/SKILL.md",
-      "computedHash": "fd336f2f772eb46ddf8658de5f9dd8faa1f35615b316665307fc82eeb4b2e658"
+      "computedHash": "a3db351ec552ed9d36b59e547d6c1d94077867eb5bcb98b3f802dfebb0a8a248"
     },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",
       "skillPath": "skills/shadcn/SKILL.md",
-      "computedHash": "c1a68ee06a668aced9ab2b5fbdea5f989864123794eb2e056b339a072dbb7f10"
+      "computedHash": "b864a958765563321f485a96f4d59c0bb6539f4286ab6d8b8b66895b7ebd302d"
     },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
@@ -24,6 +24,12 @@
       "sourceType": "github",
       "skillPath": "skills/web-design-guidelines/SKILL.md",
       "computedHash": "a6a44d5498f7e8f68289902f3dedfc6f38ae0cee1e96527c80724cf27f727c2a"
+    },
+    "web-perf": {
+      "source": "cloudflare/skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-perf/SKILL.md",
+      "computedHash": "72d0dd9706147e19bf3c1a36fdc02570f77685541d89d901a3a2f570824ba3cb"
     }
   }
 }
